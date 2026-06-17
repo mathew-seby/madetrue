@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Lora, Inter } from "next/font/google";
 import Navbar from "@/components/shared/Navbar";
 import Footer from "@/components/shared/Footer";
+import { AuthProvider } from "@/components/shared/AuthProvider";
 import "./globals.css";
 
 const lora = Lora({
@@ -29,10 +30,13 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${lora.variable} ${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col font-sans bg-cream-bg text-text-dark">
-        <Navbar />
-        <main className="flex-grow">{children}</main>
-        <Footer />
+        <AuthProvider>
+          <Navbar />
+          <main className="flex-grow">{children}</main>
+          <Footer />
+        </AuthProvider>
       </body>
     </html>
   );
 }
+

@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { MapPin, ShoppingCart, Menu, X, Globe } from "lucide-react";
+import { MapPin, ShoppingCart, Menu, X, Globe, User as UserIcon, LogOut } from "lucide-react";
+import { useAuth } from "@/components/shared/AuthProvider";
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [language, setLanguage] = useState<"EN" | "ML">("EN");
+  const { currentUser, logout } = useAuth();
 
   const toggleLanguage = () => {
     setLanguage((prev) => (prev === "EN" ? "ML" : "EN"));
@@ -32,12 +34,22 @@ export default function Navbar() {
             <Link href="/products" className="text-sm font-medium text-text-dark hover:text-primary-green transition">
               Explore Local
             </Link>
-            <Link href="#meet-makers" className="text-sm font-medium text-text-dark hover:text-primary-green transition">
+            <Link href="/#meet-makers" className="text-sm font-medium text-text-dark hover:text-primary-green transition">
               Meet the Makers
             </Link>
-            <Link href="/dashboard" className="text-sm font-semibold text-warm-brown hover:text-primary-green transition">
-              Become a Seller
-            </Link>
+            {currentUser?.role === "seller" ? (
+              <Link href="/dashboard" className="text-sm font-bold text-primary-green hover:text-[#224f3b] transition">
+                Maker Dashboard
+              </Link>
+            ) : currentUser?.role === "admin" ? (
+              <Link href="/admin" className="text-sm font-bold text-amber-800 hover:text-amber-950 transition">
+                Admin Panel
+              </Link>
+            ) : (
+              <Link href="/profile" className="text-sm font-semibold text-warm-brown hover:text-primary-green transition">
+                Become a Maker
+              </Link>
+            )}
           </div>
 
           {/* Right Action Icons */}
@@ -59,6 +71,29 @@ export default function Navbar() {
                 2
               </span>
             </Link>
+
+            {/* User Profile Info */}
+            {currentUser && (
+              <div className="flex items-center space-x-3 border-l border-warm-brown/20 pl-4">
+                <Link
+                  href="/profile"
+                  className="flex items-center space-x-2 text-sm font-semibold text-text-dark hover:text-primary-green transition"
+                  title="View Profile"
+                >
+                  <div className="w-7 h-7 rounded-full bg-primary-green/10 text-primary-green flex items-center justify-center font-bold text-xs">
+                    {currentUser.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="max-w-[100px] truncate">{currentUser.name.split(" ")[0]}</span>
+                </Link>
+                <button
+                  onClick={logout}
+                  className="p-1.5 text-text-dark/60 hover:text-red-600 transition"
+                  title="Sign Out"
+                >
+                  <LogOut className="h-4.5 w-4.5" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -106,21 +141,62 @@ export default function Navbar() {
             Explore Local
           </Link>
           <Link
-            href="#meet-makers"
+            href="/#meet-makers"
             onClick={() => setIsOpen(false)}
             className="block px-3 py-2 rounded-lg text-base font-medium text-text-dark hover:bg-primary-green/5 hover:text-primary-green transition"
           >
             Meet the Makers
           </Link>
-          <Link
-            href="/dashboard"
-            onClick={() => setIsOpen(false)}
-            className="block px-3 py-2 rounded-lg text-base font-semibold text-warm-brown hover:bg-primary-green/5 hover:text-primary-green transition"
-          >
-            Become a Seller
-          </Link>
+          
+          {currentUser?.role === "seller" ? (
+            <Link
+              href="/dashboard"
+              onClick={() => setIsOpen(false)}
+              className="block px-3 py-2 rounded-lg text-base font-bold text-primary-green hover:bg-primary-green/5 transition"
+            >
+              Maker Dashboard
+            </Link>
+          ) : currentUser?.role === "admin" ? (
+            <Link
+              href="/admin"
+              onClick={() => setIsOpen(false)}
+              className="block px-3 py-2 rounded-lg text-base font-bold text-amber-800 hover:bg-primary-green/5 transition"
+            >
+              Admin Panel
+            </Link>
+          ) : (
+            <Link
+              href="/profile"
+              onClick={() => setIsOpen(false)}
+              className="block px-3 py-2 rounded-lg text-base font-semibold text-warm-brown hover:bg-primary-green/5 hover:text-primary-green transition"
+            >
+              Become a Maker
+            </Link>
+          )}
+
+          {currentUser && (
+            <div className="border-t border-warm-brown/10 pt-2 mt-2 space-y-1">
+              <Link
+                href="/profile"
+                onClick={() => setIsOpen(false)}
+                className="block px-3 py-2 rounded-lg text-base font-medium text-text-dark hover:bg-primary-green/5 hover:text-primary-green transition"
+              >
+                My Profile ({currentUser.name})
+              </Link>
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  logout();
+                }}
+                className="w-full text-left block px-3 py-2 rounded-lg text-base font-medium text-red-600 hover:bg-red-50 transition"
+              >
+                Sign Out
+              </button>
+            </div>
+          )}
         </div>
       )}
     </nav>
   );
 }
+

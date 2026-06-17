@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getSellers, getCategories, addProduct, getSellers as fetchSellers, getAllProductsAdmin } from "@/lib/supabase/client";
 import { Seller, Category, Product } from "@/types";
 import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store } from "lucide-react";
+import { useAuth } from "@/components/shared/AuthProvider";
 
 const IMAGE_PRESETS = [
   { name: "Pickle Jar", url: "https://images.unsplash.com/photo-1601050690597-df056fb4ce78?w=600&auto=format&fit=crop&q=80" },
@@ -15,6 +16,7 @@ const IMAGE_PRESETS = [
 ];
 
 export default function DashboardPage() {
+  const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<"list" | "add">("list");
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -47,9 +49,14 @@ export default function DashboardPage() {
       setSellers(fetchedSellers);
       setCategories(fetchedCategories);
 
-      if (fetchedSellers.length > 0) {
+      // Find seller matching active user session
+      const matchingSeller = fetchedSellers.find(s => s.user_id === currentUser?.id);
+
+      if (matchingSeller) {
+        setSelectedSellerId(matchingSeller.id);
+        setMyProducts(fetchedProducts.filter(p => p.seller_id === matchingSeller.id));
+      } else if (fetchedSellers.length > 0) {
         setSelectedSellerId(fetchedSellers[0].id);
-        // Load products belonging to the first seller as default "my products"
         setMyProducts(fetchedProducts.filter(p => p.seller_id === fetchedSellers[0].id));
       } else {
         setMyProducts([]);
@@ -62,7 +69,7 @@ export default function DashboardPage() {
       setLoading(false);
     }
     loadDashboardData();
-  }, []);
+  }, [currentUser]);
 
   // Update product list when active seller changes
   const handleSellerChange = (sellerId: string) => {
@@ -73,6 +80,7 @@ export default function DashboardPage() {
       setLoading(false);
     });
   };
+
 
   const handleTagToggle = (tag: string) => {
     setSelectedTags((prev) =>
@@ -173,17 +181,23 @@ export default function DashboardPage() {
           <div className="flex items-center space-x-2 shrink-0 bg-white/50 border border-warm-brown/10 px-3 py-1.5 rounded-xl shadow-sm">
             <Store className="h-4 w-4 text-primary-green" />
             <span className="text-xs font-bold text-warm-brown">Acting As:</span>
-            <select
-              value={selectedSellerId}
-              onChange={(e) => handleSellerChange(e.target.value)}
-              className="text-xs font-semibold text-text-dark bg-transparent border-none focus:ring-0 focus:outline-none cursor-pointer"
-            >
-              {sellers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.business_name}
-                </option>
-              ))}
-            </select>
+            {currentUser?.role === "admin" ? (
+              <select
+                value={selectedSellerId}
+                onChange={(e) => handleSellerChange(e.target.value)}
+                className="text-xs font-semibold text-text-dark bg-transparent border-none focus:ring-0 focus:outline-none cursor-pointer"
+              >
+                {sellers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.business_name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-xs font-semibold text-text-dark">
+                {sellers.find(s => s.id === selectedSellerId)?.business_name || "Active Maker"}
+              </span>
+            )}
           </div>
         </div>
 
