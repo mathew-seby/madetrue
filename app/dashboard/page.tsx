@@ -4,16 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getSellers, getCategories, addProduct, getSellers as fetchSellers, getAllProductsAdmin } from "@/lib/supabase/client";
 import { Seller, Category, Product } from "@/types";
-import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store } from "lucide-react";
+import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 
-const IMAGE_PRESETS = [
-  { name: "Pickle Jar", url: "https://images.unsplash.com/photo-1601050690597-df056fb4ce78?w=600&auto=format&fit=crop&q=80" },
-  { name: "Spices / Cardamom", url: "https://images.unsplash.com/photo-1599940824399-b87987ceb72a?w=600&auto=format&fit=crop&q=80" },
-  { name: "Earthen Pottery", url: "https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?w=600&auto=format&fit=crop&q=80" },
-  { name: "Forest Honey", url: "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=600&auto=format&fit=crop&q=80" },
-  { name: "Traditional Foods", url: "https://images.unsplash.com/photo-1626132647523-66f5bf380027?w=600&auto=format&fit=crop&q=80" },
-];
+const FALLBACK_PRODUCT_IMAGE = "https://images.unsplash.com/photo-1541832676-9b763b0239ab?w=600&auto=format&fit=crop&q=80"; // Traditional clay pot
 
 export default function DashboardPage() {
   const { currentUser } = useAuth();
@@ -29,13 +23,86 @@ export default function DashboardPage() {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState("");
-  const [imageUrl, setImageUrl] = useState(IMAGE_PRESETS[0].url);
+  const [imagesList, setImagesList] = useState<string[]>([]);
   const [customImageUrl, setCustomImageUrl] = useState("");
+  const [documentsList, setDocumentsList] = useState<{ name: string; url: string }[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [stock, setStock] = useState("10");
   const [originDetails, setOriginDetails] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState("");
+
+  const handleDocumentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file) => {
+      if (file.size > 5 * 1024 * 1024) {
+        setSubmitError(`File "${file.name}" is too large. Max size is 5MB.`);
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === "string") {
+          setDocumentsList((prev) => [
+            ...prev,
+            { name: file.name, url: reader.result as string }
+          ]);
+          setSubmitError("");
+        }
+      };
+      reader.onerror = () => {
+        setSubmitError("Failed to read document file.");
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const availableSlots = 5 - imagesList.length;
+    if (availableSlots <= 0) {
+      setSubmitError("You can upload a maximum of 5 images.");
+      return;
+    }
+
+    const filesToProcess = Array.from(files).slice(0, availableSlots);
+
+    filesToProcess.forEach((file) => {
+      if (!file.type.startsWith("image/")) {
+        setSubmitError("Please upload image files only (PNG, JPG, etc.).");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === "string") {
+          setImagesList((prev) => [...prev, reader.result as string].slice(0, 5));
+          setSubmitError("");
+        }
+      };
+      reader.onerror = () => {
+        setSubmitError("Failed to read the image file.");
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleAddCustomUrl = () => {
+    if (!customImageUrl.trim()) return;
+
+    if (imagesList.length >= 5) {
+      setSubmitError("You can list a maximum of 5 images.");
+      return;
+    }
+
+    setImagesList((prev) => [...prev, customImageUrl.trim()]);
+    setCustomImageUrl("");
+    setSubmitError("");
+  };
 
   const tagOptions = ["Same Day Delivery", "Pickup Available", "Fresh Today", "Locally Made", "Eco-Friendly"];
 
@@ -98,7 +165,12 @@ export default function DashboardPage() {
       return;
     }
 
-    const finalImage = customImageUrl.trim() || imageUrl;
+    if (documentsList.length === 0) {
+      setSubmitError("Please upload at least one verification document (e.g. license, quality test certificate).");
+      return;
+    }
+
+    const finalImages = imagesList.length > 0 ? imagesList : [FALLBACK_PRODUCT_IMAGE];
 
     try {
       await addProduct({
@@ -107,11 +179,12 @@ export default function DashboardPage() {
         description,
         price: parseFloat(price),
         category,
-        images: [finalImage],
+        images: finalImages,
         tags: selectedTags as any,
         stock: parseInt(stock),
         is_available: true,
         origin_details: originDetails,
+        documents: documentsList,
       });
 
       setSubmitSuccess(true);
@@ -123,6 +196,8 @@ export default function DashboardPage() {
       setStock("10");
       setOriginDetails("");
       setSelectedTags([]);
+      setImagesList([]);
+      setDocumentsList([]);
       setCustomImageUrl("");
 
       // Refresh list
@@ -355,44 +430,97 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Image Selection */}
-              <div className="space-y-3">
-                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
-                  <ImageIcon className="h-4 w-4 mr-1 text-primary-green" /> Product Image Preset *
+              {/* Image Upload or URL */}
+              <div className="space-y-4">
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center justify-between">
+                  <span className="flex items-center">
+                    <ImageIcon className="h-4 w-4 mr-1 text-primary-green" /> Product Images ({imagesList.length}/5)
+                  </span>
+                  {imagesList.length === 5 && (
+                    <span className="text-[10px] text-primary-green font-bold bg-primary-green/10 px-2 py-0.5 rounded-full uppercase">
+                      Max Limit Reached
+                    </span>
+                  )}
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                  {IMAGE_PRESETS.map((preset) => (
-                    <button
-                      key={preset.name}
-                      type="button"
-                      onClick={() => {
-                        setImageUrl(preset.url);
-                        setCustomImageUrl("");
-                      }}
-                      className={`relative aspect-square rounded-xl overflow-hidden border-2 transition ${
-                        imageUrl === preset.url && !customImageUrl
-                          ? "border-primary-green shadow-md scale-[1.02]"
-                          : "border-transparent hover:border-warm-brown/20"
-                      }`}
-                    >
-                      <img src={preset.url} alt={preset.name} className="w-full h-full object-cover" />
-                      <div className="absolute inset-x-0 bottom-0 bg-black/60 py-1 text-center">
-                        <span className="text-[9px] text-cream-bg font-bold">{preset.name}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
                 
-                <div className="pt-2 space-y-1.5">
-                  <label className="text-[11px] font-bold text-warm-brown/80 uppercase">Or Custom Image URL</label>
-                  <input
-                    type="url"
-                    value={customImageUrl}
-                    onChange={(e) => setCustomImageUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/photo-..."
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:ring-0 focus:outline-none transition"
-                  />
-                </div>
+                <p className="text-[11px] text-text-dark/60 leading-relaxed -mt-2 font-sans">
+                  Upload up to 5 images from your device or paste web links. Both are optional. If left blank, a beautiful regional placeholder will be used.
+                </p>
+
+                {/* Grid of existing images */}
+                {imagesList.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-3 bg-white border border-warm-brown/10 rounded-xl">
+                    {imagesList.map((url, idx) => (
+                      <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-warm-brown/10 bg-primary-green/5 group">
+                        <img src={url} alt={`Product image ${idx + 1}`} className="w-full h-full object-cover" onError={(e) => {
+                          (e.target as HTMLImageElement).src = FALLBACK_PRODUCT_IMAGE;
+                        }} />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={() => setImagesList(prev => prev.filter((_, i) => i !== idx))}
+                            className="p-1.5 rounded-full bg-red-600 text-white hover:bg-red-700 transition"
+                            title="Remove image"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 text-[8px] bg-black/60 text-white rounded font-bold">
+                          #{idx + 1}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {imagesList.length < 5 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* File Upload Area */}
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-warm-brown/80 uppercase flex items-center">
+                        <Upload className="h-3 w-3 mr-1 text-warm-brown" /> Upload Image File
+                      </label>
+                      <div className="relative border-2 border-dashed border-warm-brown/20 hover:border-primary-green/50 bg-[#FAF7F2] hover:bg-cream-bg transition rounded-xl p-4 flex flex-col items-center justify-center text-center cursor-pointer min-h-[140px]">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={handleFileChange}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        />
+                        <Upload className="h-6 w-6 text-warm-brown/60 mb-2" />
+                        <span className="text-xs font-semibold text-text-dark/80 font-sans">Click or drag images here</span>
+                        <span className="text-[10px] text-text-dark/50 mt-1 font-sans">Supports multiple files, up to {5 - imagesList.length} more</span>
+                      </div>
+                    </div>
+
+                    {/* Web URL input */}
+                    <div className="space-y-1.5 flex flex-col justify-start">
+                      <label className="text-[11px] font-bold text-warm-brown/80 uppercase flex items-center">
+                        <LinkIcon className="h-3 w-3 mr-1 text-warm-brown" /> Add Image Link
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          value={customImageUrl}
+                          onChange={(e) => setCustomImageUrl(e.target.value)}
+                          placeholder="https://images.unsplash.com/photo-..."
+                          className="flex-grow px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:ring-0 focus:outline-none transition font-sans"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddCustomUrl}
+                          className="px-4 py-2.5 rounded-xl bg-primary-green text-cream-bg font-semibold text-xs hover:bg-[#224f3b] transition shrink-0 uppercase tracking-wider font-sans"
+                        >
+                          Add
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-text-dark/50 mt-1 font-sans">
+                        Paste any public image link and click "Add".
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Description */}
@@ -419,6 +547,67 @@ export default function DashboardPage() {
                   placeholder="e.g. Sourced from organic, shade-grown cardamoms cultivated in Idukki slopes, Kerala."
                   className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:ring-0 focus:outline-none transition resize-y"
                 />
+              </div>
+
+              {/* Related Verification Documents Section (Mandatory) */}
+              <div className="space-y-4 pt-2 border-t border-warm-brown/10">
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center justify-between">
+                  <span className="flex items-center">
+                    <FileText className="h-4 w-4 mr-1 text-primary-green" /> Related Verification Documents *
+                  </span>
+                  {documentsList.length > 0 ? (
+                    <span className="text-[10px] text-primary-green font-bold bg-primary-green/10 px-2.5 py-0.5 rounded-full uppercase">
+                      {documentsList.length} Document(s) Added
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-red-600 font-bold bg-red-50 px-2.5 py-0.5 rounded-full uppercase">
+                      Required
+                    </span>
+                  )}
+                </label>
+                
+                <p className="text-[11px] text-text-dark/60 leading-relaxed -mt-2 font-sans">
+                  Please upload certifications, lab test reports, or trade licenses validating the quality and origin of your traditional product. At least one document must be uploaded.
+                </p>
+
+                <div className="space-y-3">
+                  <div className="relative border-2 border-dashed border-warm-brown/20 hover:border-primary-green/50 bg-[#FAF7F2] hover:bg-cream-bg transition rounded-xl p-5 flex flex-col items-center justify-center text-center cursor-pointer min-h-[110px]">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                      multiple
+                      required={documentsList.length === 0}
+                      onChange={handleDocumentChange}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    />
+                    <Upload className="h-5 w-5 text-warm-brown/60 mb-2" />
+                    <span className="text-xs font-semibold text-text-dark/80 font-sans">Click or drag verification files here</span>
+                    <span className="text-[10px] text-text-dark/50 mt-1 font-sans">Supports PDF, DOCX, PNG, JPG (Max 5MB each)</span>
+                  </div>
+
+                  {documentsList.length > 0 && (
+                    <div className="space-y-2">
+                      {documentsList.map((doc, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-3 bg-white border border-warm-brown/10 rounded-xl shadow-sm">
+                          <div className="flex items-center space-x-2.5 min-w-0">
+                            <FileText className="h-4 w-4 text-primary-green shrink-0" />
+                            <span className="text-xs font-semibold text-text-dark truncate max-w-[200px] sm:max-w-md font-sans">
+                              {doc.name}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setDocumentsList(prev => prev.filter((_, i) => i !== idx))}
+                            className="p-1 rounded-full text-red-600 hover:bg-red-50 transition shrink-0"
+                            title="Remove document"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Tags Multi-select */}

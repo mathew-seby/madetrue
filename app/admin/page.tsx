@@ -68,14 +68,24 @@ export default function AdminPage() {
   };
 
   const handleApproval = async (productId: string, status: "approved" | "rejected" | "pending") => {
+    let reason = "";
+    if (status === "rejected") {
+      const inputReason = window.prompt("Please enter a reason for rejecting this product listing (this will be sent to the seller):");
+      if (inputReason === null) {
+        // User cancelled the prompt, abort the rejection action
+        return;
+      }
+      reason = inputReason.trim() || "No specific reason provided.";
+    }
+
     try {
-      const updated = await updateProductStatus(productId, status);
+      const updated = await updateProductStatus(productId, status, reason);
       if (updated) {
         let msg = "";
         if (status === "approved") {
           msg = `Product "${updated.name}" has been approved for listing.`;
         } else if (status === "rejected") {
-          msg = `Product "${updated.name}" has been rejected.`;
+          msg = `Product "${updated.name}" has been rejected. Reason: ${reason}`;
         } else {
           msg = `Product "${updated.name}" has been sent back for re-review.`;
         }

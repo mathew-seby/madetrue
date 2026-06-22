@@ -38,6 +38,7 @@ export interface Product {
   origin_details: string;
   created_at: string;
   status?: 'pending' | 'approved' | 'rejected';
+  documents?: { name: string; url: string }[];
 }
 
 export interface Order {

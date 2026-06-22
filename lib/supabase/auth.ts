@@ -238,7 +238,9 @@ export async function upgradeToSeller(
 export async function updateUserProfile(
   userId: string,
   name: string,
-  password?: string
+  password?: string,
+  oldPassword?: string,
+  languagePref?: string
 ): Promise<User> {
   await new Promise((resolve) => setTimeout(resolve, 300));
   const users = getStoredUsers();
@@ -253,10 +255,21 @@ export async function updateUserProfile(
     users[userIdx].name = name.trim();
   }
 
+  // Update language preference
+  if (languagePref) {
+    users[userIdx].language_pref = languagePref;
+  }
+
   // Update password if provided
   if (password && password.trim()) {
+    if (!oldPassword) {
+      throw new Error("Old password is required to change passcode.");
+    }
+    if (users[userIdx].passwordHash !== oldPassword) {
+      throw new Error("Incorrect old password. Please try again.");
+    }
     if (password.length < 6) {
-      throw new Error("Password must be at least 6 characters long.");
+      throw new Error("New password must be at least 6 characters long.");
     }
     users[userIdx].passwordHash = password;
   }
@@ -270,5 +283,25 @@ export async function updateUserProfile(
   }
 
   return cleanUser;
+}
+
+export async function forgotPassword(identifier: string): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const users = getStoredUsers();
+  
+  const isEmailInput = identifier.includes("@");
+  const user = users.find(
+    (u) =>
+      (isEmailInput && u.email.toLowerCase() === identifier.toLowerCase()) ||
+      (!isEmailInput && u.phone === identifier)
+  );
+
+  const targetEmail = isEmailInput ? identifier : (user?.email || `${identifier.replace(/\D/g, "")}@madetrue.in`);
+  const resetLink = `https://madetrue.in/profile?reset-token=mock-${Date.now()}`;
+  
+  console.log(
+    `%c[MOCK EMAIL SERVICE] To: ${targetEmail}\nSubject: Password Reset Link\n\nDear User,\n\nWe received a request to reset your password on MADETRUE.\n\nClick the link below to change your password:\n${resetLink}\n\nIf you did not request this, you can ignore this email.\n\nSincerely,\nMADETRUE Admin Team`,
+    "background: #2D6A4F; color: #FAF7F2; padding: 12px; font-family: monospace; border-left: 4px solid #E9A84C; line-height: 1.5;"
+  );
 }
 

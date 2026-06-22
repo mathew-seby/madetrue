@@ -127,6 +127,14 @@ export async function getProductsBySellerId(sellerId: string): Promise<Product[]
 
 /* ADMIN & SELLER ACTIONS (MOCKED) */
 
+// Helper to log a mock email receipt in the developer console
+export function sendMockEmail(to: string, subject: string, body: string) {
+  console.log(
+    `%c[MOCK EMAIL SERVICE] To: ${to}\nSubject: ${subject}\n\n${body}`,
+    "background: #2D6A4F; color: #FAF7F2; padding: 12px; font-family: monospace; border-left: 4px solid #E9A84C; line-height: 1.5;"
+  );
+}
+
 // Get all products (including pending and rejected) for admin
 export async function getAllProductsAdmin(): Promise<Product[]> {
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -147,13 +155,27 @@ export async function addProduct(productData: Omit<Product, "id" | "created_at">
 
   products.push(newProduct);
   saveStoredProducts(products);
+
+  // Send Submission Email to Seller
+  const sellers = getStoredSellers();
+  const seller = sellers.find(s => s.id === productData.seller_id);
+  if (seller) {
+    const sellerEmail = `${seller.business_name.toLowerCase().replace(/[^a-z0-9]/g, "")}@madetrue.in`;
+    sendMockEmail(
+      sellerEmail,
+      `Submission Received: ${newProduct.name}`,
+      `Dear ${seller.business_name},\n\nYour product listing for "${newProduct.name}" (₹${newProduct.price}) has been successfully submitted to the MADETRUE Admin Panel for review.\n\nOur team is validating the authenticity, sourcing details, and regional badges. You will receive an email once the product has been moderated.\n\nSincerely,\nMADETRUE Admin Team`
+    );
+  }
+
   return newProduct;
 }
 
 // Update the review status of a product (approve/reject)
 export async function updateProductStatus(
   id: string,
-  status: "approved" | "rejected" | "pending"
+  status: "approved" | "rejected" | "pending",
+  reason?: string
 ): Promise<Product | null> {
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
@@ -162,6 +184,29 @@ export async function updateProductStatus(
   if (index !== -1) {
     products[index] = { ...products[index], status };
     saveStoredProducts(products);
+
+    const product = products[index];
+    const sellers = getStoredSellers();
+    const seller = sellers.find(s => s.id === product.seller_id);
+    
+    if (seller) {
+      const sellerEmail = `${seller.business_name.toLowerCase().replace(/[^a-z0-9]/g, "")}@madetrue.in`;
+      let subject = "";
+      let body = "";
+      
+      if (status === "approved") {
+        subject = `Listing Approved: ${product.name}`;
+        body = `Dear ${seller.business_name},\n\nGreat news! Your product listing for "${product.name}" has been approved by the MADETRUE moderation team and is now live for buyers in your region.\n\nThank you for sharing real, local, and authentic goods.\n\nSincerely,\nMADETRUE Admin Team`;
+      } else if (status === "rejected") {
+        subject = `Listing Rejection Notice: ${product.name}`;
+        body = `Dear ${seller.business_name},\n\nThank you for submitting "${product.name}" to MADETRUE. Our moderation team has reviewed your submission.\n\nUnfortunately, we cannot list this product at this time for the following reason:\n- ${reason || "Does not match our trust-first, hyperlocal guidelines."}\n\nYou can review your listing details, make the necessary updates, and re-submit it from your Maker Dashboard.\n\nSincerely,\nMADETRUE Admin Team`;
+      }
+
+      if (subject && body) {
+        sendMockEmail(sellerEmail, subject, body);
+      }
+    }
+
     return products[index];
   }
   

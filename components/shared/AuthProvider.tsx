@@ -12,7 +12,8 @@ import {
   updateUserProfile,
   validateEmail,
   validatePhone,
-  isEmail
+  isEmail,
+  forgotPassword
 } from "@/lib/supabase/auth";
 import { Mail, Phone, Lock, User as UserIcon, ShieldCheck, ArrowRight, Eye, EyeOff, Sparkles, CheckCircle } from "lucide-react";
 
@@ -30,7 +31,8 @@ interface AuthContextType {
     lat?: number,
     lng?: number
   ) => Promise<void>;
-  updateUser: (name: string, password?: string) => Promise<void>;
+  updateUser: (name: string, password?: string, oldPassword?: string, languagePref?: string) => Promise<void>;
+  requestPasswordReset: (identifier: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -103,10 +105,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCurrentUser(result.user);
   };
 
-  const updateUser = async (nameVal: string, passwordVal?: string) => {
+  const updateUser = async (nameVal: string, passwordVal?: string, oldPasswordVal?: string, languagePrefVal?: string) => {
     if (!currentUser) throw new Error("No active user session.");
-    const updated = await updateUserProfile(currentUser.id, nameVal, passwordVal);
+    const updated = await updateUserProfile(currentUser.id, nameVal, passwordVal, oldPasswordVal, languagePrefVal);
     setCurrentUser(updated);
+  };
+
+  const requestPasswordReset = async (identifierVal: string) => {
+    await forgotPassword(identifierVal);
   };
 
 
@@ -205,7 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // If path is admin route or user is authenticated, serve main app
   if (isAdminRoute || currentUser) {
     return (
-      <AuthContext.Provider value={{ currentUser, loading, login, signup, logout, upgradeCurrentUserToSeller, updateUser }}>
+      <AuthContext.Provider value={{ currentUser, loading, login, signup, logout, upgradeCurrentUserToSeller, updateUser, requestPasswordReset }}>
         {children}
       </AuthContext.Provider>
     );
@@ -213,7 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Otherwise, render full screen gorgeous Login / Registration Page (first interface)
   return (
-    <AuthContext.Provider value={{ currentUser, loading, login, signup, logout, upgradeCurrentUserToSeller, updateUser }}>
+    <AuthContext.Provider value={{ currentUser, loading, login, signup, logout, upgradeCurrentUserToSeller, updateUser, requestPasswordReset }}>
       <div className="min-h-screen bg-cream-bg flex flex-col md:flex-row">
         
         {/* Left pane: Story & Vibe (Desktop only) */}
