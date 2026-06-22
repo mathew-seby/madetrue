@@ -31,8 +31,8 @@ export default function DashboardPage() {
   const [stock, setStock] = useState("10");
   const [originDetails, setOriginDetails] = useState("");
   const [productAddress, setProductAddress] = useState("");
-  const [productLat, setProductLat] = useState("9.9312");
-  const [productLng, setProductLng] = useState("76.2673");
+  const [productLat, setProductLat] = useState("");
+  const [productLng, setProductLng] = useState("");
   const [productGmapsInput, setProductGmapsInput] = useState("");
   const [productLocationOption, setProductLocationOption] = useState<"paste" | "select">("select");
 
@@ -46,9 +46,7 @@ export default function DashboardPage() {
           setSubmitError("");
         },
         () => {
-          setSubmitError("Could not access your location. Pre-filled Kochi central instead.");
-          setProductLat("9.9312");
-          setProductLng("76.2673");
+          setSubmitError("Could not access your location. Please paste coordinates manually or try again.");
         }
       );
     } else {
@@ -208,7 +206,8 @@ export default function DashboardPage() {
     }
 
     if (!productAddress.trim() || !productLat.trim() || !productLng.trim()) {
-      setSubmitError("Please fill out the product sourcing location details.");
+      setSubmitError("Please set the product sourcing location. Use the location selector to detect your location or paste Google Maps coordinates.");
+      setLoading(false);
       return;
     }
 
@@ -258,8 +257,8 @@ export default function DashboardPage() {
       setDocumentsList([]);
       setCustomImageUrl("");
       setProductAddress("");
-      setProductLat("9.9312");
-      setProductLng("76.2673");
+      setProductLat("");
+      setProductLng("");
       setProductGmapsInput("");
 
       // Refresh list
@@ -343,8 +342,8 @@ export default function DashboardPage() {
           <button
             onClick={() => setActiveTab("list")}
             className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 ${activeTab === "list"
-                ? "border-primary-green text-primary-green"
-                : "border-transparent text-text-dark/50 hover:text-text-dark"
+              ? "border-primary-green text-primary-green"
+              : "border-transparent text-text-dark/50 hover:text-text-dark"
               }`}
           >
             My Products ({myProducts.length})
@@ -352,8 +351,8 @@ export default function DashboardPage() {
           <button
             onClick={() => setActiveTab("add")}
             className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center ${activeTab === "add"
-                ? "border-primary-green text-primary-green"
-                : "border-transparent text-text-dark/50 hover:text-text-dark"
+              ? "border-primary-green text-primary-green"
+              : "border-transparent text-text-dark/50 hover:text-text-dark"
               }`}
           >
             <PlusCircle className="h-4 w-4 mr-1.5" /> Submit New Product
@@ -638,22 +637,20 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         onClick={() => setProductLocationOption("paste")}
-                        className={`px-3 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                          productLocationOption === "paste"
-                            ? "bg-primary-green text-cream-bg border-primary-green shadow-sm"
-                            : "bg-white text-text-dark/70 border-warm-brown/20 hover:border-warm-brown/40"
-                        }`}
+                        className={`px-3 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-1.5 cursor-pointer ${productLocationOption === "paste"
+                          ? "bg-primary-green text-cream-bg border-primary-green shadow-sm"
+                          : "bg-white text-text-dark/70 border-warm-brown/20 hover:border-warm-brown/40"
+                          }`}
                       >
                         📋 Paste Link / Coords
                       </button>
                       <button
                         type="button"
                         onClick={() => setProductLocationOption("select")}
-                        className={`px-3 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                          productLocationOption === "select"
-                            ? "bg-primary-green text-cream-bg border-primary-green shadow-sm"
-                            : "bg-white text-text-dark/70 border-warm-brown/20 hover:border-warm-brown/40"
-                        }`}
+                        className={`px-3 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-1.5 cursor-pointer ${productLocationOption === "select"
+                          ? "bg-primary-green text-cream-bg border-primary-green shadow-sm"
+                          : "bg-white text-text-dark/70 border-warm-brown/20 hover:border-warm-brown/40"
+                          }`}
                       >
                         📍 Use Current / Maps
                       </button>
@@ -740,10 +737,15 @@ export default function DashboardPage() {
                     )}
 
                     {/* Coordinates confirmation preview */}
-                    {productLat && productLng && (
+                    {productLat && productLng ? (
                       <div className="text-[10px] font-bold text-primary-green bg-primary-green/10 border border-primary-green/20 px-3 py-2 rounded-xl flex items-center justify-between font-sans">
-                        <span>Coordinates Locked: {parseFloat(productLat).toFixed(4)}, {parseFloat(productLng).toFixed(4)}</span>
-                        <span className="uppercase text-[8px] bg-primary-green text-cream-bg px-1.5 py-0.5 rounded-full font-sans">Locked</span>
+                        <span>📍 Location Set: {parseFloat(productLat).toFixed(4)}, {parseFloat(productLng).toFixed(4)}</span>
+                        <span className="uppercase text-[8px] bg-primary-green text-cream-bg px-1.5 py-0.5 rounded-full font-sans">Set</span>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl flex items-center justify-between font-sans">
+                        <span>⚠️ No location set yet — please detect or paste coordinates above</span>
+                        <span className="uppercase text-[8px] bg-amber-600 text-white px-1.5 py-0.5 rounded-full font-sans">Required</span>
                       </div>
                     )}
                   </div>
@@ -823,8 +825,8 @@ export default function DashboardPage() {
                         type="button"
                         onClick={() => handleTagToggle(tag)}
                         className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${isSelected
-                            ? "bg-primary-green text-cream-bg shadow-sm"
-                            : "bg-cream-bg text-text-dark/75 border border-warm-brown/15 hover:border-warm-brown/30"
+                          ? "bg-primary-green text-cream-bg shadow-sm"
+                          : "bg-cream-bg text-text-dark/75 border border-warm-brown/15 hover:border-warm-brown/30"
                           }`}
                       >
                         {tag}
