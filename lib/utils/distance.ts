@@ -46,3 +46,40 @@ export function isInErnakulam(lat: number, lng: number, address?: string): boole
 
   return lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng;
 }
+
+export function parseGoogleMapsUrl(input: string): { lat: number; lng: number } | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  // 1. Check for @latitude,longitude format (found in standard Google Maps browser URLs)
+  const atMatch = trimmed.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (atMatch) {
+    const lat = parseFloat(atMatch[1]);
+    const lng = parseFloat(atMatch[2]);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      return { lat, lng };
+    }
+  }
+
+  // 2. Check for query parameters q=latitude,longitude or query=latitude,longitude
+  const qMatch = trimmed.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) || trimmed.match(/[?&]query=(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (qMatch) {
+    const lat = parseFloat(qMatch[1]);
+    const lng = parseFloat(qMatch[2]);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      return { lat, lng };
+    }
+  }
+
+  // 3. Check for simple raw coordinates input (e.g., "9.9312, 76.2673" or "9.9312,76.2673")
+  const rawMatch = trimmed.match(/^(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)$/);
+  if (rawMatch) {
+    const lat = parseFloat(rawMatch[1]);
+    const lng = parseFloat(rawMatch[2]);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      return { lat, lng };
+    }
+  }
+
+  return null;
+}

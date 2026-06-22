@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CreditCard, ArrowLeft, CheckCircle, MapPin, AlertCircle, ShoppingBag, Phone, User as UserIcon, MessageSquare } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
-import { isInErnakulam } from "@/lib/utils/distance";
+import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
 import { Product } from "@/types";
 
 interface CartItem {
@@ -29,6 +29,18 @@ export default function CheckoutPage() {
   const [lng, setLng] = useState("76.2673"); // central Kochi
   const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">("delivery");
   const [paymentMethod, setPaymentMethod] = useState<"cod" | "upi">("cod");
+  const [gmapsInput, setGmapsInput] = useState("");
+  const [checkoutLocationOption, setCheckoutLocationOption] = useState<"paste" | "select">("select");
+
+  const handleCheckoutGmapsParse = (val: string) => {
+    setGmapsInput(val);
+    const coords = parseGoogleMapsUrl(val);
+    if (coords) {
+      setLat(coords.lat.toString());
+      setLng(coords.lng.toString());
+      setErrorMsg("");
+    }
+  };
 
   // Feedback states
   const [errorMsg, setErrorMsg] = useState("");
@@ -348,8 +360,8 @@ export default function CheckoutPage() {
                       {deliveryType === "delivery" ? "Delivery Destination Address *" : "Pickup Confirmation Address *"}
                     </label>
                   </div>
-
                   <div className="space-y-3">
+                    {/* Street Address (always visible) */}
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-warm-brown uppercase">Street Address / Landmark *</label>
                       <textarea
@@ -362,50 +374,104 @@ export default function CheckoutPage() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-warm-brown uppercase">Latitude Coordinate *</label>
-                        <input
-                          type="text"
-                          required
-                          value={lat}
-                          onChange={(e) => setLat(e.target.value)}
-                          placeholder="e.g. 9.9312"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:outline-none transition font-sans"
-                        />
+                    {/* 2-option toggle buttons */}
+                    <div className="bg-primary-green/5 border border-primary-green/10 p-4 rounded-2xl space-y-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCheckoutLocationOption("paste")}
+                          className={`px-3 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                            checkoutLocationOption === "paste"
+                              ? "bg-primary-green text-cream-bg border-primary-green shadow-sm"
+                              : "bg-white text-text-dark/70 border-warm-brown/20 hover:border-warm-brown/40"
+                          }`}
+                        >
+                          📋 Paste Link / Coords
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCheckoutLocationOption("select")}
+                          className={`px-3 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                            checkoutLocationOption === "select"
+                              ? "bg-primary-green text-cream-bg border-primary-green shadow-sm"
+                              : "bg-white text-text-dark/70 border-warm-brown/20 hover:border-warm-brown/40"
+                          }`}
+                        >
+                          📍 Use Current / Maps
+                        </button>
                       </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-warm-brown uppercase">Longitude Coordinate *</label>
-                        <input
-                          type="text"
-                          required
-                          value={lng}
-                          onChange={(e) => setLng(e.target.value)}
-                          placeholder="e.g. 76.2673"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:outline-none transition font-sans"
-                        />
-                      </div>
-                    </div>
 
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={detectLocation}
-                        className="px-3.5 py-1.5 rounded-xl bg-white border border-warm-brown/20 text-xs font-semibold text-warm-brown hover:bg-warm-brown/5 transition font-sans cursor-pointer"
-                      >
-                        Auto-Detect Coordinates
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAddress("Central Kochi, Ernakulam, Kerala");
-                          setLat("9.9312");
-                          setLng("76.2673");
-                        }}
-                        className="px-3.5 py-1.5 rounded-xl bg-white border border-warm-brown/20 text-xs font-semibold text-warm-brown hover:bg-warm-brown/5 transition font-sans cursor-pointer"
-                      >
-                        Default Kochi Central
-                      </button>
+                      {/* Option 1: Paste Google Maps Link or Coordinates */}
+                      {checkoutLocationOption === "paste" && (
+                        <div className="space-y-2 animate-fadeIn">
+                          <label className="text-[10px] font-bold text-warm-brown uppercase">Paste Google Maps Link or Coordinates</label>
+                          <input
+                            type="text"
+                            value={gmapsInput}
+                            onChange={(e) => handleCheckoutGmapsParse(e.target.value)}
+                            placeholder="Paste link e.g., https://www.google.com/maps/place/... or coords: 9.9312, 76.2673"
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-white text-xs text-text-dark focus:border-primary-green focus:outline-none transition font-sans"
+                          />
+                          <div className="bg-white/80 border border-warm-brown/10 rounded-xl p-3 space-y-1.5">
+                            <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider">How to get coordinates:</span>
+                            <ol className="text-[9px] text-text-dark/60 leading-relaxed space-y-0.5 list-decimal list-inside font-sans">
+                              <li>Open <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer" className="text-primary-green underline font-semibold">Google Maps</a> in a new tab</li>
+                              <li>Right-click (or long-press on mobile) any location on the map</li>
+                              <li>Click the coordinates that appear at the top of the menu to copy them</li>
+                              <li>Come back here and paste them in the box above</li>
+                            </ol>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Option 2: Use Current Location / Google Maps */}
+                      {checkoutLocationOption === "select" && (
+                        <div className="space-y-3 animate-fadeIn">
+                          <button
+                            type="button"
+                            onClick={detectLocation}
+                            className="w-full px-4 py-3 rounded-xl bg-white border border-warm-brown/20 text-xs font-semibold text-warm-brown hover:bg-warm-brown/5 transition font-sans cursor-pointer flex items-center justify-center gap-2"
+                          >
+                            📍 Detect My Current Location
+                          </button>
+                          <a
+                            href="https://www.google.com/maps/@9.9312,76.2673,13z"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full px-4 py-3 rounded-xl bg-white border border-warm-brown/20 text-xs font-semibold text-warm-brown hover:bg-warm-brown/5 transition font-sans cursor-pointer flex items-center justify-center gap-2"
+                          >
+                            🗺️ Find Location on Google Maps
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddress("Central Kochi, Ernakulam, Kerala");
+                              setLat("9.9312");
+                              setLng("76.2673");
+                              setGmapsInput("");
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-white border border-warm-brown/20 text-xs font-semibold text-warm-brown hover:bg-warm-brown/5 transition font-sans cursor-pointer"
+                          >
+                            Default Kochi Central
+                          </button>
+                          <div className="bg-white/80 border border-warm-brown/10 rounded-xl p-3 space-y-1.5">
+                            <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider">After finding your location on Google Maps:</span>
+                            <ol className="text-[9px] text-text-dark/60 leading-relaxed space-y-0.5 list-decimal list-inside font-sans">
+                              <li>Right-click (or long-press) on your exact location</li>
+                              <li>Click the coordinates to copy them</li>
+                              <li>Switch to <button type="button" onClick={() => setCheckoutLocationOption("paste")} className="text-primary-green underline font-semibold cursor-pointer">Paste Link / Coords</button> and paste them there</li>
+                            </ol>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Coordinates confirmation preview */}
+                      {lat && lng && (
+                        <div className="text-[10px] font-bold text-primary-green bg-primary-green/10 border border-primary-green/20 px-3 py-2 rounded-xl flex items-center justify-between font-sans">
+                          <span>Coordinates Locked: {parseFloat(lat).toFixed(4)}, {parseFloat(lng).toFixed(4)}</span>
+                          <span className="uppercase text-[8px] bg-primary-green text-cream-bg px-1.5 py-0.5 rounded-full font-sans">Locked</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
