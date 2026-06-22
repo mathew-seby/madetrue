@@ -373,15 +373,21 @@ export default function DashboardPage() {
                   key={product.id}
                   className="bg-[#FAF7F2] p-5 rounded-2xl border border-warm-brown/10 flex gap-4 hover:border-primary-green/20 transition shadow-sm"
                 >
-                  <img
-                    src={product.images[0]}
-                    alt={product.name}
-                    className="w-20 h-20 rounded-xl object-cover border border-warm-brown/5 shrink-0 bg-primary-green/5"
-                  />
+                  <Link href={`/products/${product.id}`} className="shrink-0">
+                    <img
+                      src={product.images[0]}
+                      alt={product.name}
+                      className="w-20 h-20 rounded-xl object-cover border border-warm-brown/5 bg-primary-green/5 hover:opacity-85 transition duration-200"
+                    />
+                  </Link>
                   <div className="flex-grow flex flex-col justify-between space-y-2">
                     <div>
                       <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-serif text-base font-bold text-text-dark line-clamp-1">{product.name}</h3>
+                        <Link href={`/products/${product.id}`} className="flex-grow">
+                          <h3 className="font-serif text-base font-bold text-text-dark hover:text-primary-green transition duration-200 line-clamp-1">
+                            {product.name}
+                          </h3>
+                        </Link>
                         <span className="font-semibold text-primary-green shrink-0">₹{product.price}</span>
                       </div>
                       <p className="text-xs text-text-dark/60 line-clamp-2 mt-0.5 leading-relaxed">{product.description}</p>

@@ -4,11 +4,36 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getProducts, getSellers } from "@/lib/supabase/client";
 import { Product, Seller } from "@/types";
-import { ShoppingCart, Heart, Store } from "lucide-react";
+import { ShoppingCart, Heart, Store, Check } from "lucide-react";
 
 export default function TrendingProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [sellers, setSellers] = useState<{ [key: string]: Seller }>({});
+  const [addedProductId, setAddedProductId] = useState<string | null>(null);
+
+  const handleAddToCart = (product: Product) => {
+    const stored = localStorage.getItem("madetrue_cart");
+    let cart: { product: Product; quantity: number }[] = [];
+    if (stored) {
+      try {
+        cart = JSON.parse(stored);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    const existingIndex = cart.findIndex((item) => item.product.id === product.id);
+    if (existingIndex !== -1) {
+      cart[existingIndex].quantity += 1;
+    } else {
+      cart.push({ product, quantity: 1 });
+    }
+    localStorage.setItem("madetrue_cart", JSON.stringify(cart));
+    window.dispatchEvent(new Event("cart-updated"));
+    setAddedProductId(product.id);
+    setTimeout(() => {
+      setAddedProductId(null);
+    }, 1500);
+  };
 
   useEffect(() => {
     async function load() {
@@ -80,11 +105,13 @@ export default function TrendingProducts() {
               >
                 {/* Image & Favorite Button */}
                 <div className="relative aspect-square bg-primary-green/5 border-b border-warm-brown/5 overflow-hidden">
-                  <img
-                    src={product.images[0]}
-                    alt={product.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                  />
+                  <Link href={`/products/${product.id}`} className="block h-full w-full">
+                    <img
+                      src={product.images[0]}
+                      alt={product.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                    />
+                  </Link>
                   {/* Favorite button */}
                   <button className="absolute top-3 right-3 p-2 rounded-full bg-cream-bg/80 hover:bg-cream-bg text-text-dark hover:text-red-500 shadow-sm transition">
                     <Heart className="h-4.5 w-4.5" />
@@ -146,8 +173,19 @@ export default function TrendingProducts() {
                     >
                       Meet the Maker
                     </Link>
-                    <button className="flex items-center justify-center p-2 rounded-xl bg-primary-green text-cream-bg hover:bg-[#224f3b] transition duration-200">
-                      <ShoppingCart className="h-4 w-4" />
+                    <button
+                      onClick={() => handleAddToCart(product)}
+                      className={`flex items-center justify-center p-2 rounded-xl transition duration-200 ${
+                        addedProductId === product.id
+                          ? "bg-emerald-600 text-white scale-105"
+                          : "bg-primary-green text-cream-bg hover:bg-[#224f3b]"
+                      }`}
+                    >
+                      {addedProductId === product.id ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <ShoppingCart className="h-4 w-4" />
+                      )}
                     </button>
                   </div>
                 </div>

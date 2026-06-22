@@ -6,7 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { getProducts, getCategories, getSellers } from "@/lib/supabase/client";
 import { Product, Seller, Category } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
-import { Search, MapPin, Store, ShoppingCart, Heart, SlidersHorizontal } from "lucide-react";
+import { Search, MapPin, Store, ShoppingCart, Heart, SlidersHorizontal, Check } from "lucide-react";
 
 // Default location (Kochi, Kerala)
 const DEFAULT_LAT = 9.9816;
@@ -20,12 +20,37 @@ function ProductListingContent() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [sellers, setSellers] = useState<{ [key: string]: Seller }>({});
+  const [addedProductId, setAddedProductId] = useState<string | null>(null);
 
   // Filter & Sort States
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [sortBy, setSortBy] = useState<string>("newest");
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  const handleAddToCart = (product: Product) => {
+    const stored = localStorage.getItem("madetrue_cart");
+    let cart: { product: Product; quantity: number }[] = [];
+    if (stored) {
+      try {
+        cart = JSON.parse(stored);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    const existingIndex = cart.findIndex((item) => item.product.id === product.id);
+    if (existingIndex !== -1) {
+      cart[existingIndex].quantity += 1;
+    } else {
+      cart.push({ product, quantity: 1 });
+    }
+    localStorage.setItem("madetrue_cart", JSON.stringify(cart));
+    window.dispatchEvent(new Event("cart-updated"));
+    setAddedProductId(product.id);
+    setTimeout(() => {
+      setAddedProductId(null);
+    }, 1500);
+  };
 
   // Load static data
   useEffect(() => {
@@ -200,11 +225,13 @@ function ProductListingContent() {
               >
                 {/* Image and badges */}
                 <div className="relative aspect-square overflow-hidden bg-primary-green/5 border-b border-warm-brown/5">
-                  <img
-                    src={product.images[0]}
-                    alt={product.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                  />
+                  <Link href={`/products/${product.id}`} className="block h-full w-full">
+                    <img
+                      src={product.images[0]}
+                      alt={product.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                    />
+                  </Link>
                   {/* Distance tag */}
                   {distance !== null && (
                     <div className="absolute top-3 left-3 inline-flex items-center px-2 py-0.5 rounded-full bg-cream-bg/95 text-[9px] font-bold text-warm-brown shadow-sm border border-warm-brown/10">
@@ -266,8 +293,19 @@ function ProductListingContent() {
                     >
                       Meet the Maker
                     </Link>
-                    <button className="flex items-center justify-center p-2 rounded-xl bg-primary-green text-cream-bg hover:bg-[#224f3b] transition duration-200">
-                      <ShoppingCart className="h-4 w-4" />
+                    <button
+                      onClick={() => handleAddToCart(product)}
+                      className={`flex items-center justify-center p-2 rounded-xl transition duration-200 ${
+                        addedProductId === product.id
+                          ? "bg-emerald-600 text-white scale-105"
+                          : "bg-primary-green text-cream-bg hover:bg-[#224f3b]"
+                      }`}
+                    >
+                      {addedProductId === product.id ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <ShoppingCart className="h-4 w-4" />
+                      )}
                     </button>
                   </div>
                 </div>

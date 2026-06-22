@@ -5,7 +5,7 @@ import Link from "next/link";
 import { getSellerById, getProductsBySellerId } from "@/lib/supabase/client";
 import { Seller, Product } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
-import { MapPin, CheckCircle2, MessageCircle, ArrowLeft, ShoppingCart, Heart } from "lucide-react";
+import { MapPin, CheckCircle2, MessageCircle, ArrowLeft, ShoppingCart, Heart, Check } from "lucide-react";
 
 // Default location Kochi
 const DEFAULT_LAT = 9.9816;
@@ -22,6 +22,31 @@ export default function SellerProfilePage({ params }: PageProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [addedProductId, setAddedProductId] = useState<string | null>(null);
+
+  const handleAddToCart = (product: Product) => {
+    const stored = localStorage.getItem("madetrue_cart");
+    let cart: { product: Product; quantity: number }[] = [];
+    if (stored) {
+      try {
+        cart = JSON.parse(stored);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    const existingIndex = cart.findIndex((item) => item.product.id === product.id);
+    if (existingIndex !== -1) {
+      cart[existingIndex].quantity += 1;
+    } else {
+      cart.push({ product, quantity: 1 });
+    }
+    localStorage.setItem("madetrue_cart", JSON.stringify(cart));
+    window.dispatchEvent(new Event("cart-updated"));
+    setAddedProductId(product.id);
+    setTimeout(() => {
+      setAddedProductId(null);
+    }, 1500);
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -192,11 +217,13 @@ export default function SellerProfilePage({ params }: PageProps) {
                       className="group bg-[#FAF7F2] rounded-2xl border border-warm-brown/10 hover:border-primary-green/30 hover:shadow-md transition duration-300 flex flex-col justify-between overflow-hidden"
                     >
                       <div className="relative aspect-square overflow-hidden bg-primary-green/5 border-b border-warm-brown/5">
-                        <img
-                          src={product.images[0]}
-                          alt={product.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                        />
+                        <Link href={`/products/${product.id}`} className="block h-full w-full">
+                          <img
+                            src={product.images[0]}
+                            alt={product.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                          />
+                        </Link>
                         <button className="absolute top-3 right-3 p-1.5 rounded-full bg-cream-bg/80 hover:bg-cream-bg text-text-dark hover:text-red-500 shadow-sm transition">
                           <Heart className="h-4 w-4" />
                         </button>
@@ -239,8 +266,19 @@ export default function SellerProfilePage({ params }: PageProps) {
                           >
                             Product Details
                           </Link>
-                          <button className="flex items-center justify-center p-2 rounded-xl bg-primary-green text-cream-bg hover:bg-[#224f3b] transition duration-200">
-                            <ShoppingCart className="h-4 w-4" />
+                          <button
+                            onClick={() => handleAddToCart(product)}
+                            className={`flex items-center justify-center p-2 rounded-xl transition duration-200 ${
+                              addedProductId === product.id
+                                ? "bg-emerald-600 text-white scale-105"
+                                : "bg-primary-green text-cream-bg hover:bg-[#224f3b]"
+                            }`}
+                          >
+                            {addedProductId === product.id ? (
+                              <Check className="h-4 w-4" />
+                            ) : (
+                              <ShoppingCart className="h-4 w-4" />
+                            )}
                           </button>
                         </div>
                       </div>
