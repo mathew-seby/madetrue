@@ -129,21 +129,20 @@ export default function AdminPage() {
     activeTab === "pending"
       ? pendingProducts
       : activeTab === "approved"
-      ? approvedProducts
-      : rejectedProducts;
+        ? approvedProducts
+        : rejectedProducts;
 
   return (
     <div className="bg-cream-bg min-h-screen py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto space-y-8">
-        
+
         {/* Toast Notification Banner */}
         {toast && (
           <div
-            className={`fixed bottom-5 right-5 z-50 p-4 rounded-xl shadow-lg border text-sm font-semibold flex items-center space-x-2 transition duration-300 animate-slide-up ${
-              toast.type === "success"
+            className={`fixed bottom-5 right-5 z-50 p-4 rounded-xl shadow-lg border text-sm font-semibold flex items-center space-x-2 transition duration-300 animate-slide-up ${toast.type === "success"
                 ? "bg-primary-green/95 text-cream-bg border-primary-green"
                 : "bg-red-800/95 text-cream-bg border-red-900"
-            }`}
+              }`}
           >
             {toast.type === "success" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
             <span>{toast.message}</span>
@@ -161,7 +160,7 @@ export default function AdminPage() {
               <p className="text-xs text-text-dark/60">Manage traditional Kerala submissions, review farmer authenticity, and approve goods.</p>
             </div>
           </div>
-          
+
           <button
             onClick={handleLogout}
             className="inline-flex items-center justify-center px-4 py-2 border border-red-200 hover:bg-red-50 text-xs font-bold text-red-600 rounded-xl transition cursor-pointer self-start sm:self-center"
@@ -209,11 +208,10 @@ export default function AdminPage() {
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 capitalize ${
-                activeTab === tab
+              className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 capitalize ${activeTab === tab
                   ? "border-primary-green text-primary-green"
                   : "border-transparent text-text-dark/50 hover:text-text-dark"
-              }`}
+                }`}
             >
               {tab === "pending" ? "Pending Approval" : tab === "approved" ? "Approved Catalog" : "Rejected Goods"} ({getTabCount(tab)})
             </button>
@@ -306,7 +304,7 @@ export default function AdminPage() {
                       <span className="text-[10px] text-text-dark/40 font-bold uppercase">
                         Submitted: {new Date(product.created_at).toLocaleDateString()}
                       </span>
-                      
+
                       <div className="flex items-center space-x-2">
                         {activeTab !== "approved" && (
                           <button
@@ -348,8 +346,8 @@ export default function AdminPage() {
               {activeTab === "pending"
                 ? "Excellent! The approval queue is fully caught up. All local products have been moderated."
                 : activeTab === "approved"
-                ? "No approved catalog items found. Once approved, items will display here."
-                : "No rejected goods found in historical files."}
+                  ? "No approved catalog items found. Once approved, items will display here."
+                  : "No rejected goods found in historical files."}
             </p>
           </div>
         )}

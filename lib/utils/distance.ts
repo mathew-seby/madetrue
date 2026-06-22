@@ -20,3 +20,29 @@ export function formatDistance(distance: number): string {
   }
   return `${distance.toFixed(1)} km`;
 }
+
+export function isInErnakulam(lat: number, lng: number, address?: string): boolean {
+  if (address) {
+    const addrLower = address.toLowerCase();
+    const otherDistricts = [
+      "alappuzha", "idukki", "kottayam", "pathanamthitta", "kollam", 
+      "thiruvananthapuram", "trivandrum", "thrissur", "palakkad", 
+      "malappuram", "kozhikode", "wayanad", "kannur", "kasaragod"
+    ];
+    for (const district of otherDistricts) {
+      if (addrLower.includes(district)) {
+        // Double check it doesn't just mention "Ernakulam" or "Kochi" as a transit address or comparison
+        // But if it explicitly says e.g. "Pulpally, Wayanad", it is Wayanad.
+        return false;
+      }
+    }
+  }
+
+  // Bounding box of Ernakulam district: Lat [9.77, 10.30], Lng [76.16, 77.09]
+  const minLat = 9.77;
+  const maxLat = 10.30;
+  const minLng = 76.16;
+  const maxLng = 77.09;
+
+  return lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng;
+}

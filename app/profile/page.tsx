@@ -7,6 +7,7 @@ import { User as UserIcon, ShieldCheck, Mail, Phone, LogOut, Store, ArrowLeft, A
 import Link from "next/link";
 import { getSellers } from "@/lib/supabase/client";
 import { Seller } from "@/types";
+import { isInErnakulam } from "@/lib/utils/distance";
 
 export default function ProfilePage() {
   const { currentUser, logout, upgradeCurrentUserToSeller, updateUser, requestPasswordReset } = useAuth();
@@ -66,14 +67,23 @@ export default function ProfilePage() {
       return;
     }
 
+    const latitude = parseFloat(lat) || 9.9312;
+    const longitude = parseFloat(lng) || 76.2673;
+
+    if (!isInErnakulam(latitude, longitude, address.trim())) {
+      setErrorMsg("MADETRUE currently only operates in Ernakulam district. Your business location must be within Ernakulam.");
+      setLoading(false);
+      return;
+    }
+
     try {
       await upgradeCurrentUserToSeller(
         businessName.trim(),
         story.trim(),
         whatsappNumber.trim(),
         address.trim(),
-        parseFloat(lat) || 9.9312,
-        parseFloat(lng) || 76.2673
+        latitude,
+        longitude
       );
       setSuccess(true);
       setTimeout(() => {

@@ -6,6 +6,7 @@ import { getSellers, getCategories, addProduct, getSellers as fetchSellers, getA
 import { Seller, Category, Product } from "@/types";
 import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
+import { isInErnakulam } from "@/lib/utils/distance";
 
 const FALLBACK_PRODUCT_IMAGE = "https://images.unsplash.com/photo-1541832676-9b763b0239ab?w=600&auto=format&fit=crop&q=80"; // Traditional clay pot
 
@@ -29,6 +30,9 @@ export default function DashboardPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [stock, setStock] = useState("10");
   const [originDetails, setOriginDetails] = useState("");
+  const [productAddress, setProductAddress] = useState("");
+  const [productLat, setProductLat] = useState("9.9312");
+  const [productLng, setProductLng] = useState("76.2673");
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
@@ -170,6 +174,24 @@ export default function DashboardPage() {
       return;
     }
 
+    if (!productAddress.trim() || !productLat.trim() || !productLng.trim()) {
+      setSubmitError("Please fill out the product sourcing location details.");
+      return;
+    }
+
+    const latitude = parseFloat(productLat);
+    const longitude = parseFloat(productLng);
+
+    if (isNaN(latitude) || isNaN(longitude)) {
+      setSubmitError("Please enter valid numeric coordinates for sourcing location.");
+      return;
+    }
+
+    if (!isInErnakulam(latitude, longitude, productAddress.trim())) {
+      setSubmitError("MADETRUE currently only operates in Ernakulam district. The product sourcing location must be within Ernakulam (Lat: 9.77 to 10.30, Lng: 76.16 to 77.09).");
+      return;
+    }
+
     const finalImages = imagesList.length > 0 ? imagesList : [FALLBACK_PRODUCT_IMAGE];
 
     try {
@@ -185,6 +207,9 @@ export default function DashboardPage() {
         is_available: true,
         origin_details: originDetails,
         documents: documentsList,
+        lat: latitude,
+        lng: longitude,
+        address: productAddress.trim(),
       });
 
       setSubmitSuccess(true);
@@ -199,6 +224,9 @@ export default function DashboardPage() {
       setImagesList([]);
       setDocumentsList([]);
       setCustomImageUrl("");
+      setProductAddress("");
+      setProductLat("9.9312");
+      setProductLng("76.2673");
 
       // Refresh list
       const updatedProds = await getAllProductsAdmin();
@@ -545,6 +573,83 @@ export default function DashboardPage() {
                   placeholder="e.g. Sourced from organic, shade-grown cardamoms cultivated in Idukki slopes, Kerala."
                   className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:ring-0 focus:outline-none transition resize-y"
                 />
+              </div>
+
+              {/* Product Sourcing Location (Ernakulam District Only) */}
+              <div className="space-y-4 pt-2 border-t border-warm-brown/10">
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
+                  Product Sourcing Location * (Ernakulam District Only)
+                </label>
+                <p className="text-[11px] text-text-dark/60 leading-relaxed -mt-2 font-sans">
+                  Enter the specific production or harvest address and coordinates. This will be verified. MADETRUE only supports items sourced from Ernakulam district.
+                </p>
+
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-warm-brown uppercase">Sourcing Physical Address *</label>
+                    <textarea
+                      required
+                      rows={2}
+                      value={productAddress}
+                      onChange={(e) => setProductAddress(e.target.value)}
+                      placeholder="e.g. Organic Pepper Garden, Near InfoPark, Kakkanad, Kochi, Ernakulam, Kerala"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:ring-0 focus:outline-none transition resize-y"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-warm-brown uppercase">Latitude *</label>
+                      <input
+                        type="text"
+                        required
+                        value={productLat}
+                        onChange={(e) => setProductLat(e.target.value)}
+                        placeholder="e.g. 9.9312"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:ring-0 focus:outline-none transition font-sans"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-warm-brown uppercase">Longitude *</label>
+                      <input
+                        type="text"
+                        required
+                        value={productLng}
+                        onChange={(e) => setProductLng(e.target.value)}
+                        placeholder="e.g. 76.2673"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:ring-0 focus:outline-none transition font-sans"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const currentSeller = sellers.find(s => s.id === selectedSellerId);
+                        if (currentSeller) {
+                          setProductAddress(currentSeller.address);
+                          setProductLat(currentSeller.lat.toString());
+                          setProductLng(currentSeller.lng.toString());
+                        }
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-white border border-warm-brown/20 text-xs font-semibold text-warm-brown hover:bg-warm-brown/5 transition font-sans cursor-pointer"
+                    >
+                      Copy Seller Address & Coords
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProductAddress("Central Kochi, Ernakulam, Kerala");
+                        setProductLat("9.9312");
+                        setProductLng("76.2673");
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-white border border-warm-brown/20 text-xs font-semibold text-warm-brown hover:bg-warm-brown/5 transition font-sans cursor-pointer"
+                    >
+                      Default Kochi Central
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Related Verification Documents Section (Mandatory) */}

@@ -24,6 +24,32 @@ export default function ProductDetailPage({ params }: PageProps) {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
+  const [addedToCart, setAddedToCart] = useState(false);
+
+  const handleAddToBasket = () => {
+    if (!product) return;
+    const stored = localStorage.getItem("madetrue_cart");
+    let cart: { product: Product; quantity: number }[] = [];
+    if (stored) {
+      try {
+        cart = JSON.parse(stored);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    const existingIndex = cart.findIndex((item) => item.product.id === product.id);
+    if (existingIndex !== -1) {
+      cart[existingIndex].quantity += quantity;
+    } else {
+      cart.push({ product, quantity });
+    }
+    localStorage.setItem("madetrue_cart", JSON.stringify(cart));
+    window.dispatchEvent(new Event("cart-updated"));
+    setAddedToCart(true);
+    setTimeout(() => {
+      setAddedToCart(false);
+    }, 2000);
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -228,9 +254,12 @@ export default function ProductDetailPage({ params }: PageProps) {
 
               {/* Order Actions */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button className="inline-flex items-center justify-center px-5 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200">
+                <button
+                  onClick={handleAddToBasket}
+                  className="inline-flex items-center justify-center px-5 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200 cursor-pointer"
+                >
                   <ShoppingBag className="h-4.5 w-4.5 mr-2" />
-                  Add to Basket
+                  {addedToCart ? "Added to Basket! ✓" : "Add to Basket"}
                 </button>
                 {seller && (
                   <a

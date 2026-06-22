@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { MapPin, ShoppingCart, Menu, X, Globe, User as UserIcon, LogOut } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
@@ -9,6 +9,32 @@ export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [language, setLanguage] = useState<"EN" | "ML">("EN");
   const { currentUser, logout } = useAuth();
+  const [cartCount, setCartCount] = useState(0);
+
+  useEffect(() => {
+    const updateCartCount = () => {
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("madetrue_cart");
+        if (stored) {
+          try {
+            const cart = JSON.parse(stored);
+            const count = cart.reduce((acc: number, item: any) => acc + item.quantity, 0);
+            setCartCount(count);
+          } catch (e) {
+            setCartCount(0);
+          }
+        } else {
+          setCartCount(0);
+        }
+      }
+    };
+
+    updateCartCount();
+    window.addEventListener("cart-updated", updateCartCount);
+    return () => {
+      window.removeEventListener("cart-updated", updateCartCount);
+    };
+  }, []);
 
   const toggleLanguage = () => {
     setLanguage((prev) => (prev === "EN" ? "ML" : "EN"));
@@ -25,7 +51,7 @@ export default function Navbar() {
             </Link>
             <div className="hidden sm:flex items-center ml-4 pl-4 border-l border-warm-brown/20 text-xs text-warm-brown font-medium">
               <MapPin className="h-3.5 w-3.5 mr-1 text-primary-green animate-pulse" />
-              <span>Kochi, Kerala (within 15 km)</span>
+              <span>Ernakulam, Kerala (Delivery District)</span>
             </div>
           </div>
 
@@ -67,9 +93,11 @@ export default function Navbar() {
             {/* Cart Icon */}
             <Link href="/cart" className="relative p-2 text-text-dark hover:text-primary-green transition">
               <ShoppingCart className="h-6 w-6" />
-              <span className="absolute top-0 right-0 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none text-cream-bg bg-primary-green">
-                2
-              </span>
+              {cartCount > 0 && (
+                <span className="absolute top-0 right-0 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none text-cream-bg bg-primary-green">
+                  {cartCount}
+                </span>
+              )}
             </Link>
 
             {/* User Profile Info */}
@@ -109,9 +137,11 @@ export default function Navbar() {
 
             <Link href="/cart" className="relative p-1.5 text-text-dark hover:text-primary-green transition">
               <ShoppingCart className="h-5.5 w-5.5" />
-              <span className="absolute top-0 right-0 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[9px] font-bold leading-none text-cream-bg bg-primary-green">
-                2
-              </span>
+              {cartCount > 0 && (
+                <span className="absolute top-0 right-0 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[9px] font-bold leading-none text-cream-bg bg-primary-green">
+                  {cartCount}
+                </span>
+              )}
             </Link>
 
             <button
@@ -127,7 +157,7 @@ export default function Navbar() {
       {/* Mobile Location Sub-bar */}
       <div className="flex items-center justify-center py-2 px-4 bg-primary-green/5 border-t border-warm-brown/5 text-xs text-warm-brown font-medium md:hidden">
         <MapPin className="h-3 w-3 mr-1 text-primary-green" />
-        <span>Deliver to: <b>Kochi, Kerala</b> (within 15 km)</span>
+        <span>Deliver to: <b>Ernakulam, Kerala</b> (Only)</span>
       </div>
 
       {/* Mobile Menu Panel */}

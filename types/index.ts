@@ -40,6 +40,9 @@ export interface Product {
   created_at: string;
   status?: 'pending' | 'approved' | 'rejected';
   documents?: { name: string; url: string }[];
+  lat?: number;
+  lng?: number;
+  address?: string;
 }
 
 export interface Order {
@@ -54,6 +57,8 @@ export interface Order {
   payment_method: 'upi' | 'cod';
   whatsapp_notified: boolean;
   created_at: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface Category {
