@@ -31,7 +31,7 @@ interface AuthContextType {
     lat?: number,
     lng?: number
   ) => Promise<void>;
-  updateUser: (name: string, password?: string, oldPassword?: string, languagePref?: string) => Promise<void>;
+  updateUser: (name: string, password?: string, oldPassword?: string, languagePref?: string, profilePhotoUrl?: string) => Promise<void>;
   requestPasswordReset: (identifier: string) => Promise<void>;
 }
 
@@ -105,9 +105,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCurrentUser(result.user);
   };
 
-  const updateUser = async (nameVal: string, passwordVal?: string, oldPasswordVal?: string, languagePrefVal?: string) => {
+  const updateUser = async (nameVal: string, passwordVal?: string, oldPasswordVal?: string, languagePrefVal?: string, profilePhotoUrlVal?: string) => {
     if (!currentUser) throw new Error("No active user session.");
-    const updated = await updateUserProfile(currentUser.id, nameVal, passwordVal, oldPasswordVal, languagePrefVal);
+    const updated = await updateUserProfile(currentUser.id, nameVal, passwordVal, oldPasswordVal, languagePrefVal, profilePhotoUrlVal);
     setCurrentUser(updated);
   };
 

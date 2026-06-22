@@ -41,7 +41,7 @@ export default function DashboardPage() {
         setSubmitError(`File "${file.name}" is too large. Max size is 5MB.`);
         return;
       }
-      
+
       const reader = new FileReader();
       reader.onloadend = () => {
         if (typeof reader.result === "string") {
@@ -128,7 +128,7 @@ export default function DashboardPage() {
       } else {
         setMyProducts([]);
       }
-      
+
       if (fetchedCategories.length > 0) {
         setCategory(fetchedCategories[0].slug);
       }
@@ -188,7 +188,7 @@ export default function DashboardPage() {
       });
 
       setSubmitSuccess(true);
-      
+
       // Reset form
       setName("");
       setDescription("");
@@ -241,7 +241,7 @@ export default function DashboardPage() {
   return (
     <div className="bg-cream-bg min-h-screen py-10 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto space-y-8">
-        
+
         {/* Breadcrumbs & Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
@@ -280,21 +280,19 @@ export default function DashboardPage() {
         <div className="flex border-b border-warm-brown/10">
           <button
             onClick={() => setActiveTab("list")}
-            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 ${
-              activeTab === "list"
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 ${activeTab === "list"
                 ? "border-primary-green text-primary-green"
                 : "border-transparent text-text-dark/50 hover:text-text-dark"
-            }`}
+              }`}
           >
             My Products ({myProducts.length})
           </button>
           <button
             onClick={() => setActiveTab("add")}
-            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center ${
-              activeTab === "add"
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center ${activeTab === "add"
                 ? "border-primary-green text-primary-green"
                 : "border-transparent text-text-dark/50 hover:text-text-dark"
-            }`}
+              }`}
           >
             <PlusCircle className="h-4 w-4 mr-1.5" /> Submit New Product
           </button>
@@ -349,12 +347,12 @@ export default function DashboardPage() {
           /* ADD / SUBMIT PRODUCT TAB */
           <div className="bg-[#FAF7F2] p-6 sm:p-8 rounded-2xl border border-warm-brown/10 shadow-sm">
             <form onSubmit={handleProductSubmit} className="space-y-6">
-              
+
               <h2 className="font-serif text-xl font-bold text-text-dark flex items-center">
                 <Sparkles className="h-5 w-5 mr-2 text-accent-gold" />
                 Product Submission Form
               </h2>
-              
+
               <p className="text-xs text-text-dark/70 leading-relaxed">
                 Provide the details of your home-grown, handmade, or organic items. All submissions will be vetted by the admin console to ensure trust and authenticity before appearing on the public store listing.
               </p>
@@ -442,7 +440,7 @@ export default function DashboardPage() {
                     </span>
                   )}
                 </label>
-                
+
                 <p className="text-[11px] text-text-dark/60 leading-relaxed -mt-2 font-sans">
                   Upload up to 5 images from your device or paste web links. Both are optional. If left blank, a beautiful regional placeholder will be used.
                 </p>
@@ -565,7 +563,7 @@ export default function DashboardPage() {
                     </span>
                   )}
                 </label>
-                
+
                 <p className="text-[11px] text-text-dark/60 leading-relaxed -mt-2 font-sans">
                   Please upload certifications, lab test reports, or trade licenses validating the quality and origin of your traditional product. At least one document must be uploaded.
                 </p>
@@ -621,11 +619,10 @@ export default function DashboardPage() {
                         key={tag}
                         type="button"
                         onClick={() => handleTagToggle(tag)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-                          isSelected
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${isSelected
                             ? "bg-primary-green text-cream-bg shadow-sm"
                             : "bg-cream-bg text-text-dark/75 border border-warm-brown/15 hover:border-warm-brown/30"
-                        }`}
+                          }`}
                       >
                         {tag}
                       </button>

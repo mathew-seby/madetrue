@@ -8,6 +8,7 @@ export interface User {
   location_lng?: number;
   region?: string;
   language_pref?: string;
+  profile_photo_url?: string;
 }
 
 export interface Seller {

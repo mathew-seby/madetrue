@@ -240,7 +240,8 @@ export async function updateUserProfile(
   name: string,
   password?: string,
   oldPassword?: string,
-  languagePref?: string
+  languagePref?: string,
+  profilePhotoUrl?: string
 ): Promise<User> {
   await new Promise((resolve) => setTimeout(resolve, 300));
   const users = getStoredUsers();
@@ -258,6 +259,11 @@ export async function updateUserProfile(
   // Update language preference
   if (languagePref) {
     users[userIdx].language_pref = languagePref;
+  }
+
+  // Update profile photo url
+  if (profilePhotoUrl !== undefined) {
+    users[userIdx].profile_photo_url = profilePhotoUrl;
   }
 
   // Update password if provided
