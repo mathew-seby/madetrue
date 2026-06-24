@@ -5,7 +5,7 @@ import Link from "next/link";
 import { getProductById, getSellerById, getProductsBySellerId } from "@/lib/supabase/client";
 import { Product, Seller } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
-import { MapPin, Store, MessageCircle, ArrowLeft, ShoppingBag, Heart, ShieldAlert, Sparkles } from "lucide-react";
+import { MapPin, Store, ArrowLeft, ShoppingBag, Heart, ShieldAlert, Sparkles, Zap } from "lucide-react";
 
 // Default location Kochi
 const DEFAULT_LAT = 9.9816;
@@ -115,12 +115,7 @@ export default function ProductDetailPage({ params }: PageProps) {
     ? calculateDistance(centerLat, centerLng, seller.lat, seller.lng)
     : null;
 
-  // WhatsApp link preparation
-  const waText = encodeURIComponent(
-    `Hello ${seller?.business_name}, I saw your product "${product.name}" on MADETRUE and would love to buy ${quantity} unit(s). Is it available?`
-  );
-  const formattedPhone = seller ? seller.whatsapp_number.replace(/\D/g, "") : "";
-  const whatsappUrl = `https://wa.me/${formattedPhone}?text=${waText}`;
+
 
   const getBadgeStyle = (tag: string) => {
     switch (tag) {
@@ -261,17 +256,12 @@ export default function ProductDetailPage({ params }: PageProps) {
                   <ShoppingBag className="h-4.5 w-4.5 mr-2" />
                   {addedToCart ? "Added to Basket! ✓" : "Add to Basket"}
                 </button>
-                {seller && (
-                  <a
-                    href={whatsappUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center px-5 py-3 bg-[#25D366] hover:bg-[#20ba5a] text-white font-semibold text-sm rounded-xl transition duration-200"
-                  >
-                    <MessageCircle className="h-4.5 w-4.5 mr-2 fill-white" />
-                    Order via WhatsApp
-                  </a>
-                )}
+                <button
+                  className="inline-flex items-center justify-center px-5 py-3 bg-warm-brown hover:bg-[#684a30] text-cream-bg font-semibold text-sm rounded-xl transition duration-200 cursor-pointer"
+                >
+                  <Zap className="h-4.5 w-4.5 mr-2 fill-cream-bg" />
+                  Buy Now
+                </button>
               </div>
             </div>
           </div>
