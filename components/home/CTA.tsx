@@ -1,7 +1,13 @@
+"use client";
+
 import Link from "next/link";
 import { Store, HeartHandshake } from "lucide-react";
+import { useAuth } from "@/components/shared/AuthProvider";
 
 export default function CTA() {
+  const { currentUser } = useAuth();
+  const sellerRoute = currentUser?.role === "seller" ? "/dashboard" : "/profile";
+
   return (
     <section className="bg-cream-bg py-16 px-4 sm:px-6 lg:px-8 border-t border-warm-brown/5">
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -45,7 +51,7 @@ export default function CTA() {
           </div>
           <div className="pt-4">
             <Link
-              href="/dashboard"
+              href={sellerRoute}
               className="inline-flex items-center justify-center px-5 py-3 rounded-xl bg-warm-brown text-cream-bg font-semibold text-sm hover:bg-[#64472f] transition duration-200"
             >
               Become a Seller
@@ -56,3 +62,4 @@ export default function CTA() {
     </section>
   );
 }
+

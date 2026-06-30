@@ -1,7 +1,13 @@
+"use client";
+
 import Link from "next/link";
 import { Heart } from "lucide-react";
+import { useAuth } from "@/components/shared/AuthProvider";
 
 export default function Footer() {
+  const { currentUser } = useAuth();
+  const sellerRoute = currentUser?.role === "seller" ? "/dashboard" : "/profile";
+
   return (
     <footer className="bg-[#FAF7F2] border-t border-warm-brown/10 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8">
@@ -44,7 +50,7 @@ export default function Footer() {
           <h4 className="text-xs font-bold uppercase text-warm-brown tracking-wider mb-4">Community</h4>
           <ul className="space-y-2.5">
             <li>
-              <Link href="/dashboard" className="text-sm text-text-dark/80 hover:text-primary-green transition">
+              <Link href={sellerRoute} className="text-sm text-text-dark/80 hover:text-primary-green transition">
                 Become a Seller
               </Link>
             </li>

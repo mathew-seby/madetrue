@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSellers, getCategories, addProduct, getSellers as fetchSellers, getAllProductsAdmin } from "@/lib/supabase/client";
 import { Seller, Category, Product } from "@/types";
@@ -12,6 +13,7 @@ const FALLBACK_PRODUCT_IMAGE = "https://images.unsplash.com/photo-1541832676-9b7
 
 export default function DashboardPage() {
   const { currentUser } = useAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"list" | "add">("list");
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -157,11 +159,13 @@ export default function DashboardPage() {
       if (matchingSeller) {
         setSelectedSellerId(matchingSeller.id);
         setMyProducts(fetchedProducts.filter(p => p.seller_id === matchingSeller.id));
-      } else if (fetchedSellers.length > 0) {
+      } else if (currentUser?.role === "admin" && fetchedSellers.length > 0) {
         setSelectedSellerId(fetchedSellers[0].id);
         setMyProducts(fetchedProducts.filter(p => p.seller_id === fetchedSellers[0].id));
       } else {
         setMyProducts([]);
+        router.push("/profile");
+        return;
       }
 
       if (fetchedCategories.length > 0) {
@@ -171,7 +175,7 @@ export default function DashboardPage() {
       setLoading(false);
     }
     loadDashboardData();
-  }, [currentUser]);
+  }, [currentUser, router]);
 
   // Update product list when active seller changes
   const handleSellerChange = (sellerId: string) => {
