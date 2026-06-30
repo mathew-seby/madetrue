@@ -145,7 +145,7 @@ export async function getAllProductsAdmin(): Promise<Product[]> {
 export async function addProduct(productData: Omit<Product, "id" | "created_at">): Promise<Product> {
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
-  
+
   const newProduct: Product = {
     ...productData,
     id: `prod-${Date.now()}`,
@@ -180,7 +180,7 @@ export async function updateProductStatus(
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
   const index = products.findIndex((p) => p.id === id);
-  
+
   if (index !== -1) {
     products[index] = { ...products[index], status };
     saveStoredProducts(products);
@@ -188,12 +188,12 @@ export async function updateProductStatus(
     const product = products[index];
     const sellers = getStoredSellers();
     const seller = sellers.find(s => s.id === product.seller_id);
-    
+
     if (seller) {
       const sellerEmail = `${seller.business_name.toLowerCase().replace(/[^a-z0-9]/g, "")}@madetrue.in`;
       let subject = "";
       let body = "";
-      
+
       if (status === "approved") {
         subject = `Listing Approved: ${product.name}`;
         body = `Dear ${seller.business_name},\n\nGreat news! Your product listing for "${product.name}" has been approved by the MADETRUE moderation team and is now live for buyers in your region.\n\nThank you for sharing real, local, and authentic goods.\n\nSincerely,\nMADETRUE Admin Team`;
@@ -209,7 +209,7 @@ export async function updateProductStatus(
 
     return products[index];
   }
-  
+
   return null;
 }
 
@@ -217,7 +217,7 @@ export async function updateProductStatus(
 export async function addSeller(sellerData: Omit<Seller, "id">): Promise<Seller> {
   await new Promise((resolve) => setTimeout(resolve, 100));
   const sellers = getStoredSellers();
-  
+
   const newSeller: Seller = {
     ...sellerData,
     id: `seller-${Date.now()}`,

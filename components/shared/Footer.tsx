@@ -33,7 +33,7 @@ export default function Footer() {
               </Link>
             </li>
             <li>
-              <Link href="#meet-makers" className="text-sm text-text-dark/80 hover:text-primary-green transition">
+              <Link href="/#meet-makers" className="text-sm text-text-dark/80 hover:text-primary-green transition">
                 Meet the Makers
               </Link>
             </li>
@@ -55,14 +55,19 @@ export default function Footer() {
               </Link>
             </li>
             <li>
-              <Link href="#" className="text-sm text-text-dark/80 hover:text-primary-green transition">
+              <Link href="/#meet-makers" className="text-sm text-text-dark/80 hover:text-primary-green transition">
                 Seller Stories
               </Link>
             </li>
             <li>
-              <Link href="#" className="text-sm text-text-dark/80 hover:text-primary-green transition">
+              <a
+                href="https://wa.me/919876543210?text=Hello%20MADETRUE%20Support!"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-text-dark/80 hover:text-primary-green transition"
+              >
                 WhatsApp Support
-              </Link>
+              </a>
             </li>
           </ul>
         </div>
