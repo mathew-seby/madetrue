@@ -27,7 +27,7 @@ export default function CheckoutPage() {
   const [address, setAddress] = useState("");
   const [lat, setLat] = useState("9.9312"); // central Kochi
   const [lng, setLng] = useState("76.2673"); // central Kochi
-  const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">("delivery");
+  const deliveryType = "delivery";
   const [paymentMethod, setPaymentMethod] = useState<"cod" | "upi">("cod");
   const [gmapsInput, setGmapsInput] = useState("");
   const [checkoutLocationOption, setCheckoutLocationOption] = useState<"paste" | "select">("select");
@@ -124,9 +124,9 @@ export default function CheckoutPage() {
       return;
     }
 
-    // Deliverable check: If delivery type is "delivery", it must be in Ernakulam
-    if (deliveryType === "delivery" && !isInErnakulam(latitude, longitude, address.trim())) {
-      setErrorMsg("MADETRUE only delivers within Ernakulam district (Lat: 9.77 to 10.30, Lng: 76.16 to 77.09). Please enter a delivery location inside Ernakulam or choose Pickup.");
+    // Deliverable check: Delivery must be in Ernakulam
+    if (!isInErnakulam(latitude, longitude, address.trim())) {
+      setErrorMsg("MADETRUE only delivers within Ernakulam district (Lat: 9.77 to 10.30, Lng: 76.16 to 77.09). Please enter a delivery location inside Ernakulam.");
       setSubmitting(false);
       return;
     }
@@ -324,32 +324,10 @@ export default function CheckoutPage() {
 
                 {/* Delivery Type */}
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">Fulfillment Method *</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setDeliveryType("delivery")}
-                      className={`px-4 py-3 rounded-xl border text-xs font-bold uppercase transition flex flex-col items-center justify-center gap-1 ${
-                        deliveryType === "delivery"
-                          ? "bg-primary-green text-cream-bg border-primary-green shadow-sm"
-                          : "bg-white text-text-dark border-warm-brown/15 hover:border-warm-brown/30"
-                      }`}
-                    >
-                      <span>Delivery</span>
-                      <span className="text-[9px] opacity-75 lowercase font-medium">to Ernakulam address only</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeliveryType("pickup")}
-                      className={`px-4 py-3 rounded-xl border text-xs font-bold uppercase transition flex flex-col items-center justify-center gap-1 ${
-                        deliveryType === "pickup"
-                          ? "bg-primary-green text-cream-bg border-primary-green shadow-sm"
-                          : "bg-white text-text-dark border-warm-brown/15 hover:border-warm-brown/30"
-                      }`}
-                    >
-                      <span>Self Pickup</span>
-                      <span className="text-[9px] opacity-75 lowercase font-medium">from maker's center</span>
-                    </button>
+                  <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">Fulfillment Method</label>
+                  <div className="p-4 bg-primary-green/10 border border-primary-green/20 rounded-xl flex flex-col gap-1">
+                    <span className="text-xs font-bold text-primary-green uppercase tracking-wider">Delivery Only</span>
+                    <span className="text-[10px] text-text-dark/70 font-medium">We deliver strictly within Ernakulam district (Lat: 9.77 to 10.30, Lng: 76.16 to 77.09)</span>
                   </div>
                 </div>
 
@@ -357,7 +335,7 @@ export default function CheckoutPage() {
                 <div className="space-y-4 pt-2 border-t border-warm-brown/10">
                   <div className="flex justify-between items-center">
                     <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
-                      {deliveryType === "delivery" ? "Delivery Destination Address *" : "Pickup Confirmation Address *"}
+                      Delivery Destination Address *
                     </label>
                   </div>
                   <div className="space-y-3">
@@ -538,7 +516,7 @@ export default function CheckoutPage() {
               <div className="p-3 bg-primary-green/5 border border-primary-green/10 rounded-xl flex items-start space-x-2 text-[10px] text-text-dark/70 font-sans">
                 <AlertCircle className="h-4 w-4 text-primary-green shrink-0 mt-0.5" />
                 <span>
-                  Delivery is restricted to Ernakulam district only. Choosing Self Pickup bypasses delivery coordinate rules.
+                  Delivery is restricted to Ernakulam district only. Please specify coordinates/address within this region.
                 </span>
               </div>
             </div>
