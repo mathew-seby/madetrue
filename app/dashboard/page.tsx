@@ -238,17 +238,20 @@ export default function DashboardPage() {
       return;
     }
 
-    if (!productAddress.trim() || !productLat.trim() || !productLng.trim()) {
-      setSubmitError("Please set the product sourcing location. Use the location selector to detect your location or paste Google Maps coordinates.");
-      setLoading(false);
+    if (!productAddress.trim()) {
+      setSubmitError("Please enter the physical sourcing address.");
       return;
     }
 
-    const latitude = parseFloat(productLat);
-    const longitude = parseFloat(productLng);
+    let latitude = parseFloat(productLat);
+    let longitude = parseFloat(productLng);
 
-    if (isNaN(latitude) || isNaN(longitude)) {
-      setSubmitError("Please enter valid numeric coordinates for sourcing location.");
+    if ((isNaN(latitude) || isNaN(longitude)) && productGmapsInput.trim()) {
+      const currentSeller = sellers.find(s => s.id === selectedSellerId);
+      latitude = currentSeller ? currentSeller.lat : 9.9312;
+      longitude = currentSeller ? currentSeller.lng : 76.2673;
+    } else if (isNaN(latitude) || isNaN(longitude)) {
+      setSubmitError("Please set the product sourcing location. Use the location selector to detect your location or paste Google Maps coordinates.");
       return;
     }
 
@@ -844,14 +847,19 @@ export default function DashboardPage() {
 
                     {/* Coordinates confirmation preview */}
                     {productLat && productLng ? (
-                      <div className="text-[10px] font-bold text-primary-green bg-primary-green/10 border border-primary-green/20 px-3 py-2 rounded-xl flex items-center justify-between font-sans">
+                      <div className="text-[10px] font-bold text-primary-green bg-primary-green/10 border border-primary-green/20 px-3 py-2 rounded-xl flex items-center justify-between font-sans font-semibold">
                         <span>📍 Location Set: {parseFloat(productLat).toFixed(4)}, {parseFloat(productLng).toFixed(4)}</span>
                         <span className="uppercase text-[8px] bg-primary-green text-cream-bg px-1.5 py-0.5 rounded-full font-sans">Set</span>
                       </div>
+                    ) : productGmapsInput.trim() ? (
+                      <div className="text-[10px] font-bold text-primary-green bg-primary-green/10 border border-primary-green/20 px-3 py-2 rounded-xl flex items-center justify-between font-sans font-semibold">
+                        <span>🔗 Location Link Provided (Pending Verification)</span>
+                        <span className="uppercase text-[8px] bg-primary-green text-cream-bg px-1.5 py-0.5 rounded-full font-sans">Link Submitted</span>
+                      </div>
                     ) : (
-                      <div className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl flex items-center justify-between font-sans">
+                      <div className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl flex items-center justify-between font-sans font-semibold">
                         <span>⚠️ No location set yet — please detect or paste coordinates above</span>
-                        <span className="uppercase text-[8px] bg-amber-600 text-white px-1.5 py-0.5 rounded-full font-sans">Required</span>
+                        <span className="uppercase text-[8px] bg-amber-600 text-white px-1.5 py-0.5 rounded-full font-sans font-semibold">Required</span>
                       </div>
                     )}
                   </div>
