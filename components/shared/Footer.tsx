@@ -6,7 +6,7 @@ import { useAuth } from "@/components/shared/AuthProvider";
 
 export default function Footer() {
   const { currentUser } = useAuth();
-  const sellerRoute = currentUser?.role === "seller" ? "/dashboard" : "/profile";
+  const sellerRoute = currentUser?.role === "seller" ? "/dashboard" : "/profile#become-maker";
 
   return (
     <footer className="bg-[#FAF7F2] border-t border-warm-brown/10 py-12 px-4 sm:px-6 lg:px-8">

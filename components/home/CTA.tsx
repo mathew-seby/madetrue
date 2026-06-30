@@ -6,7 +6,7 @@ import { useAuth } from "@/components/shared/AuthProvider";
 
 export default function CTA() {
   const { currentUser } = useAuth();
-  const sellerRoute = currentUser?.role === "seller" ? "/dashboard" : "/profile";
+  const sellerRoute = currentUser?.role === "seller" ? "/dashboard" : "/profile#become-maker";
 
   return (
     <section className="bg-cream-bg py-16 px-4 sm:px-6 lg:px-8 border-t border-warm-brown/5">

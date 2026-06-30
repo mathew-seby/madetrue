@@ -164,7 +164,7 @@ export default function DashboardPage() {
         setMyProducts(fetchedProducts.filter(p => p.seller_id === fetchedSellers[0].id));
       } else {
         setMyProducts([]);
-        router.push("/profile");
+        router.push("/profile#become-maker");
         return;
       }
 

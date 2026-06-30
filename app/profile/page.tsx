@@ -78,6 +78,28 @@ export default function ProfilePage() {
     loadSellerInfo();
   }, [currentUser]);
 
+  useEffect(() => {
+    const handleScrollToSection = () => {
+      if (window.location.hash === "#become-maker") {
+        setTimeout(() => {
+          const element = document.getElementById("become-maker");
+          if (element) {
+            const yOffset = -80; // 80px offset (64px navbar height + 16px padding)
+            const y = element.getBoundingClientRect().top + window.scrollY + yOffset;
+            window.scrollTo({ top: y, behavior: "smooth" });
+          }
+        }, 150);
+      }
+    };
+
+    handleScrollToSection();
+
+    window.addEventListener("hashchange", handleScrollToSection);
+    return () => {
+      window.removeEventListener("hashchange", handleScrollToSection);
+    };
+  }, []);
+
   if (!currentUser) return null;
 
   const handleRegisterSeller = async (e: React.FormEvent) => {
@@ -210,7 +232,7 @@ export default function ProfilePage() {
         {currentUser.role !== "seller" && currentUser.role !== "admin" ? (
           
           /* BUYER REGISTER AS MAKER ONBOARDING */
-          <div className="bg-[#FAF7F2] p-6 sm:p-8 rounded-3xl border border-warm-brown/10 shadow-sm space-y-6">
+          <div id="become-maker" className="bg-[#FAF7F2] p-6 sm:p-8 rounded-3xl border border-warm-brown/10 shadow-sm space-y-6">
             
             <div className="space-y-2">
               <h2 className="font-serif text-xl font-bold text-text-dark flex items-center">
