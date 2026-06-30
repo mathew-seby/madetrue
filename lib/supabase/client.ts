@@ -227,3 +227,82 @@ export async function addSeller(sellerData: Omit<Seller, "id">): Promise<Seller>
   saveStoredSellers(sellers);
   return newSeller;
 }
+
+// Update verification status of a seller
+export async function updateSellerVerification(
+  id: string,
+  is_verified: boolean
+): Promise<Seller | null> {
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const sellers = getStoredSellers();
+  const index = sellers.findIndex((s) => s.id === id);
+
+  if (index !== -1) {
+    sellers[index] = { ...sellers[index], is_verified };
+    saveStoredSellers(sellers);
+    return sellers[index];
+  }
+  return null;
+}
+
+// Helper to get orders list
+function getStoredOrders(): any[] {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("madetrue_orders");
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        console.error("Failed to parse stored orders", e);
+      }
+    }
+  }
+  return [];
+}
+
+// Helper to save orders list
+function saveStoredOrders(orders: any[]) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("madetrue_orders", JSON.stringify(orders));
+  }
+}
+
+// Get all orders for admin panel
+export async function getOrdersAdmin(): Promise<any[]> {
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  return getStoredOrders();
+}
+
+// Update the status of an order
+export async function updateOrderStatus(
+  id: string,
+  status: 'pending' | 'accepted' | 'completed' | 'cancelled'
+): Promise<any | null> {
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const orders = getStoredOrders();
+  const index = orders.findIndex((o) => o.id === id);
+
+  if (index !== -1) {
+    orders[index] = { ...orders[index], status };
+    saveStoredOrders(orders);
+    return orders[index];
+  }
+  return null;
+}
+
+// Update the WhatsApp notification status of an order
+export async function updateOrderWhatsappStatus(
+  id: string,
+  whatsapp_notified: boolean
+): Promise<any | null> {
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const orders = getStoredOrders();
+  const index = orders.findIndex((o) => o.id === id);
+
+  if (index !== -1) {
+    orders[index] = { ...orders[index], whatsapp_notified };
+    saveStoredOrders(orders);
+    return orders[index];
+  }
+  return null;
+}

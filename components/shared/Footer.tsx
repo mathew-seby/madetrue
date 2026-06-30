@@ -1,12 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Heart } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 
 export default function Footer() {
+  const pathname = usePathname();
+  const isAdminRoute = pathname?.startsWith("/admin");
   const { currentUser } = useAuth();
   const sellerRoute = currentUser?.role === "seller" ? "/dashboard" : "/profile#become-maker";
+
+  if (isAdminRoute) return null;
 
   return (
     <footer className="bg-[#FAF7F2] border-t border-warm-brown/10 py-12 px-4 sm:px-6 lg:px-8">
