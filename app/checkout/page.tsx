@@ -7,6 +7,7 @@ import { CreditCard, ArrowLeft, CheckCircle, MapPin, AlertCircle, ShoppingBag, P
 import { useAuth } from "@/components/shared/AuthProvider";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
 import { Product } from "@/types";
+import { decrementProductStock } from "@/lib/supabase/client";
 
 interface CartItem {
   product: Product;
@@ -144,6 +145,8 @@ export default function CheckoutPage() {
         product_id: item.product.id,
         product_name: item.product.name,
         price: item.product.price,
+        base_price: item.product.base_price || item.product.price,
+        commission: item.product.commission || 0,
         quantity: item.quantity,
         status: "pending",
         delivery_type: deliveryType,
@@ -169,6 +172,11 @@ export default function CheckoutPage() {
       // Add new orders
       allOrders = [...newOrders, ...allOrders];
       localStorage.setItem("madetrue_orders", JSON.stringify(allOrders));
+
+      // Decrement stock for purchased products
+      for (const item of cart) {
+        await decrementProductStock(item.product.id, item.quantity);
+      }
 
       // Clear Cart
       localStorage.removeItem("madetrue_cart");

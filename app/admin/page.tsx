@@ -162,14 +162,30 @@ export default function AdminPage() {
 
   const handleApproval = async (productId: string, status: "approved" | "rejected" | "pending") => {
     let reason = "";
+    let commissionVal = 0;
+
     if (status === "rejected") {
       const inputReason = window.prompt("Please enter a reason for rejecting this product listing (this will be sent to the seller):");
       if (inputReason === null) return;
       reason = inputReason.trim() || "No specific reason provided.";
+    } else if (status === "approved") {
+      const prod = products.find(p => p.id === productId);
+      const basePrice = prod?.base_price || prod?.price || 0;
+      const inputCommission = window.prompt(
+        `Review Sourcing Price: ₹${basePrice}\nEnter commission amount (₹) to add to this price:`
+      );
+      if (inputCommission === null) return;
+      
+      const parsedCommission = parseFloat(inputCommission.trim());
+      if (isNaN(parsedCommission) || parsedCommission < 0) {
+        showToast("Please enter a valid numeric commission amount.", "error");
+        return;
+      }
+      commissionVal = parsedCommission;
     }
 
     try {
-      const updated = await updateProductStatus(productId, status, reason);
+      const updated = await updateProductStatus(productId, status, reason, commissionVal);
       if (updated) {
         let msg = "";
         if (status === "approved") {
@@ -887,6 +903,10 @@ export default function AdminPage() {
                             </div>
                             <div className="text-xs font-bold text-primary-green font-sans">
                               Subtotal Total: ₹{order.price * order.quantity}
+                            </div>
+                            <div className="text-[10px] text-text-dark/70 font-sans border-t border-dashed border-warm-brown/10 pt-1 mt-1 space-y-0.5">
+                              <div>Seller Share: ₹{(order.base_price || order.price) * order.quantity}</div>
+                              <div>Admin Commission: ₹{(order.commission || 0) * order.quantity}</div>
                             </div>
                           </div>
                         </div>

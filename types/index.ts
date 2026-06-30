@@ -43,6 +43,8 @@ export interface Product {
   lat?: number;
   lng?: number;
   address?: string;
+  base_price?: number;
+  commission?: number;
 }
 
 export interface Order {
@@ -59,6 +61,8 @@ export interface Order {
   created_at: string;
   lat?: number;
   lng?: number;
+  base_price?: number;
+  commission?: number;
 }
 
 export interface Category {

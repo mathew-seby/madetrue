@@ -222,6 +222,20 @@ export default function ProductDetailPage({ params }: PageProps) {
               </div>
             </div>
 
+            {/* Stock Alert Banner */}
+            {product.stock > 0 && product.stock <= 2 && product.is_available && (
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs font-bold text-red-700 flex items-center gap-2 animate-pulse font-sans">
+                <ShieldAlert className="h-4.5 w-4.5 text-red-600 shrink-0" />
+                <span>Limited Stock: Only {product.stock} left in stock. Secure yours today!</span>
+              </div>
+            )}
+            {(product.stock === 0 || !product.is_available) && (
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs font-bold text-red-700 flex items-center gap-2 font-sans">
+                <ShieldAlert className="h-4.5 w-4.5 text-red-600 shrink-0" />
+                <span>Out of Stock: This local product is currently sold out.</span>
+              </div>
+            )}
+
             {/* Quantity and Order Panel */}
             <div className="pt-4 border-t border-warm-brown/5 space-y-4">
               <div className="flex items-center justify-between">
@@ -230,17 +244,19 @@ export default function ProductDetailPage({ params }: PageProps) {
                 </span>
                 <div className="flex items-center border border-warm-brown/20 rounded-xl overflow-hidden bg-cream-bg">
                   <button
+                    disabled={product.stock === 0 || !product.is_available}
                     onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                    className="px-3.5 py-1.5 hover:bg-warm-brown/5 text-text-dark font-bold text-sm"
+                    className="px-3.5 py-1.5 hover:bg-warm-brown/5 text-text-dark font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     -
                   </button>
                   <span className="px-4 text-sm font-semibold text-text-dark">
-                    {quantity}
+                    {product.stock === 0 || !product.is_available ? 0 : quantity}
                   </span>
                   <button
+                    disabled={product.stock === 0 || !product.is_available}
                     onClick={() => setQuantity((q) => Math.min(product.stock, q + 1))}
-                    className="px-3.5 py-1.5 hover:bg-warm-brown/5 text-text-dark font-bold text-sm"
+                    className="px-3.5 py-1.5 hover:bg-warm-brown/5 text-text-dark font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     +
                   </button>
@@ -250,14 +266,16 @@ export default function ProductDetailPage({ params }: PageProps) {
               {/* Order Actions */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <button
+                  disabled={product.stock === 0 || !product.is_available}
                   onClick={handleAddToBasket}
-                  className="inline-flex items-center justify-center px-5 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200 cursor-pointer"
+                  className="inline-flex items-center justify-center px-5 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary-green"
                 >
                   <ShoppingBag className="h-4.5 w-4.5 mr-2" />
                   {addedToCart ? "Added to Basket! ✓" : "Add to Basket"}
                 </button>
                 <button
-                  className="inline-flex items-center justify-center px-5 py-3 bg-warm-brown hover:bg-[#684a30] text-cream-bg font-semibold text-sm rounded-xl transition duration-200 cursor-pointer"
+                  disabled={product.stock === 0 || !product.is_available}
+                  className="inline-flex items-center justify-center px-5 py-3 bg-warm-brown hover:bg-[#684a30] text-cream-bg font-semibold text-sm rounded-xl transition duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-warm-brown"
                 >
                   <Zap className="h-4.5 w-4.5 mr-2 fill-cream-bg" />
                   Buy Now

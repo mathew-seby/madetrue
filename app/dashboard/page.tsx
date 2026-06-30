@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSellers, getCategories, addProduct, getSellers as fetchSellers, getAllProductsAdmin } from "@/lib/supabase/client";
+import { getSellers, getCategories, addProduct, getSellers as fetchSellers, getAllProductsAdmin, updateProduct } from "@/lib/supabase/client";
 import { Seller, Category, Product } from "@/types";
 import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const { currentUser } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"list" | "add">("list");
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [myProducts, setMyProducts] = useState<Product[]>([]);
@@ -194,6 +195,34 @@ export default function DashboardPage() {
     );
   };
 
+  const handleStartEdit = (product: Product) => {
+    setEditingProduct(product);
+    setName(product.name);
+    setDescription(product.description);
+    setPrice(product.base_price?.toString() || product.price.toString());
+    setStock(product.stock.toString());
+    setOriginDetails(product.origin_details);
+    setSelectedTags(product.tags);
+    setImagesList(product.images);
+    setDocumentsList(product.documents || []);
+    setProductAddress(product.address || "");
+    setProductLat(product.lat?.toString() || "");
+    setProductLng(product.lng?.toString() || "");
+    setProductGmapsInput("");
+    setActiveTab("add");
+  };
+
+  const handleMarkSoldOut = async (productId: string) => {
+    setSubmitError("");
+    try {
+      await updateProduct(productId, { stock: 0, is_available: false });
+      const updatedProds = await getAllProductsAdmin();
+      setMyProducts(updatedProds.filter((p) => p.seller_id === selectedSellerId));
+    } catch (err) {
+      setSubmitError("Failed to update stock status.");
+    }
+  };
+
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError("");
@@ -231,22 +260,41 @@ export default function DashboardPage() {
     const finalImages = imagesList.length > 0 ? imagesList : [FALLBACK_PRODUCT_IMAGE];
 
     try {
-      await addProduct({
-        seller_id: selectedSellerId,
-        name,
-        description,
-        price: parseFloat(price),
-        category,
-        images: finalImages,
-        tags: selectedTags as any,
-        stock: parseInt(stock),
-        is_available: true,
-        origin_details: originDetails,
-        documents: documentsList,
-        lat: latitude,
-        lng: longitude,
-        address: productAddress.trim(),
-      });
+      if (editingProduct) {
+        await updateProduct(editingProduct.id, {
+          name,
+          description,
+          price: parseFloat(price),
+          base_price: parseFloat(price),
+          category,
+          images: finalImages,
+          tags: selectedTags as any,
+          stock: parseInt(stock),
+          is_available: parseInt(stock) > 0,
+          origin_details: originDetails,
+          documents: documentsList,
+          lat: latitude,
+          lng: longitude,
+          address: productAddress.trim(),
+        });
+      } else {
+        await addProduct({
+          seller_id: selectedSellerId,
+          name,
+          description,
+          price: parseFloat(price),
+          category,
+          images: finalImages,
+          tags: selectedTags as any,
+          stock: parseInt(stock),
+          is_available: true,
+          origin_details: originDetails,
+          documents: documentsList,
+          lat: latitude,
+          lng: longitude,
+          address: productAddress.trim(),
+        });
+      }
 
       setSubmitSuccess(true);
 
@@ -264,6 +312,7 @@ export default function DashboardPage() {
       setProductLat("");
       setProductLng("");
       setProductGmapsInput("");
+      setEditingProduct(null);
 
       // Refresh list
       const updatedProds = await getAllProductsAdmin();
@@ -275,7 +324,7 @@ export default function DashboardPage() {
         setSubmitSuccess(false);
       }, 2000);
     } catch (err) {
-      setSubmitError("Failed to submit product. Please try again.");
+      setSubmitError("Failed to save product details. Please try again.");
     }
   };
 
@@ -344,7 +393,10 @@ export default function DashboardPage() {
         {/* Navigation Tabs */}
         <div className="flex border-b border-warm-brown/10">
           <button
-            onClick={() => setActiveTab("list")}
+            onClick={() => {
+              setActiveTab("list");
+              setEditingProduct(null);
+            }}
             className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 ${activeTab === "list"
               ? "border-primary-green text-primary-green"
               : "border-transparent text-text-dark/50 hover:text-text-dark"
@@ -353,14 +405,38 @@ export default function DashboardPage() {
             My Products ({myProducts.length})
           </button>
           <button
-            onClick={() => setActiveTab("add")}
-            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center ${activeTab === "add"
+            onClick={() => {
+              setActiveTab("add");
+              setEditingProduct(null);
+              // Clear fields
+              setName("");
+              setDescription("");
+              setPrice("");
+              setStock("10");
+              setOriginDetails("");
+              setSelectedTags([]);
+              setImagesList([]);
+              setDocumentsList([]);
+              setCustomImageUrl("");
+              setProductAddress("");
+              setProductLat("");
+              setProductLng("");
+              setProductGmapsInput("");
+            }}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center ${activeTab === "add" && !editingProduct
               ? "border-primary-green text-primary-green"
               : "border-transparent text-text-dark/50 hover:text-text-dark"
               }`}
           >
             <PlusCircle className="h-4 w-4 mr-1.5" /> Submit New Product
           </button>
+          {editingProduct && (
+            <button
+              className="px-5 py-3 text-sm font-bold border-b-2 border-primary-green text-primary-green transition duration-200 flex items-center font-sans"
+            >
+              Edit Product: {editingProduct.name}
+            </button>
+          )}
         </div>
 
         {/* Tab Content */}
@@ -397,9 +473,29 @@ export default function DashboardPage() {
                       <p className="text-xs text-text-dark/60 line-clamp-2 mt-0.5 leading-relaxed">{product.description}</p>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-warm-brown/5">
-                      <span className="text-[10px] text-warm-brown font-bold uppercase tracking-wider">Stock: {product.stock} units</span>
-                      {getStatusBadge(product.status)}
+                    <div className="flex items-center justify-between pt-2 border-t border-warm-brown/5 gap-2 flex-wrap font-sans">
+                      <span className="text-[10px] text-warm-brown font-bold uppercase tracking-wider">
+                        Stock: {product.stock > 0 && product.is_available ? `${product.stock} units` : "Finished (Out of Stock)"}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(product)}
+                          className="text-[10px] font-bold text-primary-green hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        {product.stock > 0 && product.is_available && (
+                          <button
+                            type="button"
+                            onClick={() => handleMarkSoldOut(product.id)}
+                            className="text-[10px] font-bold text-red-600 hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                          >
+                            Finish Stock
+                          </button>
+                        )}
+                        {getStatusBadge(product.status)}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -472,7 +568,7 @@ export default function DashboardPage() {
 
                 {/* Price */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">Price (₹) *</label>
+                  <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">Your Price (Sourcing Price) *</label>
                   <input
                     type="number"
                     min="1"

@@ -151,6 +151,8 @@ export async function addProduct(productData: Omit<Product, "id" | "created_at">
     id: `prod-${Date.now()}`,
     created_at: new Date().toISOString(),
     status: "pending", // Always pending review when submitted by consumer/seller
+    base_price: productData.price,
+    commission: 0,
   };
 
   products.push(newProduct);
@@ -175,14 +177,26 @@ export async function addProduct(productData: Omit<Product, "id" | "created_at">
 export async function updateProductStatus(
   id: string,
   status: "approved" | "rejected" | "pending",
-  reason?: string
+  reason?: string,
+  commission?: number
 ): Promise<Product | null> {
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
   const index = products.findIndex((p) => p.id === id);
 
   if (index !== -1) {
-    products[index] = { ...products[index], status };
+    const originalProduct = products[index];
+    const basePrice = originalProduct.base_price || originalProduct.price;
+    const finalCommission = commission !== undefined ? commission : (originalProduct.commission || 0);
+    const finalPrice = basePrice + finalCommission;
+
+    products[index] = { 
+      ...originalProduct, 
+      status,
+      base_price: basePrice,
+      commission: finalCommission,
+      price: finalPrice
+    };
     saveStoredProducts(products);
 
     const product = products[index];
@@ -303,6 +317,50 @@ export async function updateOrderWhatsappStatus(
     orders[index] = { ...orders[index], whatsapp_notified };
     saveStoredOrders(orders);
     return orders[index];
+  }
+  return null;
+}
+
+// Update a product and reset its status to pending review
+export async function updateProduct(
+  id: string,
+  productData: Partial<Product>
+): Promise<Product | null> {
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const products = getStoredProducts();
+  const index = products.findIndex((p) => p.id === id);
+
+  if (index !== -1) {
+    products[index] = { 
+      ...products[index], 
+      ...productData,
+      status: "pending" // Always go back to admin verification when edited!
+    };
+    saveStoredProducts(products);
+    return products[index];
+  }
+  return null;
+}
+
+// Decrement product stock when a buyer purchases it
+export async function decrementProductStock(
+  id: string,
+  quantity: number
+): Promise<Product | null> {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const products = getStoredProducts();
+  const index = products.findIndex((p) => p.id === id);
+
+  if (index !== -1) {
+    const currentStock = products[index].stock;
+    const newStock = Math.max(0, currentStock - quantity);
+    products[index] = {
+      ...products[index],
+      stock: newStock,
+      is_available: newStock > 0 ? products[index].is_available : false
+    };
+    saveStoredProducts(products);
+    return products[index];
   }
   return null;
 }
