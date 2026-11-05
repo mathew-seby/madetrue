@@ -6,8 +6,10 @@ import { useRouter } from "next/navigation";
 import { CreditCard, ArrowLeft, CheckCircle, MapPin, AlertCircle, ShoppingBag, Phone, User as UserIcon, MessageSquare } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { useCart } from "@/components/shared/CartProvider";
+import { Seller } from "@/types";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
-import { decrementProductStock } from "@/lib/supabase/client";
+import { DELIVERY_FEE } from "@/lib/utils/constants";
+import { decrementProductStock, getSellerById } from "@/lib/supabase/client";
 
 export default function CheckoutPage() {
   const { currentUser } = useAuth();
@@ -22,7 +24,33 @@ export default function CheckoutPage() {
   const [address, setAddress] = useState("");
   const [lat, setLat] = useState("9.9312"); // central Kochi
   const [lng, setLng] = useState("76.2673"); // central Kochi
-  const deliveryType = "delivery";
+  // Fulfillment choice and basket composition drive the pickup option and fee.
+  const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">("delivery");
+  const isPickup = deliveryType === "pickup";
+  const deliveryFee = cart.length > 0 && deliveryType === "delivery" ? DELIVERY_FEE : 0;
+
+  // Pickup is offered only when the basket is from a single maker, so the
+  // buyer always knows exactly which shop to walk into.
+  const basketSellerIds = Array.from(new Set(cart.map((item) => item.product.seller_id)));
+  const singleSeller = basketSellerIds.length === 1;
+  const pickupSellerId = isPickup && singleSeller ? basketSellerIds[0] : null;
+
+  const [pickupSeller, setPickupSeller] = useState<Seller | null>(null);
+
+  useEffect(() => {
+    if (!pickupSellerId) return;
+    let active = true;
+    getSellerById(pickupSellerId).then((seller) => {
+      if (active) setPickupSeller(seller);
+    });
+    return () => {
+      active = false;
+    };
+  }, [pickupSellerId]);
+
+  // Only trust pickup details that match the maker currently selected.
+  const pickupSellerReady =
+    pickupSeller && pickupSeller.id === pickupSellerId ? pickupSeller : null;
   const [paymentMethod, setPaymentMethod] = useState<"cod" | "upi">("cod");
   const [gmapsInput, setGmapsInput] = useState("");
   const [checkoutLocationOption, setCheckoutLocationOption] = useState<"paste" | "select">("select");
@@ -77,8 +105,12 @@ export default function CheckoutPage() {
     setErrorMsg("");
     setSubmitting(true);
 
-    if (!name.trim() || !phone.trim() || !address.trim() || !lat.trim() || !lng.trim()) {
-      setErrorMsg("Please fill in all the delivery address details.");
+    if (!name.trim() || !phone.trim()) {
+      setErrorMsg(
+        isPickup
+          ? "Please fill in your name and phone number so the maker can reach you."
+          : "Please fill in your name, phone and delivery address details."
+      );
       setSubmitting(false);
       return;
     }
@@ -91,20 +123,42 @@ export default function CheckoutPage() {
       return;
     }
 
-    const latitude = parseFloat(lat);
-    const longitude = parseFloat(lng);
+    let latitude = 0;
+    let longitude = 0;
+    let pickupShop: Seller | null = null;
 
-    if (isNaN(latitude) || isNaN(longitude)) {
-      setErrorMsg("Please enter valid numeric coordinates.");
-      setSubmitting(false);
-      return;
-    }
+    if (isPickup) {
+      if (!pickupSellerReady) {
+        setErrorMsg("The pickup shop went missing for this order. Head back to your basket and try again.");
+        setSubmitting(false);
+        return;
+      }
+      // The order is recorded at the shop that will hand it over.
+      pickupShop = pickupSellerReady;
+      latitude = pickupSellerReady.lat;
+      longitude = pickupSellerReady.lng;
+    } else {
+      if (!address.trim() || !lat.trim() || !lng.trim()) {
+        setErrorMsg("Please fill in all the delivery address details.");
+        setSubmitting(false);
+        return;
+      }
 
-    // Deliverable check: Delivery must be in Ernakulam
-    if (!isInErnakulam(latitude, longitude, address.trim())) {
-      setErrorMsg("MADETRUE only delivers within Ernakulam district (Lat: 9.77 to 10.30, Lng: 76.16 to 77.09). Please enter a delivery location inside Ernakulam.");
-      setSubmitting(false);
-      return;
+      latitude = parseFloat(lat);
+      longitude = parseFloat(lng);
+
+      if (isNaN(latitude) || isNaN(longitude)) {
+        setErrorMsg("Please enter valid numeric coordinates.");
+        setSubmitting(false);
+        return;
+      }
+
+      // Deliverable check: Delivery must be in Ernakulam
+      if (!isInErnakulam(latitude, longitude, address.trim())) {
+        setErrorMsg("MADETRUE only delivers within Ernakulam district (Lat: 9.77 to 10.30, Lng: 76.16 to 77.09). Please enter a delivery location inside Ernakulam.");
+        setSubmitting(false);
+        return;
+      }
     }
 
     try {
@@ -125,8 +179,13 @@ export default function CheckoutPage() {
         quantity: item.quantity,
         status: "pending",
         delivery_type: deliveryType,
-        address: address.trim(),
+        address: pickupShop
+          ? `Pickup at ${pickupShop.business_name} — ${pickupShop.address}`
+          : address.trim(),
         payment_method: paymentMethod,
+        // The flat fee is recorded once (on the first line) so any future
+        // dashboard sum of delivery_fee matches what the buyer actually paid.
+        delivery_fee: idx === 0 ? deliveryFee : 0,
         whatsapp_notified: false,
         created_at: new Date().toISOString(),
         lat: latitude,
@@ -196,7 +255,7 @@ export default function CheckoutPage() {
             </div>
             <div className="border-t border-warm-brown/10 pt-2 flex justify-between font-bold text-xs uppercase tracking-wider">
               <span>Total Price</span>
-              <span className="text-primary-green">₹{createdOrders.reduce((sum, ord) => sum + ord.price * ord.quantity, 0)}</span>
+              <span className="text-primary-green">₹{createdOrders.reduce((sum, ord) => sum + ord.price * ord.quantity + (ord.delivery_fee || 0), 0)}</span>
             </div>
           </div>
 
@@ -233,7 +292,7 @@ export default function CheckoutPage() {
             <ArrowLeft className="h-3.5 w-3.5 mr-1" /> Return to Basket
           </Link>
           <h1 className="font-serif text-3xl font-bold text-text-dark">Checkout</h1>
-          <p className="text-xs text-text-dark/60">Fill in your delivery address (deliveries strictly inside Ernakulam).</p>
+          <p className="text-xs text-text-dark/60">Delivery inside Ernakulam has a flat ₹{DELIVERY_FEE} fee — pickup from the maker is free. COD and UPI both work.</p>
         </div>
 
         {cart.length === 0 ? (
@@ -296,16 +355,46 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                {/* Delivery Type */}
+                {/* Fulfillment Method */}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">Fulfillment Method</label>
-                  <div className="p-4 bg-primary-green/10 border border-primary-green/20 rounded-xl flex flex-col gap-1">
-                    <span className="text-xs font-bold text-primary-green uppercase tracking-wider">Delivery Only</span>
-                    <span className="text-[10px] text-text-dark/70 font-medium">We deliver strictly within Ernakulam district (Lat: 9.77 to 10.30, Lng: 76.16 to 77.09)</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryType("delivery")}
+                      className={`px-4 py-3 rounded-xl border text-xs font-bold uppercase transition cursor-pointer ${
+                        deliveryType === "delivery"
+                          ? "bg-primary-green text-cream-bg border-primary-green shadow-sm"
+                          : "bg-white text-text-dark border-warm-brown/15 hover:border-warm-brown/30"
+                      }`}
+                    >
+                      Delivery (Ernakulam)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryType("pickup")}
+                      disabled={!singleSeller}
+                      title={singleSeller ? undefined : "Pickup works when your basket is from a single maker"}
+                      className={`px-4 py-3 rounded-xl border text-xs font-bold uppercase transition ${
+                        deliveryType === "pickup"
+                          ? "bg-warm-brown text-cream-bg border-warm-brown shadow-sm"
+                          : "bg-white text-text-dark border-warm-brown/15 hover:border-warm-brown/30"
+                      } ${!singleSeller ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+                    >
+                      Pickup from Maker
+                    </button>
                   </div>
+                  <p className="text-[10px] text-text-dark/70 font-medium leading-relaxed">
+                    {deliveryType === "delivery"
+                      ? `Strictly within Ernakulam district (Lat: 9.77 to 10.30, Lng: 76.16 to 77.09). Flat fee: ₹${DELIVERY_FEE}.`
+                      : singleSeller
+                        ? "Collect your order directly at the maker shop — no delivery fee."
+                        : `Pickup needs a single-maker basket. Your basket spans ${basketSellerIds.length} makers — switch to delivery or trim it.`}
+                  </p>
                 </div>
 
-                {/* Delivery Address Details */}
+                {/* Delivery Address Details (delivery orders only) */}
+                {deliveryType === "delivery" && (
                 <div className="space-y-4 pt-2 border-t border-warm-brown/10">
                   <div className="flex justify-between items-center">
                     <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
@@ -427,6 +516,38 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                 </div>
+                )}
+
+                {/* Pickup Shop Details (pickup orders) */}
+                {deliveryType === "pickup" && (
+                  <div className="space-y-3 pt-2 border-t border-warm-brown/10">
+                    <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
+                      Pickup at the Maker Shop
+                    </label>
+                    {pickupSellerReady ? (
+                      <div className="p-4 rounded-xl bg-warm-brown/10 border border-warm-brown/20 flex items-start gap-3">
+                        <MapPin className="h-4 w-4 text-warm-brown shrink-0 mt-0.5" />
+                        <div className="space-y-1 text-xs">
+                          <span className="block font-bold text-text-dark">{pickupSellerReady.business_name}</span>
+                          <span className="block text-text-dark/70 leading-relaxed">{pickupSellerReady.address}</span>
+                          <a
+                            href={`https://www.google.com/maps?q=${pickupSellerReady.lat},${pickupSellerReady.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block text-[10px] font-bold text-primary-green hover:underline uppercase tracking-wider"
+                          >
+                            Open in Google Maps
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-text-dark/60 italic">Loading the pickup shop details...</p>
+                    )}
+                    <p className="text-[10px] text-text-dark/50 leading-relaxed">
+                      No delivery fee for pickup — collect your items straight from the maker. Works when your basket is from one maker only.
+                    </p>
+                  </div>
+                )}
 
                 {/* Payment Method */}
                 <div className="space-y-2 pt-2 border-t border-warm-brown/10">
@@ -487,10 +608,22 @@ export default function CheckoutPage() {
                 <span>Subtotal</span>
                 <span className="text-primary-green">₹{subtotal}</span>
               </div>
+              <div className="flex justify-between text-xs text-text-dark/70">
+                <span>{deliveryType === "pickup" ? "Pickup (Collect from Maker)" : "Delivery Fee (Flat)"}</span>
+                <span className={deliveryType === "pickup" ? "text-primary-green font-bold uppercase tracking-wider" : ""}>
+                  {deliveryType === "pickup" ? "Free" : `₹${deliveryFee}`}
+                </span>
+              </div>
+              <div className="flex justify-between font-serif font-bold text-base text-text-dark">
+                <span>Total</span>
+                <span className="text-primary-green">₹{subtotal + deliveryFee}</span>
+              </div>
               <div className="p-3 bg-primary-green/5 border border-primary-green/10 rounded-xl flex items-start space-x-2 text-[10px] text-text-dark/70 font-sans">
                 <AlertCircle className="h-4 w-4 text-primary-green shrink-0 mt-0.5" />
                 <span>
-                  Delivery is restricted to Ernakulam district only. Please specify coordinates/address within this region.
+                  {deliveryType === "pickup"
+                    ? "Pickup has no delivery fee — collect directly from the maker shop shown above."
+                    : "Delivery is restricted to Ernakulam district only. Please specify coordinates/address within this region."}
                 </span>
               </div>
             </div>

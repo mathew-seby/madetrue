@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ShoppingBag, ArrowLeft, Trash2, Plus, Minus, CreditCard } from "lucide-react";
 import { useCart } from "@/components/shared/CartProvider";
+import { DELIVERY_FEE } from "@/lib/utils/constants";
 
 export default function CartPage() {
   const { items: cart, subtotal, updateQuantity, removeItem } = useCart();
@@ -90,14 +91,18 @@ export default function CartPage() {
                   <span>₹{subtotal}</span>
                 </div>
                 <div className="flex justify-between text-text-dark/70">
-                  <span>Delivery (Ernakulam Only)</span>
+                  <span>Delivery (Flat, Ernakulam)</span>
+                  <span>₹{DELIVERY_FEE}</span>
+                </div>
+                <div className="flex justify-between text-text-dark/50">
+                  <span>Pickup at the maker (optional)</span>
                   <span className="text-primary-green font-bold uppercase tracking-wider">Free</span>
                 </div>
               </div>
 
               <div className="flex justify-between items-baseline">
-                <span className="text-sm font-bold text-text-dark uppercase tracking-wider">Total</span>
-                <span className="font-serif text-2xl font-bold text-primary-green">₹{subtotal}</span>
+                <span className="text-sm font-bold text-text-dark uppercase tracking-wider">Estimated Total</span>
+                <span className="font-serif text-2xl font-bold text-primary-green">₹{subtotal + DELIVERY_FEE}</span>
               </div>
 
               <div className="space-y-3 pt-2">
@@ -109,7 +114,7 @@ export default function CartPage() {
                   Proceed to Checkout
                 </Link>
                 <p className="text-[10px] text-text-dark/50 text-center font-sans">
-                  Deliveries are restricted strictly to Ernakulam district locations. Coordinates will be validated at checkout.
+                  Estimated with the flat delivery fee — you can switch to free pickup at checkout. Deliveries are restricted to Ernakulam district.
                 </p>
               </div>
             </div>
