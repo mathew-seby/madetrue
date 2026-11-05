@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getProducts, getCategories, getSellers } from "@/lib/supabase/client";
-import { useCart } from "@/components/shared/CartProvider";
+import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Product, Seller, Category } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
 import { Search, MapPin, Store, ShoppingCart, Heart, SlidersHorizontal, Check, X } from "lucide-react";
@@ -22,6 +22,7 @@ function ProductListingContent() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [sellers, setSellers] = useState<{ [key: string]: Seller }>({});
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
+  const [cappedProductId, setCappedProductId] = useState<string | null>(null);
 
   // Filter & Sort States
   const [search, setSearch] = useState("");
@@ -29,9 +30,16 @@ function ProductListingContent() {
   const [sortBy, setSortBy] = useState<string>("newest");
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
-  const { addItem } = useCart();
+  const { addItem, items } = useCart();
 
   const handleAddToCart = (product: Product) => {
+    // Honest feedback: if the basket already holds all available stock the
+    // provider would no-op this add — show that instead of an "added" flash.
+    if (isAtBasketCap(items, product)) {
+      setCappedProductId(product.id);
+      setTimeout(() => setCappedProductId(null), 1500);
+      return;
+    }
     addItem(product);
     setAddedProductId(product.id);
     setTimeout(() => {
@@ -304,14 +312,23 @@ function ProductListingContent() {
                     ) : (
                       <button
                         onClick={() => handleAddToCart(product)}
+                        title={
+                          cappedProductId === product.id
+                            ? "Basket already holds every unit in stock"
+                            : "Add to Basket"
+                        }
                         className={`flex items-center justify-center p-2 rounded-xl transition duration-200 ${
                           addedProductId === product.id
                             ? "bg-emerald-600 text-white scale-105"
-                            : "bg-primary-green text-cream-bg hover:bg-[#224f3b]"
+                            : cappedProductId === product.id
+                              ? "bg-warm-brown text-cream-bg scale-105"
+                              : "bg-primary-green text-cream-bg hover:bg-[#224f3b]"
                         }`}
                       >
                         {addedProductId === product.id ? (
                           <Check className="h-4 w-4" />
+                        ) : cappedProductId === product.id ? (
+                          <span className="text-[9px] font-bold uppercase tracking-wider">Max</span>
                         ) : (
                           <ShoppingCart className="h-4 w-4" />
                         )}

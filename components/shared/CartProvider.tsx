@@ -195,6 +195,14 @@ function clearCart() {
   writeCart([]);
 }
 
+// True when the basket already holds every unit of this product that exists
+// — callers use it to show honest "basket full" feedback instead of a
+// misleading "added!" flash that the provider would have ignored anyway.
+export function isAtBasketCap(items: CartItem[], product: Product): boolean {
+  const existing = items.find((item) => item.product.id === product.id);
+  return Boolean(existing && existing.quantity >= product.stock);
+}
+
 /* ------------------------------------------------------------------ */
 /* Provider & hook                                                     */
 /* ------------------------------------------------------------------ */

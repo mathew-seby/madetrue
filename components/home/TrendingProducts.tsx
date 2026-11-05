@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getProducts, getSellers } from "@/lib/supabase/client";
-import { useCart } from "@/components/shared/CartProvider";
+import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Product, Seller } from "@/types";
 import { ShoppingCart, Heart, Store, Check } from "lucide-react";
 
@@ -11,10 +11,18 @@ export default function TrendingProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [sellers, setSellers] = useState<{ [key: string]: Seller }>({});
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
+  const [cappedProductId, setCappedProductId] = useState<string | null>(null);
 
-  const { addItem } = useCart();
+  const { addItem, items } = useCart();
 
   const handleAddToCart = (product: Product) => {
+    // Honest feedback: if the basket already holds all available stock the
+    // provider would no-op this add — show that instead of an "added" flash.
+    if (isAtBasketCap(items, product)) {
+      setCappedProductId(product.id);
+      setTimeout(() => setCappedProductId(null), 1500);
+      return;
+    }
     addItem(product);
     setAddedProductId(product.id);
     setTimeout(() => {
@@ -162,14 +170,23 @@ export default function TrendingProducts() {
                     </Link>
                     <button
                       onClick={() => handleAddToCart(product)}
+                      title={
+                        cappedProductId === product.id
+                          ? "Basket already holds every unit in stock"
+                          : "Add to Basket"
+                      }
                       className={`flex items-center justify-center p-2 rounded-xl transition duration-200 ${
                         addedProductId === product.id
                           ? "bg-emerald-600 text-white scale-105"
-                          : "bg-primary-green text-cream-bg hover:bg-[#224f3b]"
+                          : cappedProductId === product.id
+                            ? "bg-warm-brown text-cream-bg scale-105"
+                            : "bg-primary-green text-cream-bg hover:bg-[#224f3b]"
                       }`}
                     >
                       {addedProductId === product.id ? (
                         <Check className="h-4 w-4" />
+                      ) : cappedProductId === product.id ? (
+                        <span className="text-[9px] font-bold uppercase tracking-wider">Max</span>
                       ) : (
                         <ShoppingCart className="h-4 w-4" />
                       )}

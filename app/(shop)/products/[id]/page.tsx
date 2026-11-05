@@ -2,8 +2,9 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getProductById, getSellerById, getProductsBySellerId } from "@/lib/supabase/client";
-import { useCart } from "@/components/shared/CartProvider";
+import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Product, Seller } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
 import { MapPin, Store, ArrowLeft, ShoppingBag, Heart, ShieldAlert, Sparkles, Zap } from "lucide-react";
@@ -26,16 +27,32 @@ export default function ProductDetailPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [addedToCart, setAddedToCart] = useState(false);
+  const [basketFullCue, setBasketFullCue] = useState(false);
 
-  const { addItem } = useCart();
+  const router = useRouter();
+  const { addItem, items } = useCart();
 
   const handleAddToBasket = () => {
     if (!product) return;
+    // Honest feedback: the basket may already hold every unit in stock —
+    // the provider would no-op the add, so say so instead of "added".
+    if (isAtBasketCap(items, product)) {
+      setBasketFullCue(true);
+      setTimeout(() => setBasketFullCue(false), 2000);
+      return;
+    }
     addItem(product, quantity);
     setAddedToCart(true);
     setTimeout(() => {
       setAddedToCart(false);
     }, 2000);
+  };
+
+  // Express route: basket the selection, then jump straight to checkout.
+  const handleBuyNow = () => {
+    if (!product) return;
+    addItem(product, quantity);
+    router.push("/checkout");
   };
 
   useEffect(() => {
@@ -258,10 +275,15 @@ export default function ProductDetailPage({ params }: PageProps) {
                   className="inline-flex items-center justify-center px-5 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary-green"
                 >
                   <ShoppingBag className="h-4.5 w-4.5 mr-2" />
-                  {addedToCart ? "Added to Basket! ✓" : "Add to Basket"}
+                  {addedToCart
+                    ? "Added to Basket! ✓"
+                    : basketFullCue
+                      ? "Basket is Full"
+                      : "Add to Basket"}
                 </button>
                 <button
                   disabled={product.stock === 0 || !product.is_available}
+                  onClick={handleBuyNow}
                   className="inline-flex items-center justify-center px-5 py-3 bg-warm-brown hover:bg-[#684a30] text-cream-bg font-semibold text-sm rounded-xl transition duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-warm-brown"
                 >
                   <Zap className="h-4.5 w-4.5 mr-2 fill-cream-bg" />
