@@ -3,6 +3,7 @@ import { Lora, Inter } from "next/font/google";
 import Navbar from "@/components/shared/Navbar";
 import Footer from "@/components/shared/Footer";
 import { AuthProvider } from "@/components/shared/AuthProvider";
+import { CartProvider } from "@/components/shared/CartProvider";
 import "./globals.css";
 
 const lora = Lora({
@@ -31,9 +32,11 @@ export default function RootLayout({
     <html lang="en" className={`${lora.variable} ${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col font-sans bg-cream-bg text-text-dark">
         <AuthProvider>
-          <Navbar />
-          <main className="flex-grow">{children}</main>
-          <Footer />
+          <CartProvider>
+            <Navbar />
+            <main className="flex-grow">{children}</main>
+            <Footer />
+          </CartProvider>
         </AuthProvider>
       </body>
     </html>
