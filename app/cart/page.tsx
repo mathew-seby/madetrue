@@ -1,74 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ShoppingBag, ArrowLeft, Trash2, Plus, Minus, CreditCard } from "lucide-react";
-import { Product } from "@/types";
-
-interface CartItem {
-  product: Product;
-  quantity: number;
-}
+import { useCart } from "@/components/shared/CartProvider";
 
 export default function CartPage() {
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const loadCart = () => {
-      if (typeof window !== "undefined") {
-        const stored = localStorage.getItem("madetrue_cart");
-        if (stored) {
-          try {
-            setCart(JSON.parse(stored));
-          } catch (e) {
-            console.error("Failed to parse cart items", e);
-          }
-        }
-      }
-      setLoading(false);
-    };
-
-    loadCart();
-    window.addEventListener("cart-updated", loadCart);
-    return () => {
-      window.removeEventListener("cart-updated", loadCart);
-    };
-  }, []);
-
-  const saveCart = (newCart: CartItem[]) => {
-    setCart(newCart);
-    localStorage.setItem("madetrue_cart", JSON.stringify(newCart));
-    window.dispatchEvent(new Event("cart-updated"));
-  };
-
-  const updateQuantity = (productId: string, amount: number) => {
-    const updated = cart.map((item) => {
-      if (item.product.id === productId) {
-        const newQty = Math.max(1, Math.min(item.product.stock, item.quantity + amount));
-        return { ...item, quantity: newQty };
-      }
-      return item;
-    });
-    saveCart(updated);
-  };
-
-  const removeItem = (productId: string) => {
-    const filtered = cart.filter((item) => item.product.id !== productId);
-    saveCart(filtered);
-  };
-
-  const getSubtotal = () => {
-    return cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
-  };
-
-  if (loading) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-24 text-center text-sm font-semibold text-warm-brown bg-cream-bg min-h-screen">
-        Loading your basket...
-      </div>
-    );
-  }
+  const { items: cart, subtotal, updateQuantity, removeItem } = useCart();
 
   return (
     <div className="bg-cream-bg min-h-screen py-10 px-4 sm:px-6 lg:px-8">
@@ -110,7 +47,7 @@ export default function CartPage() {
                       <div className="flex items-center border border-warm-brown/20 rounded-lg overflow-hidden bg-white">
                         <button
                           type="button"
-                          onClick={() => updateQuantity(item.product.id, -1)}
+                          onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
                           className="px-2 py-1 hover:bg-warm-brown/5 text-text-dark font-bold text-xs"
                           disabled={item.quantity <= 1}
                         >
@@ -121,7 +58,7 @@ export default function CartPage() {
                         </span>
                         <button
                           type="button"
-                          onClick={() => updateQuantity(item.product.id, 1)}
+                          onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
                           className="px-2 py-1 hover:bg-warm-brown/5 text-text-dark font-bold text-xs"
                           disabled={item.quantity >= item.product.stock}
                         >
@@ -150,7 +87,7 @@ export default function CartPage() {
               <div className="space-y-3 text-xs border-b border-warm-brown/10 pb-4">
                 <div className="flex justify-between text-text-dark/70">
                   <span>Subtotal</span>
-                  <span>₹{getSubtotal()}</span>
+                  <span>₹{subtotal}</span>
                 </div>
                 <div className="flex justify-between text-text-dark/70">
                   <span>Delivery (Ernakulam Only)</span>
@@ -160,7 +97,7 @@ export default function CartPage() {
 
               <div className="flex justify-between items-baseline">
                 <span className="text-sm font-bold text-text-dark uppercase tracking-wider">Total</span>
-                <span className="font-serif text-2xl font-bold text-primary-green">₹{getSubtotal()}</span>
+                <span className="font-serif text-2xl font-bold text-primary-green">₹{subtotal}</span>
               </div>
 
               <div className="space-y-3 pt-2">

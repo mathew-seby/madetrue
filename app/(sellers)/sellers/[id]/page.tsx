@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { getSellerById, getProductsBySellerId } from "@/lib/supabase/client";
+import { useCart } from "@/components/shared/CartProvider";
 import { Seller, Product } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
 import { MapPin, CheckCircle2, MessageCircle, ArrowLeft, ShoppingCart, Heart, Check } from "lucide-react";
@@ -24,24 +25,10 @@ export default function SellerProfilePage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
 
+  const { addItem } = useCart();
+
   const handleAddToCart = (product: Product) => {
-    const stored = localStorage.getItem("madetrue_cart");
-    let cart: { product: Product; quantity: number }[] = [];
-    if (stored) {
-      try {
-        cart = JSON.parse(stored);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    const existingIndex = cart.findIndex((item) => item.product.id === product.id);
-    if (existingIndex !== -1) {
-      cart[existingIndex].quantity += 1;
-    } else {
-      cart.push({ product, quantity: 1 });
-    }
-    localStorage.setItem("madetrue_cart", JSON.stringify(cart));
-    window.dispatchEvent(new Event("cart-updated"));
+    addItem(product);
     setAddedProductId(product.id);
     setTimeout(() => {
       setAddedProductId(null);

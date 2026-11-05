@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getProducts, getSellers } from "@/lib/supabase/client";
+import { useCart } from "@/components/shared/CartProvider";
 import { Product, Seller } from "@/types";
 import { ShoppingCart, Heart, Store, Check } from "lucide-react";
 
@@ -11,24 +12,10 @@ export default function TrendingProducts() {
   const [sellers, setSellers] = useState<{ [key: string]: Seller }>({});
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
 
+  const { addItem } = useCart();
+
   const handleAddToCart = (product: Product) => {
-    const stored = localStorage.getItem("madetrue_cart");
-    let cart: { product: Product; quantity: number }[] = [];
-    if (stored) {
-      try {
-        cart = JSON.parse(stored);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    const existingIndex = cart.findIndex((item) => item.product.id === product.id);
-    if (existingIndex !== -1) {
-      cart[existingIndex].quantity += 1;
-    } else {
-      cart.push({ product, quantity: 1 });
-    }
-    localStorage.setItem("madetrue_cart", JSON.stringify(cart));
-    window.dispatchEvent(new Event("cart-updated"));
+    addItem(product);
     setAddedProductId(product.id);
     setTimeout(() => {
       setAddedProductId(null);

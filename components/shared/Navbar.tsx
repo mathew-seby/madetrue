@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MapPin, ShoppingCart, Menu, X, Globe, User as UserIcon, LogOut, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
+import { useCart } from "@/components/shared/CartProvider";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -12,7 +13,7 @@ export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [language, setLanguage] = useState<"EN" | "ML">("EN");
   const { currentUser, logout } = useAuth();
-  const [cartCount, setCartCount] = useState(0);
+  const { count: cartCount } = useCart();
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
 
   useEffect(() => {
@@ -20,31 +21,6 @@ export default function Navbar() {
       setIsAdminLoggedIn(sessionStorage.getItem("admin_logged_in") === "true");
     }
   }, [pathname]);
-
-  useEffect(() => {
-    const updateCartCount = () => {
-      if (typeof window !== "undefined") {
-        const stored = localStorage.getItem("madetrue_cart");
-        if (stored) {
-          try {
-            const cart = JSON.parse(stored);
-            const count = cart.reduce((acc: number, item: any) => acc + item.quantity, 0);
-            setCartCount(count);
-          } catch (e) {
-            setCartCount(0);
-          }
-        } else {
-          setCartCount(0);
-        }
-      }
-    };
-
-    updateCartCount();
-    window.addEventListener("cart-updated", updateCartCount);
-    return () => {
-      window.removeEventListener("cart-updated", updateCartCount);
-    };
-  }, []);
 
   const toggleLanguage = () => {
     setLanguage((prev) => (prev === "EN" ? "ML" : "EN"));

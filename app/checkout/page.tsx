@@ -5,22 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CreditCard, ArrowLeft, CheckCircle, MapPin, AlertCircle, ShoppingBag, Phone, User as UserIcon, MessageSquare } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
+import { useCart } from "@/components/shared/CartProvider";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
-import { Product } from "@/types";
 import { decrementProductStock } from "@/lib/supabase/client";
-
-interface CartItem {
-  product: Product;
-  quantity: number;
-}
 
 export default function CheckoutPage() {
   const { currentUser } = useAuth();
+  const { items: cart, subtotal, clearCart } = useCart();
   const router = useRouter();
 
-  // Cart state
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [loadingCart, setLoadingCart] = useState(true);
+  // Cart state — provided by CartProvider
 
   // Form states
   const [name, setName] = useState("");
@@ -50,21 +44,6 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("madetrue_cart");
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          setCart(parsed);
-        } catch (e) {
-          console.error("Failed to parse cart", e);
-        }
-      }
-      setLoadingCart(false);
-    }
-  }, []);
-
-  useEffect(() => {
     if (currentUser) {
       setName(currentUser.name);
       setPhone(currentUser.phone || "");
@@ -91,10 +70,6 @@ export default function CheckoutPage() {
     } else {
       setErrorMsg("Geolocation is not supported by your browser.");
     }
-  };
-
-  const getSubtotal = () => {
-    return cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
   };
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
@@ -179,8 +154,7 @@ export default function CheckoutPage() {
       }
 
       // Clear Cart
-      localStorage.removeItem("madetrue_cart");
-      window.dispatchEvent(new Event("cart-updated"));
+      clearCart();
 
       setCreatedOrders(newOrders);
       setOrderSuccess(true);
@@ -190,14 +164,6 @@ export default function CheckoutPage() {
       setSubmitting(false);
     }
   };
-
-  if (loadingCart) {
-    return (
-      <div className="max-w-3xl mx-auto px-4 py-24 text-center text-sm font-semibold text-warm-brown bg-cream-bg min-h-screen">
-        Verifying secure checkout...
-      </div>
-    );
-  }
 
   if (orderSuccess) {
     return (
@@ -519,7 +485,7 @@ export default function CheckoutPage() {
               </div>
               <div className="border-t border-warm-brown/10 pt-3 flex justify-between font-serif font-bold text-base text-text-dark">
                 <span>Subtotal</span>
-                <span className="text-primary-green">₹{getSubtotal()}</span>
+                <span className="text-primary-green">₹{subtotal}</span>
               </div>
               <div className="p-3 bg-primary-green/5 border border-primary-green/10 rounded-xl flex items-start space-x-2 text-[10px] text-text-dark/70 font-sans">
                 <AlertCircle className="h-4 w-4 text-primary-green shrink-0 mt-0.5" />
