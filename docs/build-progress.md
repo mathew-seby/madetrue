@@ -5,6 +5,11 @@
 > file in the same turn, then report. The owner commits code + tracker together
 > and says **`next`**. Statuses: ⬜ pending · 🟡 in progress · ✅ done ·
 > 🔑 owner-blocked · ⏭️ skipped.
+>
+> Summary mirrors (master prompt §5 · AGENTS.md "Current Status" · README
+> "Project status" · PROJECT_OVERVIEW header) are refreshed ONLY at phase
+> completion, per master prompt §10b. If they disagree with this tracker,
+> tracker + git win.
 
 **Current position:** Phase 2 · Step 1/7 — Draw the real database — ⬜ pending
 **Last completed:** Phase 8 · Step 6/6 — honest geolocation sweep + docs closure — commit `db04a3b` — 2026-11-06
@@ -144,3 +149,4 @@
 |---|---|---|
 | 2026-11-06 | Phase 8 Step 6 ✔ (pre-tracker phase closure) | honest-geo sweep (listing/checkout/onboarding) + AGENTS.md docs closure — commit `db04a3b` |
 | 2026-11-06 | Setup | master prompt v3 + this tracker created; AGENTS.md pointers added |
+| 2026-11-07 | Setup | §10b status-sync protocol added (tracker, prompt §5, AGENTS, README, overview); README + PROJECT_OVERVIEW modernized |

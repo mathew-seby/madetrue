@@ -3,10 +3,22 @@
 Connect Kerala's local makers — spice farmers, artisans, home kitchens — with the
 neighbors who love them. Story-driven, trust-first, and mobile-first at heart.
 
+## Project status
+
+- ✅ **Phase 0** — repo hygiene · ✅ **Phase 1** — buying loop on mock data ·
+  ✅ **Phase 8** — Leaflet maps + honest geolocation
+- ▶️ **Now: Phase 2 — Supabase foundation** (database schema, RLS, real data plumbing)
+- Live tracker: [`docs/build-progress.md`](./docs/build-progress.md). The
+  workflow and phase-completion status-sync rules live in
+  [`docs/master-build-prompt.md`](./docs/master-build-prompt.md) (§10b).
+- This block is refreshed by the agent at every phase completion — no manual upkeep.
+
 ## Tech (today)
 
 - **Next.js 16** (App Router, Turbopack) + TypeScript
 - **Tailwind CSS 4**
+- **Leaflet 1.9.4 + react-leaflet 5** — nearby-seller and maker maps on free
+  OSM tiles (no API keys, no `.env` entries needed for maps)
 - **Mock data layer** — the app persists everything to browser `localStorage`
   (`madetrue_*` keys) until the Supabase phase wires real data. No `.env` needed yet.
 
@@ -25,7 +37,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) and browse like a buyer: products,
 maker stores, the basket — no login wall until checkout. See `.env.example` for the
-variables the future phases (Supabase, Razorpay, WhatsApp) will introduce.
+variables the future phases (Supabase, Cashfree, WhatsApp) will introduce.
 
 ## Handy commands
 

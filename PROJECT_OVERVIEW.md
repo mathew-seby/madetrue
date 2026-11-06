@@ -1,16 +1,24 @@
 # MADETRUE — Project Technical Overview & Architecture
 
-Welcome to the technical status documentation for **MADETRUE**, a hyperlocal e-commerce platform that connects local producers (farmers, artisans, home chefs in Kerala) directly with nearby consumers using a story-driven, trust-first approach.
+> **Status (refreshed by the agent at every phase completion — master prompt
+> §10b):** ✅ Phase 0 · Phase 1 · Phase 8 complete — **now: Phase 2 — Supabase
+> foundation.** Live progress: [`docs/build-progress.md`](./docs/build-progress.md)
+> · workflow: [`docs/master-build-prompt.md`](./docs/master-build-prompt.md).
+>
+> What follows describes the architecture as it stands today — live status
+> lives in the tracker, not here.
+
+Welcome to the technical architecture documentation for **MADETRUE**, a hyperlocal e-commerce platform that connects local producers (farmers, artisans, home chefs in Kerala) directly with nearby consumers using a story-driven, trust-first approach.
 
 ---
 
 ## 1. Directory Structure & Key Files
 
-The codebase is built on **Next.js 14 (App Router)** and **TypeScript**, styled with **Tailwind CSS**. Below is the layout of the key directories and pages implemented so far:
+The codebase is built on **Next.js 16 (App Router)** and **TypeScript**, styled with **Tailwind CSS 4**. Maps run on **Leaflet 1.9.4 + react-leaflet 5** over free OSM tiles (no API keys). Below is the layout of the key directories and pages implemented so far:
 
 ```
 ├── app/
-│   ├── layout.tsx                 # Root layout, wraps application in AuthProvider, Navbar, and Footer
+│   ├── layout.tsx                 # Root layout, wraps application in AuthProvider, CartProvider, Navbar, and Footer
 │   ├── page.tsx                   # Public Homepage (Hero, Categories, Meet Makers, Nearby, Trending)
 │   ├── (shop)/
 │   │   ├── products/
@@ -22,9 +30,9 @@ The codebase is built on **Next.js 14 (App Router)** and **TypeScript**, styled 
 │   │       └── [id]/
 │   │           └── page.tsx       # Public Seller profile (Business story, contact details, listed items)
 │   ├── cart/
-│   │   └── page.tsx               # Shopping basket page (Mock / Placeholder)
+│   │   └── page.tsx               # Shopping basket (CartProvider-backed, honest stock caps)
 │   ├── checkout/
-│   │   └── page.tsx               # Checkout page for UPI / COD routing (Mock / Placeholder)
+│   │   └── page.tsx               # Checkout: delivery/pickup + ₹49 fee, UPI/COD choice, wa.me order summary
 │   ├── dashboard/
 │   │   └── page.tsx               # Maker/Seller dashboard (Manage listings, submit new products for moderation)
 │   ├── admin/
@@ -37,18 +45,25 @@ The codebase is built on **Next.js 14 (App Router)** and **TypeScript**, styled 
 │
 ├── components/
 │   ├── shared/
-│   │   ├── AuthProvider.tsx       # Controls active user state, redirects to signup/login, handles updates
+│   │   ├── AuthProvider.tsx       # Auth state + public browsing gate (login wall only on protected routes)
+│   │   ├── CartProvider.tsx       # Basket source of truth (useSyncExternalStore, honest feedback, never fakes an add)
 │   │   ├── Navbar.tsx             # Sticky main navigation (with location and Malayalam/English toggle)
 │   │   └── Footer.tsx             # Page footer component
-│   └── home/
+│   ├── home/
 │       ├── Hero.tsx               # Homepage intro
 │       ├── FeaturedCategories.tsx # Category navigations
 │       ├── MeetMakers.tsx         # Handpicked maker spotlight stories
 │       ├── NearbySellers.tsx      # Map-ready proximity list
 │       ├── TrendingProducts.tsx   # Popular regional items
 │       └── CTA.tsx                # Action banners
+│   └── map/
+│       ├── MapCanvas.tsx          # Shared Leaflet canvas over free OSM tiles (no API keys)
+│       ├── SellerMap.tsx          # Maker location map for seller + product pages
+│       └── DistanceBadge.tsx      # Distance chip with the Ernakulam gate (hidden if geo refused)
 │
 ├── lib/
+│   ├── hooks/
+│   │   └── useUserLocation.ts     # Honest browser geolocation (never fabricates coordinates)
 │   ├── supabase/
 │   │   ├── auth.ts                # Authentication API mock handlers using LocalStorage
 │   │   ├── client.ts              # Data-fetching client mock handlers (LocalStorage synchronizer)
@@ -68,7 +83,9 @@ The application flow represents a story-focused customer journey starting with l
 
 ```mermaid
 graph TD
-    A[Welcome Screen / Intercepting Auth] -->|Log In / Sign Up| B[Homepage /]
+    P[Public browsing — no account needed] --> B[Homepage /]
+    P -->|Guest opens /checkout · /dashboard · /profile| L[Sign-in wall (inline)]
+    L -->|Signed in / new account| P
     B -->|Click Category / Search| C[Product Listings /products]
     B -->|Featured Maker| E[Seller Profile /sellers/:id]
     C -->|Click Product Card| D[Product Details /products/:id]
@@ -86,13 +103,13 @@ graph TD
 
 ### Detailed Flow Explanation
 
-1. **Interception Auth (`AuthProvider.tsx`)**: When a guest visits the site, the global `AuthProvider` intercepts their routing (except for admin pages) and presents a fullscreen registration/sign-in screen.
+1. **Public browsing gate (`AuthProvider.tsx`)**: Anyone can browse products, maker stores, the homepage and the cart without an account. The sign-in wall (rendered inline by `AuthProvider` — there is no separate `/login` route) appears for guests only on the protected routes: `/checkout`, `/dashboard` and `/profile*`. Admin keeps its own console login at `/admin/login`.
 2. **Discovering Makers & Products (`app/page.tsx` & `app/(shop)/products/page.tsx`)**:
    - The homepage highlights local spice farmers, organic artisans, and pottery creators.
    - Using the **Explore Local** route (`/products`), users can filter products by Category (Spices, Pottery, Pickles, Honey, etc.), search by keywords, and sort by price/newest.
 3. **Calculating Proximity (`lib/utils/distance.ts`)**:
    - The browser requests geolocation access. If approved, the app calculates the geodesic distance in kilometers between the user's current coordinates and the seller's coordinates using the **Haversine formula**.
-   - If blocked or unavailable, it defaults to Kochi central coordinates (`9.9816, 76.2999`).
+   - If geolocation is blocked or unavailable, the app hides distance claims (`DistanceBadge`) instead of guessing — no fallback coordinates ever pose as the visitor.
 4. **Learning the Heritage (`app/(shop)/products/[id]/page.tsx` & `app/(sellers)/sellers/[id]/page.tsx`)**:
    - Rather than just focusing on listings, product details display a **"Meet the Maker"** section featuring the backstory of the producer.
    - Users can proceed with direct customer service by clicking **"Order via WhatsApp"**. This opens a pre-composed message targeted to the seller's WhatsApp number stating the product details and quantity desired.
@@ -117,10 +134,10 @@ Because the database layer is currently mocked to support offline and client-sid
 - **Rules**:
   - Accounts can register using an **Email Address** (validated with regex) or an **Indian Phone Number** (10-digit number starting with 6-9).
   - Users are registered with the `buyer` role by default.
-  - **Interception Mechanism**: If the pathname does not start with `/admin` and there is no active session (`madetrue_current_user` is null), `AuthProvider` overrides the rendering tree and enforces login or registration before anything else is shown.
+  - **Public Gate**: Browsing is open. `AuthProvider` renders the sign-in wall only when the pathname is a protected route (`/checkout`, `/dashboard`, `/profile*`) and there is no active session (`madetrue_current_user` is null). `/admin` routes are exempt — they use the separate console login.
 
 ### B. Admin Authorization (`app/admin/login/page.tsx` & `app/admin/page.tsx`)
-- **Vetting Route**: The admin console `/admin` is exempt from the `AuthProvider` consumer interception to allow administrators to moderate without registering consumer profiles.
+- **Vetting Route**: The admin console `/admin` sits outside the public gate entirely — administrators moderate through the dedicated console login instead of registering consumer profiles.
 - **Storage Key**: `admin_logged_in` saved in `sessionStorage` (so it resets when closing the browser tab).
 - **Credentials**:
   - Email: `admin@madetrue.local`

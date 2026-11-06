@@ -268,6 +268,9 @@ Use exactly these strings — no variations:
 > Razorpay Route / PayU Split Settlements as adapter-backed alternates.
 > Work is driven by `docs/master-build-prompt.md` and tracked in
 > `docs/build-progress.md` (finished phases + 7-step remaining phases).
+> When a phase closes, the agent refreshes this block automatically
+> (master prompt §10b) — together with prompt §5, the README "Project status"
+> block and the PROJECT_OVERVIEW status header.
 
 ## Team
 

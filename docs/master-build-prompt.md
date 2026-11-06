@@ -198,7 +198,10 @@ step must split, use 3a/3b under the same number. Statuses: ⬜ pending ·
 
 ## 8. SESSION PROTOCOL — owner commands (case-insensitive)
 - `status` → compact report only (no file changes): current phase/step, last
-  completed (with commit), next step, next prompt.
+  completed (with commit), next step, next prompt. ALSO cross-check the
+  summary mirrors of §10b (prompt §5, AGENTS.md Current Status, README
+  "Project status", PROJECT_OVERVIEW header) against the tracker; report any
+  drift and stop before building. Tracker + git always win.
 - `start phase X step Y` → guard: confirm that step is not already ✅ and that
   all earlier steps are ✅/⏭️. If anything is pending, STOP and ask ONE question
   naming what is pending (never skip silently). Otherwise build that step.
@@ -252,13 +255,30 @@ Phase 2 · Step 3/7 — Client wiring
 - Phase progress: 3/7
 - Next prompt: next
 
-PHASE COMPLETION (after step 7/7):
+PHASE COMPLETION (after step 7/7 — run §10b STATUS SYNC before printing):
 ✅ PHASE <N> COMPLETE — 7/7 — <phase name>
 - Phase summary: <steps + one-line outcomes + commit subjects>
 - Phase audit: tsc ✅ · eslint ✅ · build ✅ · smoke 11/11
 - Open risks / follow-ups: <notes added to tracker log>
 - Owner tasks (if any): <exact web actions>
 - Next prompt: start phase <N+1> step 1
+
+### 10b. STATUS SYNC — mandatory at every phase completion (same turn, same commit)
+Step commits (1–6) update ONLY docs/build-progress.md. These summary files
+change exactly ONCE per phase, before the PHASE COMPLETE banner is printed:
+1. docs/build-progress.md — all 7 steps ✅ · phase-done line · log entry ·
+   Current position → next phase · Step 1/7.
+2. docs/master-build-prompt.md §5 BASELINE STATE — mark the finished phase
+   ✅ COMPLETE, move "Canonical next" to the next phase, refresh the snapshot
+   date. Never rewrite §6 roadmap tables or finished-step history —
+   append/refresh only.
+3. AGENTS.md → "Current Status" blockquote — completed phases + next phase.
+4. README.md → "Project status" block — same facts + link to the tracker.
+5. PROJECT_OVERVIEW.md → top status header — same facts + link.
+- If a file is missing, say so in the report instead of skipping silently.
+- The step-7 commit may carry the sync, or the owner may make it a separate
+  one; suggested message:
+  "chore(status): close phase N — sync tracker, prompt, AGENTS, README, overview"
 
 ## 11. ENGINEERING CONVENTIONS
 - TypeScript: no `any`, no `@ts-ignore`; extend types in types/index.ts.
@@ -285,3 +305,5 @@ PHASE COMPLETION (after step 7/7):
 - Approve terminal runs (tsc, eslint, npm run build) or verification fails.
 - Version this file (v3, v3.1, ...) whenever the roadmap changes, and update
   docs/build-progress.md in the same commit.
+- Status lives in the repo, not in any tool's chat memory — switching platforms
+  is seamless because every agent reads the same tracker (§7) + mirrors (§10b).
