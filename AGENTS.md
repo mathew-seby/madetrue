@@ -18,6 +18,18 @@ platform. Every design and code decision must reflect:
 
 ---
 
+## Build Workflow — read first
+
+Before any task, read `docs/master-build-prompt.md` and follow it literally.
+Commands: `status` · `next` · `start phase X step Y` · `verify`.
+Exactly one step per turn. Progress lives in `docs/build-progress.md` — update
+it in the same turn as the step. Never commit, push, or rewrite history; never
+start a server on port 3000 (the user keeps one running). This file is the
+brand/product law; the master prompt is the build workflow; the tracker is the
+truth about progress.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -25,7 +37,7 @@ platform. Every design and code decision must reflect:
 | Framework | **Next.js 16.2.9** (App Router, Turbopack) + TypeScript — requires Node ≥ 20.9.0 (team standard: **22**, pinned in `.nvmrc`) |
 | Styling | **Tailwind CSS 4** (PostCSS plugin) · lucide-react icons |
 | Backend / DB | Supabase (Postgres + Auth + Storage + Realtime) — *not wired yet* |
-| Payments | Razorpay (UPI + Cash on Delivery) — *not wired yet* |
+| Payments | **Cashfree Payment Gateway + Easy Split** (split settlements — primary) · Razorpay Route / PayU Split Settlements (approved alternates) — *not wired yet*; one internal payment adapter will abstract all three |
 | Maps | Leaflet 1.9.4 + react-leaflet 5 · OSM tiles (no API keys) — **wired**: shared `MapCanvas` / `SellerMap` / `DistanceBadge` power the homepage nearby map and the maker maps on seller + product pages, with honest geolocation (`lib/hooks/useUserLocation.ts`) |
 | Media | Supabase Storage (product images, seller photos, optional video) |
 | WhatsApp | Twilio or WATI (order updates + seller onboarding) — order CTA is `wa.me` meanwhile |
@@ -33,7 +45,7 @@ platform. Every design and code decision must reflect:
 
 > **Current build reality (mock era):** the app runs entirely on a **mock data layer** —
 > `lib/supabase/client.ts` + `lib/supabase/auth.ts` persist to browser `localStorage`
-> under `madetrue_*` keys. No Supabase or Razorpay keys exist yet (Leaflet runs
+> under `madetrue_*` keys. No Supabase or Cashfree keys exist yet (Leaflet runs
 > on free OSM tiles — no keys at all) and no `.env.local` is needed. See
 > `.env.example` for the variables each future phase will
 > introduce. If you're hunting "missing data", wipe localStorage first.
@@ -49,6 +61,13 @@ platform. Every design and code decision must reflect:
    seller's items; mixed carts are delivery-only, with a flat ₹49 delivery fee.
 3. **Sign-in = identifier (email *or* phone) + password.** SMS verification is
    deferred until a provider is chosen; phone stays a profile field meanwhile.
+4. **Payments = Cashfree Easy Split (primary).** COD stays as today. Online
+   payments split at source: the seller's share settles to their verified bank
+   account (gateway vendor — KYC + bank verification), MadeTrue's commission is
+   retained automatically. Razorpay Route and PayU Split Settlements are
+   approved alternates; all three sit behind ONE internal payment adapter so
+   the gateway can be swapped without touching checkout UI. Secrets stay
+   server-side (`.env.local`).
 
 ---
 
@@ -74,12 +93,18 @@ Follow this strictly:
   /home/                           → Hero, FeaturedCategories, MeetMakers, etc.
   /product/                        → ProductCard, ProductGrid, StorySection, etc.
   /seller/                         → SellerCard, SellerProfile, etc.
-  /map/                            → NearbyMap, DistanceBadge, etc.
+  /map/                            → MapCanvas, SellerMap, DistanceBadge
 /lib
-  /supabase/                       → client, server, types
-  /utils/
+  /hooks/                          → useUserLocation (honest geolocation)
+  /supabase/                       → client, server, types, mockData
+  /utils/                          → distance, constants
 /types/
 /public/
+/supabase
+  /migrations/                     → SQL migrations (Phase 2+)
+/docs
+                                   → master-build-prompt.md, build-progress.md,
+                                     team-issue-board.md
 ```
 
 ---
@@ -116,39 +141,43 @@ Follow this strictly:
 ## Database Schema (Supabase)
 
 ```sql
-users (
-  id, name, email, phone,
+users ( id, name, email, phone,
   role: 'buyer' | 'seller' | 'admin',
-  location_lat, location_lng,
-  region, language_pref
+  location_lat, location_lng, region, language_pref )
+
+sellers ( id, user_id, business_name, story,
+  profile_photo_url, video_url, address, lat, lng,
+  whatsapp_number, is_verified,
+  payment_vendor_ref,        -- gateway vendor id (Cashfree Easy Split)
+  kyc_status                 -- not_started | pending | verified | failed
 )
 
-sellers (
-  id, user_id, business_name, story,
-  profile_photo_url, video_url,
-  address, lat, lng,
-  whatsapp_number, is_verified
-)
+products ( id, seller_id, name, description,
+  price, category, images[], tags[], stock, is_available,
+  origin_details, created_at )
 
-products (
-  id, seller_id, name, description,
-  price, category, images[],
-  tags[], stock, is_available,
-  origin_details, created_at
-)
-
-orders (
-  id, buyer_id, seller_id, product_id,
-  quantity, status,
+orders ( id, buyer_id, seller_id, product_id,
+  quantity, status,          -- pending | accepted | ready | delivered | cancelled
   delivery_type: 'delivery' | 'pickup',
-  address, payment_method,
-  whatsapp_notified
+  address, payment_method, whatsapp_notified,
+  buyer_name, buyer_phone, product_name,
+  price, base_price, commission, delivery_fee, lat, lng, created_at,
+  gateway,                   -- cashfree | razorpay | payu (null until Phase 6)
+  gateway_order_ref, gateway_payment_ref,
+  split_status               -- not_applicable | pending | completed | failed
 )
 
-categories (
-  id, name, icon, slug
-)
+transactions (               -- payment / refund / settlement ledger
+  id, order_id, seller_id, gateway, gateway_event_id UNIQUE,
+  type: 'payment' | 'refund' | 'settlement' | 'commission',
+  amount, currency, status, created_at )
+
+categories ( id, name, icon, slug )
 ```
+
+> From Phase 2 onward, `supabase/migrations/0001_init.sql` + `types/index.ts`
+> are the source of truth; this sketch is a summary. The gateway field carries
+> `cashfree` (primary) or the approved alternates `razorpay` / `payu`.
 
 ---
 
@@ -164,13 +193,13 @@ Use exactly these strings — no variations:
 
 ---
 
-## Pages to Build (in this order)
+## Core Pages — all built (Phase 1)
 
 1. **Homepage** — Hero, Featured Categories, Meet the Makers, Nearby Sellers, Trending, CTAs
 2. **Product Listing Page** — Grid, Filters (category / price / distance), Badges, Sorting
 3. **Product Detail Page** — Images, Description, Price, Delivery options, "Meet the Maker" story section, Seller info, Location map, Origin details
 4. **Seller Profile Page** — Photo, Name, Location, Story, Products, "Support this seller" vibe
-5. **Cart & Checkout** — Simple, UPI / COD, address, delivery / pickup toggle
+5. **Cart & Checkout** — Simple, online payment (Cashfree from Phase 6) / COD, address, delivery / pickup toggle
 6. **Seller Dashboard** — Add / edit products, view orders, track payments
 7. **Admin Panel** — Manage products / sellers, order tracking, analytics
 
@@ -209,34 +238,16 @@ Use exactly these strings — no variations:
 
 ---
 
-## Model Usage in Antigravity
+## Agent Platforms
 
-| Model | When to Use |
-|---|---|
-| **Gemini 3.5 Flash** (default) | Scaffolding, UI components, boilerplate, repetitive pages — 80% of the build |
-| **Claude Sonnet 4.6** (switch when needed) | Complex logic, auth flows, payment integration, story UX, architecture decisions |
-
-Switch to Claude Sonnet 4.6 when Gemini hits its compute budget limit or when the task
-requires deeper reasoning.
-
----
-
-## How to Use This Prompt in Antigravity
-
-**Step 1 — Project init:** Paste this entire file into Antigravity's project-level context or save it as `AGENTS.md` at the root of the repo.
-
-**Step 2 — Per-task directives:** Send short, focused task prompts per feature. Example:
-
-```
-Build the Homepage following the master context.
-Start with the Hero section and Featured Categories.
-Use Lora for headings, Inter for body.
-Primary color #2D6A4F. Mobile-first at 375px.
-```
-
-**Step 3 — Parallel agents:** Once the Homepage is running, spawn a second agent for the Product Listing Page simultaneously.
-
-**Step 4 — Visual verify:** Use Antigravity's built-in browser after each page to check the mobile view at 375px.
+- OpenCode, Cursor, Antigravity, Claude Code and Codex all follow the same
+  protocol: read `docs/master-build-prompt.md` at session start, then drive
+  work with `status` / `next` / `start phase X step Y` (per-tool setup notes
+  live in the master prompt, §12).
+- Run agents in Agent/Execute mode, never Plan/Ask mode. Approve terminal
+  commands — verification gates (`tsc`, `eslint`, build) need to run.
+- One step per turn; the owner commits; the tracker (`docs/build-progress.md`)
+  is updated in the same turn as the step it describes.
 
 ---
 
@@ -252,7 +263,11 @@ Primary color #2D6A4F. Mobile-first at 375px.
 > Phase 0 (repo hygiene) is in final stretches — remaining: GitHub-side
 > settings (branch protection, squash merges, collaborators, code-owner
 > handles) and the team issue list.
-> Next build phase: **Phase 2 — Supabase foundation.**
+> Next build phase: **Phase 2 — Supabase foundation.** Payment strategy is
+> locked: **Cashfree Easy Split** primary (see Locked Decisions #4), with
+> Razorpay Route / PayU Split Settlements as adapter-backed alternates.
+> Work is driven by `docs/master-build-prompt.md` and tracked in
+> `docs/build-progress.md` (finished phases + 7-step remaining phases).
 
 ## Team
 
