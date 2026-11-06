@@ -6,9 +6,10 @@ import { useRouter } from "next/navigation";
 import { getProductById, getSellerById, getProductsBySellerId } from "@/lib/supabase/client";
 import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Product, Seller } from "@/types";
-import { calculateDistance, formatDistance } from "@/lib/utils/distance";
+import { calculateDistance } from "@/lib/utils/distance";
 import { useUserLocation } from "@/lib/hooks/useUserLocation";
 import SellerMap from "@/components/map/SellerMap";
+import DistanceBadge from "@/components/map/DistanceBadge";
 import { MapPin, Store, ArrowLeft, ShoppingBag, Heart, ShieldAlert, Sparkles, Zap, Navigation } from "lucide-react";
 
 interface PageProps {
@@ -150,10 +151,14 @@ export default function ProductDetailPage({ params }: PageProps) {
               alt={product.name}
               className="w-full h-full object-cover"
             />
-            {distance !== null && (
-              <div className="absolute top-4 left-4 inline-flex items-center px-3 py-1 rounded-full bg-cream-bg/95 text-[10px] font-bold text-warm-brown shadow border border-warm-brown/10">
-                <MapPin className="h-3 w-3 mr-1 text-primary-green animate-pulse" />
-                <span>{formatDistance(distance)} away</span>
+            {distance !== null && seller && (
+              <div className="absolute top-4 left-4">
+                <DistanceBadge
+                  distance={distance}
+                  lat={seller.lat}
+                  lng={seller.lng}
+                  address={seller.address}
+                />
               </div>
             )}
           </div>

@@ -5,9 +5,10 @@ import Link from "next/link";
 import { getSellerById, getProductsBySellerId } from "@/lib/supabase/client";
 import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Seller, Product } from "@/types";
-import { calculateDistance, formatDistance } from "@/lib/utils/distance";
+import { calculateDistance } from "@/lib/utils/distance";
 import { useUserLocation } from "@/lib/hooks/useUserLocation";
 import SellerMap from "@/components/map/SellerMap";
+import DistanceBadge from "@/components/map/DistanceBadge";
 import {
   MapPin,
   CheckCircle2,
@@ -160,11 +161,13 @@ export default function SellerProfilePage({ params }: PageProps) {
                     </span>
                   )}
                 </div>
-                {distance !== null && (
-                  <div className="inline-flex items-center px-3 py-1 rounded-full bg-primary-green/10 text-primary-green text-xs font-semibold tracking-wide">
-                    <span>{formatDistance(distance)} away</span>
-                  </div>
-                )}
+                <DistanceBadge
+                  distance={distance}
+                  lat={seller.lat}
+                  lng={seller.lng}
+                  address={seller.address}
+                  size="md"
+                />
               </div>
             </div>
 
@@ -209,11 +212,13 @@ export default function SellerProfilePage({ params }: PageProps) {
                   Find this Maker
                 </h2>
                 <div className="flex flex-wrap items-center gap-3">
-                  {distance !== null && (
-                    <span className="inline-flex items-center rounded-full bg-primary-green/10 px-3 py-1 text-xs font-semibold tracking-wide text-primary-green">
-                      {formatDistance(distance)} from you
-                    </span>
-                  )}
+                  <DistanceBadge
+                    distance={distance}
+                    lat={seller.lat}
+                    lng={seller.lng}
+                    address={seller.address}
+                    size="md"
+                  />
                   <a
                     href={`https://www.google.com/maps/dir/?api=1&destination=${seller.lat},${seller.lng}`}
                     target="_blank"

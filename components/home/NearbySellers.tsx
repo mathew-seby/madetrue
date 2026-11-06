@@ -7,7 +7,8 @@ import { getSellers } from "@/lib/supabase/client";
 import { Seller } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
 import { useUserLocation } from "@/lib/hooks/useUserLocation";
-import { Navigation, Locate, AlertCircle } from "lucide-react";
+import DistanceBadge from "@/components/map/DistanceBadge";
+import { Locate, AlertCircle } from "lucide-react";
 
 // Leaflet touches `window` on import — client-only, never seeing the server
 const MapCanvas = dynamic(() => import("@/components/map/MapCanvas"), {
@@ -115,7 +116,6 @@ export default function NearbySellers() {
         {/* Nearby Sellers Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {sortedSellers.map((seller) => {
-            const displayDist = formatDistance(seller.distance);
             return (
               <div
                 key={seller.id}
@@ -129,10 +129,13 @@ export default function NearbySellers() {
                       alt={seller.business_name}
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute top-3 left-3 inline-flex items-center px-2.5 py-1 rounded-full bg-primary-green text-cream-bg text-[10px] font-bold tracking-wide shadow-sm">
-                      <Navigation className="h-3 w-3 mr-1 fill-cream-bg" />
-                      <span>{displayDist} away</span>
-                    </div>
+                    <DistanceBadge
+                      className="absolute top-3 left-3"
+                      distance={seller.distance}
+                      lat={seller.lat}
+                      lng={seller.lng}
+                      address={seller.address}
+                    />
                   </div>
 
                   {/* Info */}
