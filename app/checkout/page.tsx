@@ -3,13 +3,68 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CreditCard, ArrowLeft, CheckCircle, MapPin, AlertCircle, ShoppingBag, Phone, User as UserIcon, MessageSquare } from "lucide-react";
+import { CreditCard, ArrowLeft, CheckCircle, MapPin, AlertCircle, ShoppingBag, Phone, User as UserIcon, MessageSquare, MessageCircle } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { useCart } from "@/components/shared/CartProvider";
 import { Seller } from "@/types";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
 import { DELIVERY_FEE } from "@/lib/utils/constants";
 import { decrementProductStock, getSellerById } from "@/lib/supabase/client";
+import { buildWhatsAppUrl } from "@/lib/utils/whatsapp";
+
+/** The subset of a freshly placed order that the success screen needs. */
+interface CreatedOrder {
+  id: string;
+  seller_id: string;
+  product_name: string;
+  price: number;
+  quantity: number;
+  delivery_type: "delivery" | "pickup";
+  address: string;
+  payment_method: "upi" | "cod";
+  delivery_fee?: number;
+}
+
+/**
+ * Warm, plain-English WhatsApp message the buyer can send a maker with
+ * everything needed to start fulfilling the order. Sent as a wa.me
+ * click-to-chat deep link — no API involved.
+ */
+function buildOrderWhatsAppMessage(
+  maker: Seller,
+  orders: CreatedOrder[],
+  total: number,
+  buyerName: string,
+  buyerPhone: string
+): string {
+  if (orders.length === 0) return "";
+
+  const itemLines = orders
+    .map((order) => `• ${order.product_name} × ${order.quantity} — ₹${order.price * order.quantity}`)
+    .join("\n");
+  const first = orders[0];
+  const fulfillment =
+    first.delivery_type === "pickup"
+      ? `Pickup at ${first.address}`
+      : `Delivery to ${first.address}`;
+  const payment = first.payment_method === "upi" ? "UPI" : "Cash on Delivery";
+  const orderIds = orders.map((order) => order.id).join(", ");
+
+  return [
+    `Hello ${maker.business_name},`,
+    "",
+    "I just placed an order on MADETRUE:",
+    `Order ID: ${orderIds}`,
+    itemLines,
+    "",
+    `Fulfillment: ${fulfillment}`,
+    `Payment: ${payment}`,
+    `Total: ₹${total}`,
+    `Buyer: ${buyerName} (${buyerPhone})`,
+    "",
+    "Thank you for the care you put into your work!"
+  ].join("\n");
+}
 
 export default function CheckoutPage() {
   const { currentUser } = useAuth();
@@ -68,7 +123,8 @@ export default function CheckoutPage() {
   // Feedback states
   const [errorMsg, setErrorMsg] = useState("");
   const [orderSuccess, setOrderSuccess] = useState(false);
-  const [createdOrders, setCreatedOrders] = useState<any[]>([]);
+  const [createdOrders, setCreatedOrders] = useState<CreatedOrder[]>([]);
+  const [orderMakers, setOrderMakers] = useState<Seller[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -215,7 +271,15 @@ export default function CheckoutPage() {
       // Clear Cart
       clearCart();
 
+      // Look up every maker in this basket so the success screen can offer a
+      // direct WhatsApp line to each of them (independent fetches, run together).
+      const sellerIds = Array.from(new Set(newOrders.map((order) => order.seller_id)));
+      const makers = (
+        await Promise.all(sellerIds.map((sellerId) => getSellerById(sellerId)))
+      ).filter((seller): seller is Seller => seller !== null);
+
       setCreatedOrders(newOrders);
+      setOrderMakers(makers);
       setOrderSuccess(true);
     } catch (err) {
       setErrorMsg("Failed to place your order. Please try again.");
@@ -225,6 +289,32 @@ export default function CheckoutPage() {
   };
 
   if (orderSuccess) {
+    // One WhatsApp line per maker: group this basket's orders by seller.
+    const ordersByMaker = new Map<string, CreatedOrder[]>();
+    for (const order of createdOrders) {
+      const bucket = ordersByMaker.get(order.seller_id);
+      if (bucket) {
+        bucket.push(order);
+      } else {
+        ordersByMaker.set(order.seller_id, [order]);
+      }
+    }
+
+    const totalAmount = createdOrders.reduce(
+      (sum, order) => sum + order.price * order.quantity + (order.delivery_fee || 0),
+      0
+    );
+
+    const makerLinks = orderMakers.flatMap((maker) => {
+      const orders = ordersByMaker.get(maker.id);
+      if (!orders || orders.length === 0) return [];
+      const url = buildWhatsAppUrl(
+        maker.whatsapp_number,
+        buildOrderWhatsAppMessage(maker, orders, totalAmount, name, phone)
+      );
+      return url ? [{ maker, url }] : [];
+    });
+
     return (
       <div className="bg-cream-bg min-h-screen py-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-2xl mx-auto bg-[#FAF7F2] p-8 sm:p-12 rounded-3xl border border-warm-brown/10 shadow-md text-center space-y-8">
@@ -261,8 +351,28 @@ export default function CheckoutPage() {
 
           <div className="space-y-4">
             <p className="text-xs text-warm-brown leading-relaxed font-sans">
-              To expedite fulfillment, you can message the maker directly on WhatsApp with your Order ID:
+              Your makers would love a quick hello — send your order details straight to their WhatsApp:
             </p>
+            {makerLinks.length > 0 ? (
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                {makerLinks.map(({ maker, url }) => (
+                  <a
+                    key={maker.id}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center px-5 py-3 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-bold rounded-xl shadow-sm hover:shadow transition duration-200 uppercase tracking-wider font-sans text-center"
+                  >
+                    <MessageCircle className="h-4 w-4 mr-2 fill-white shrink-0" />
+                    <span>Message {maker.business_name}</span>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-text-dark/60 font-sans">
+                WhatsApp is not listed for this maker — your Order ID above is all they need to start fulfilling your order.
+              </p>
+            )}
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Link
                 href="/products"
