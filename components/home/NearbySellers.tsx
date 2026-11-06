@@ -2,10 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { getSellers } from "@/lib/supabase/client";
 import { Seller } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
 import { MapPin, Navigation, Locate, AlertCircle } from "lucide-react";
+
+// Leaflet touches `window` on import — client-only, never seeing the server
+const MapCanvas = dynamic(() => import("@/components/map/MapCanvas"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full w-full animate-pulse bg-primary-green/10" />
+  ),
+});
 
 // Default location centered in Kochi, Kerala
 const DEFAULT_LAT = 9.9816;
@@ -96,6 +105,23 @@ export default function NearbySellers() {
           <div className="p-4 rounded-xl bg-accent-gold/10 border border-accent-gold/20 flex items-start space-x-2.5 max-w-xl">
             <AlertCircle className="h-5 w-5 text-warm-brown flex-shrink-0 mt-0.5" />
             <span className="text-xs text-text-dark/80 leading-relaxed">{locError}</span>
+          </div>
+        )}
+
+        {/* The map itself — fills and centers on the user's (default Kochi) location */}
+        {sortedSellers.length > 0 && (
+          <div className="h-[320px] sm:h-[400px] rounded-2xl overflow-hidden border border-warm-brown/10 shadow-sm bg-primary-green/5">
+            <MapCanvas
+              center={[centerLat, centerLng]}
+              markers={sortedSellers.map((seller) => ({
+                id: seller.id,
+                lat: seller.lat,
+                lng: seller.lng,
+                title: seller.business_name,
+                subtitle: `${formatDistance(seller.distance)} away`,
+                href: `/sellers/${seller.id}`,
+              }))}
+            />
           </div>
         )}
 
