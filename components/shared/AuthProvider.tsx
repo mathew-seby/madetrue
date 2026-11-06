@@ -196,7 +196,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Public browsing: anyone can explore the marketplace without an account.
+  // The login wall appears only where an account is truly needed — placing an
+  // order, managing a maker store, or your profile. /admin keeps its own
+  // bespoke console login below.
   const isAdminRoute = pathname?.startsWith("/admin");
+  const isProtectedRoute =
+    pathname === "/checkout" ||
+    pathname?.startsWith("/dashboard") ||
+    pathname?.startsWith("/profile");
 
   // If page is loading active session, show loader
   if (loading) {
@@ -208,8 +216,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // If path is admin route or user is authenticated, serve main app
-  if (isAdminRoute || currentUser) {
+  // Serve the app for admin routes (own login flow), all public browsing, and
+  // any signed-in visitor. Guests only hit the wall on protected routes.
+  if (isAdminRoute || !isProtectedRoute || currentUser) {
     return (
       <AuthContext.Provider value={{ currentUser, loading, login, signup, logout, upgradeCurrentUserToSeller, updateUser, requestPasswordReset }}>
         {children}
@@ -217,7 +226,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Otherwise, render full screen gorgeous Login / Registration Page (first interface)
+  // Guest on a protected route: render the full-screen Login / Registration page.
+  // Sign-in happens in place, so the visitor continues exactly where they
+  // were headed (checkout, dashboard, profile) the moment they're signed in.
   return (
     <AuthContext.Provider value={{ currentUser, loading, login, signup, logout, upgradeCurrentUserToSeller, updateUser, requestPasswordReset }}>
       <div className="min-h-screen bg-cream-bg flex flex-col md:flex-row">
