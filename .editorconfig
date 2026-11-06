@@ -1,0 +1,26 @@
+# MADETRUE — editor baseline (https://editorconfig.org)
+# Keep every teammate's editor producing byte-identical files:
+# no CRLF/indent churn in diffs, no missing final newlines.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.md]
+# Markdown treats two trailing spaces as a hard line break — leave them alone
+trim_trailing_whitespace = false
+
+# Windows scripts must keep CRLF (matches .gitattributes)
+[*.{bat,ps1}]
+end_of_line = crlf
+
+# Third-party skill files — don't reformat on save
+[.agents/**]
+trim_trailing_whitespace = false
+insert_final_newline = false
