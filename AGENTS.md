@@ -26,15 +26,16 @@ platform. Every design and code decision must reflect:
 | Styling | **Tailwind CSS 4** (PostCSS plugin) · lucide-react icons |
 | Backend / DB | Supabase (Postgres + Auth + Storage + Realtime) — *not wired yet* |
 | Payments | Razorpay (UPI + Cash on Delivery) — *not wired yet* |
-| Maps | Leaflet.js (nearby sellers, distance display) — *not wired yet* |
+| Maps | Leaflet 1.9.4 + react-leaflet 5 · OSM tiles (no API keys) — **wired**: shared `MapCanvas` / `SellerMap` / `DistanceBadge` power the homepage nearby map and the maker maps on seller + product pages, with honest geolocation (`lib/hooks/useUserLocation.ts`) |
 | Media | Supabase Storage (product images, seller photos, optional video) |
 | WhatsApp | Twilio or WATI (order updates + seller onboarding) — order CTA is `wa.me` meanwhile |
 | Hosting | Vercel (frontend) + Supabase (backend) |
 
 > **Current build reality (mock era):** the app runs entirely on a **mock data layer** —
 > `lib/supabase/client.ts` + `lib/supabase/auth.ts` persist to browser `localStorage`
-> under `madetrue_*` keys. No Supabase, Razorpay, or Leaflet keys exist yet and no
-> `.env.local` is needed. See `.env.example` for the variables each future phase will
+> under `madetrue_*` keys. No Supabase or Razorpay keys exist yet (Leaflet runs
+> on free OSM tiles — no keys at all) and no `.env.local` is needed. See
+> `.env.example` for the variables each future phase will
 > introduce. If you're hunting "missing data", wipe localStorage first.
 
 ---
@@ -244,11 +245,14 @@ Primary color #2D6A4F. Mobile-first at 375px.
 > The full skeleton runs end-to-end on mock data: homepage, product listing +
 > detail, seller profiles, cart, checkout (plain-text WhatsApp order summaries
 > via `wa.me`), profile, maker dashboard, and the admin console. **Phase 1
-> (buying loop) is complete.** Phase 0 (repo hygiene: line endings, env
-> template, Node pin, CI, lint gate, CODEOWNERS, PR/issue templates) is in
-> final stretches — remaining: GitHub-side settings (branch protection,
-> squash merges, collaborators, code-owner handles) and the team issue list.
-> Next build phase: **Phase 8 — Leaflet maps.**
+> (buying loop) is complete.** **Phase 8 (Leaflet maps) is complete:** shared
+> `MapCanvas`/`SellerMap`/`DistanceBadge`, honest geolocation via
+> `lib/hooks/useUserLocation.ts` (a refusal hides distances — nothing poses a
+> Kochi default as the visitor), and an Ernakulam honesty gate on badges.
+> Phase 0 (repo hygiene) is in final stretches — remaining: GitHub-side
+> settings (branch protection, squash merges, collaborators, code-owner
+> handles) and the team issue list.
+> Next build phase: **Phase 2 — Supabase foundation.**
 
 ## Team
 

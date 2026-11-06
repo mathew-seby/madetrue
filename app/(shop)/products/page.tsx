@@ -6,12 +6,10 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { getProducts, getCategories, getSellers, type ProductFilters } from "@/lib/supabase/client";
 import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Product, Seller, Category } from "@/types";
-import { calculateDistance, formatDistance } from "@/lib/utils/distance";
+import { calculateDistance } from "@/lib/utils/distance";
+import { useUserLocation } from "@/lib/hooks/useUserLocation";
+import DistanceBadge from "@/components/map/DistanceBadge";
 import { Search, MapPin, Store, ShoppingCart, Heart, SlidersHorizontal, Check, X } from "lucide-react";
-
-// Default location (Kochi, Kerala)
-const DEFAULT_LAT = 9.9816;
-const DEFAULT_LNG = 76.2999;
 
 function ProductListingContent() {
   const router = useRouter();
@@ -28,9 +26,9 @@ function ProductListingContent() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [sortBy, setSortBy] = useState<ProductFilters["sortBy"]>("newest");
-  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   const { addItem, items } = useCart();
+  const { userCoords, locating, requestLocation } = useUserLocation();
 
   const handleAddToCart = (product: Product) => {
     // Honest feedback: if the basket already holds all available stock the
@@ -62,22 +60,11 @@ function ProductListingContent() {
     }
     loadData();
 
-    // Check browser location if permitted
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserCoords({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        },
-        () => {
-          // Fallback silently to Kochi
-          setUserCoords({ lat: DEFAULT_LAT, lng: DEFAULT_LNG });
-        }
-      );
-    }
-  }, []);
+    // Ask once so card distances are real — on a refusal the hook keeps
+    // userCoords null and every distance badge simply stays hidden instead of
+    // quietly measuring from a made-up Kochi position.
+    requestLocation();
+  }, [requestLocation]);
 
   // URL ↔ filter sync: local changes push the param to the URL (see
   // handleCategoryChange), while external param changes (back/forward nav,
@@ -132,10 +119,6 @@ function ProductListingContent() {
     }
   };
 
-  // User location for distance metrics
-  const centerLat = userCoords?.lat ?? DEFAULT_LAT;
-  const centerLng = userCoords?.lng ?? DEFAULT_LNG;
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Header */}
@@ -175,10 +158,21 @@ function ProductListingContent() {
             <div className="absolute right-4 top-4.5 pointer-events-none w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px] border-t-text-dark/60" />
           </div>
 
-          {/* User Location Indicator */}
-          <div className="md:col-span-3 flex items-center justify-end text-xs text-warm-brown font-semibold space-x-1.5">
+          {/* Location honesty: say what the distances are based on */}
+          <div className="md:col-span-3 flex items-center justify-start md:justify-end text-xs font-semibold space-x-1.5">
             <MapPin className="h-4 w-4 text-primary-green" />
-            <span>Kochi, Kerala (within 15km)</span>
+            {userCoords ? (
+              <span className="text-warm-brown">Distances measured from your location</span>
+            ) : locating ? (
+              <span className="text-warm-brown">Finding your location…</span>
+            ) : (
+              <button
+                onClick={requestLocation}
+                className="text-primary-green hover:underline underline-offset-2"
+              >
+                Share location for real distances
+              </button>
+            )}
           </div>
         </div>
 
@@ -215,9 +209,10 @@ function ProductListingContent() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {products.map((product) => {
             const seller = sellers[product.seller_id];
-            const distance = seller
-              ? calculateDistance(centerLat, centerLng, seller.lat, seller.lng)
-              : null;
+            const distance =
+              seller && userCoords
+                ? calculateDistance(userCoords.lat, userCoords.lng, seller.lat, seller.lng)
+                : null;
 
             return (
               <div
@@ -235,11 +230,13 @@ function ProductListingContent() {
                   </Link>
                   {/* Badges container */}
                   <div className="absolute top-3 left-3 flex flex-col gap-1.5 items-start">
-                    {distance !== null && (
-                      <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-cream-bg/95 text-[9px] font-bold text-warm-brown shadow-sm border border-warm-brown/10">
-                        <MapPin className="h-2.5 w-2.5 mr-0.5 text-primary-green" />
-                        <span>{formatDistance(distance)}</span>
-                      </div>
+                    {distance !== null && seller && (
+                      <DistanceBadge
+                        distance={distance}
+                        lat={seller.lat}
+                        lng={seller.lng}
+                        address={seller.address}
+                      />
                     )}
                     {product.stock > 0 && product.stock <= 2 && product.is_available && (
                       <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-600 text-white text-[8px] font-bold uppercase tracking-wider animate-pulse shadow-sm font-sans">

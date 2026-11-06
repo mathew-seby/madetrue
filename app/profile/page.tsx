@@ -41,9 +41,9 @@ export default function ProfilePage() {
           setErrorMsg("");
         },
         () => {
-          setErrorMsg("Could not access your location. Pre-filled Kochi central instead.");
-          setLat("9.9312");
-          setLng("76.2673");
+          setErrorMsg(
+            "We couldn't detect your location — nothing was changed. Try again, or paste a Google Maps link below."
+          );
         }
       );
     } else {
