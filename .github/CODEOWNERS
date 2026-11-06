@@ -1,0 +1,47 @@
+# MADETRUE — code ownership map
+#
+# GitHub reads this file on every PR and requests review from the last
+# pattern that matches each changed file. It becomes a hard requirement
+# only when we turn on branch protection for `main` (Settings → Branches)
+# with "Require review from Code Owners". Until then it simply documents
+# who owns what, and powers the repo's Code owners page.
+#
+# Syntax reference (last matching pattern wins):
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# ── TODO ─────────────────────────────────────────────────────────────
+# Replace each @team-member-N placeholder below with that teammate's
+# real GitHub handle (5 handles missing at the time of writing).
+# A missing handle is simply ignored by GitHub until it exists — the
+# line is left in place so only a 5-line edit is needed later.
+# ─────────────────────────────────────────────────────────────────────
+
+# Fallback: the project lead owns anything not matched below
+*                                           @mathew-seby
+
+# ── Shared foundations ──────────────────────────────────────────────
+/types/                                     @mathew-cs
+/lib/                                       @mathew-cs
+/components/shared/                         @joelpunnen @team-member-1
+
+# ── Homepage & marketing UI ─────────────────────────────────────────
+/app/page.tsx                               @joelpunnen @team-member-1
+/components/home/                           @joelpunnen @team-member-1
+
+# ── Shop surfaces (products, product detail, sellers) ───────────────
+/app/(shop)/                                @team-member-2
+/app/(sellers)/                             @team-member-2
+
+# ── Buying loop ─────────────────────────────────────────────────────
+/app/cart/                                  @team-member-3 @joelpunnen
+/app/checkout/                             @mathew-seby @team-member-3
+
+# ── Maker & account surfaces ────────────────────────────────────────
+/app/dashboard/                             @joelpunnen @team-member-4
+/app/profile/                               @team-member-4
+
+# ── Admin console (moderation is the lead's gate) ───────────────────
+/app/admin/                                 @mathew-seby @mathew-cs
+
+# ── Repo governance (CI, templates, owners) ─────────────────────────
+/.github/                                   @mathew-seby
