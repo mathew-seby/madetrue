@@ -38,6 +38,9 @@ export interface MapCanvasProps {
   /** Whether the mouse wheel zooms the map. Off by default so scrolling
    *  past the map never hijacks the page. */
   wheelZoom?: boolean;
+  /** Upper bound while auto-fitting the pin set — 12 (a district view) by
+   *  default; 13–16 for close-ups like a single maker's storefront */
+  fitMaxZoom?: number;
   /** The visitor's shared location — shows their pin and pulls it into the fit */
   userLocation?: MapUserLocation;
   /** Classes for the wrapper — the parent owns the height */
@@ -114,6 +117,7 @@ export default function MapCanvas({
   center,
   zoom = 11,
   wheelZoom = false,
+  fitMaxZoom = 12,
   userLocation,
   className = "",
 }: MapCanvasProps) {
@@ -127,7 +131,8 @@ export default function MapCanvas({
   ];
 
   return (
-    <div className={className}>
+    // `relative` so the map surface and the legend chip share one overlay box
+    <div className={`relative ${className}`}>
       <MapContainer
         center={center}
         zoom={zoom}
@@ -140,7 +145,7 @@ export default function MapCanvas({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <FitToPoints points={fitPoints} />
+        <FitToPoints points={fitPoints} maxZoom={fitMaxZoom} />
         {markers.map((marker) => (
           <Marker
             key={marker.id}
@@ -185,6 +190,19 @@ export default function MapCanvas({
           </Marker>
         )}
       </MapContainer>
+
+      {/* Legend for the visitor's own pin — instant read, never blocks drags */}
+      {userLocation && (
+        <div className="pointer-events-none absolute bottom-3 left-3 z-[1100] inline-flex items-center gap-1.5 rounded-full border border-warm-brown/10 bg-cream-bg/95 px-2.5 py-1 shadow-sm">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-full border-2 border-white bg-accent-gold"
+            aria-hidden="true"
+          />
+          <span className="text-[10px] font-bold uppercase tracking-wide text-warm-brown">
+            You are here
+          </span>
+        </div>
+      )}
     </div>
   );
 }

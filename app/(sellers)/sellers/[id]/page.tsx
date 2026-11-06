@@ -6,11 +6,19 @@ import { getSellerById, getProductsBySellerId } from "@/lib/supabase/client";
 import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Seller, Product } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
-import { MapPin, CheckCircle2, MessageCircle, ArrowLeft, ShoppingCart, Heart, Check } from "lucide-react";
-
-// Default location Kochi
-const DEFAULT_LAT = 9.9816;
-const DEFAULT_LNG = 76.2999;
+import { useUserLocation } from "@/lib/hooks/useUserLocation";
+import SellerMap from "@/components/map/SellerMap";
+import {
+  MapPin,
+  CheckCircle2,
+  MessageCircle,
+  ArrowLeft,
+  ShoppingCart,
+  Heart,
+  Check,
+  Navigation,
+  AlertCircle,
+} from "lucide-react";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -21,12 +29,12 @@ export default function SellerProfilePage({ params }: PageProps) {
 
   const [seller, setSeller] = useState<Seller | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
-  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
   const [cappedProductId, setCappedProductId] = useState<string | null>(null);
 
   const { addItem, items } = useCart();
+  const { userCoords, locError, requestLocation } = useUserLocation();
 
   const handleAddToCart = (product: Product) => {
     // Honest feedback: if the basket already holds all available stock the
@@ -56,21 +64,10 @@ export default function SellerProfilePage({ params }: PageProps) {
     }
     loadData();
 
-    // Check browser location
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserCoords({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        },
-        () => {
-          setUserCoords({ lat: DEFAULT_LAT, lng: DEFAULT_LNG });
-        }
-      );
-    }
-  }, [id]);
+    // Ask for location so the distance to this maker is real — on a refusal
+    // or failure the hook keeps userCoords null and locError explains why.
+    requestLocation();
+  }, [id, requestLocation]);
 
   if (loading) {
     return (
@@ -96,9 +93,11 @@ export default function SellerProfilePage({ params }: PageProps) {
     );
   }
 
-  const centerLat = userCoords?.lat ?? DEFAULT_LAT;
-  const centerLng = userCoords?.lng ?? DEFAULT_LNG;
-  const distance = calculateDistance(centerLat, centerLng, seller.lat, seller.lng);
+  // Distance only exists when the visitor actually shared location —
+  // distances stay hidden instead of being measured from a place they are not.
+  const distance = userCoords
+    ? calculateDistance(userCoords.lat, userCoords.lng, seller.lat, seller.lng)
+    : null;
 
   // Prefilled WhatsApp message text
   const waMessageText = encodeURIComponent(
@@ -161,9 +160,11 @@ export default function SellerProfilePage({ params }: PageProps) {
                     </span>
                   )}
                 </div>
-                <div className="inline-flex items-center px-3 py-1 rounded-full bg-primary-green/10 text-primary-green text-xs font-semibold tracking-wide">
-                  <span>{formatDistance(distance)} away</span>
-                </div>
+                {distance !== null && (
+                  <div className="inline-flex items-center px-3 py-1 rounded-full bg-primary-green/10 text-primary-green text-xs font-semibold tracking-wide">
+                    <span>{formatDistance(distance)} away</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -199,6 +200,53 @@ export default function SellerProfilePage({ params }: PageProps) {
               <p className="font-serif text-lg leading-relaxed text-text-dark/85 italic border-l-4 border-accent-gold/40 pl-4">
                 &ldquo;{seller.story}&rdquo;
               </p>
+            </div>
+
+            {/* Find This Maker */}
+            <div className="bg-[#FAF7F2] rounded-3xl border border-warm-brown/10 p-6 sm:p-8 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <h2 className="font-serif text-2xl font-bold text-text-dark">
+                  Find this Maker
+                </h2>
+                <div className="flex flex-wrap items-center gap-3">
+                  {distance !== null && (
+                    <span className="inline-flex items-center rounded-full bg-primary-green/10 px-3 py-1 text-xs font-semibold tracking-wide text-primary-green">
+                      {formatDistance(distance)} from you
+                    </span>
+                  )}
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${seller.lat},${seller.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-4 py-2 rounded-xl border border-primary-green text-sm font-semibold text-primary-green hover:bg-primary-green hover:text-cream-bg transition duration-200"
+                  >
+                    <Navigation className="h-4 w-4 mr-2" />
+                    Get directions
+                  </a>
+                </div>
+              </div>
+
+              {locError && (
+                <div className="p-4 rounded-xl bg-accent-gold/10 border border-accent-gold/20 flex items-start space-x-2.5">
+                  <AlertCircle className="h-5 w-5 text-warm-brown flex-shrink-0 mt-0.5" />
+                  <span className="text-xs text-text-dark/80 leading-relaxed">
+                    {locError}
+                  </span>
+                </div>
+              )}
+
+              <SellerMap
+                className="h-[320px] sm:h-[400px] rounded-2xl overflow-hidden border border-warm-brown/10 shadow-sm bg-primary-green/5"
+                name={seller.business_name}
+                lat={seller.lat}
+                lng={seller.lng}
+                userLocation={userCoords}
+              />
+
+              <div className="flex items-start text-sm leading-relaxed text-text-dark/70">
+                <MapPin className="h-4 w-4 mr-2 text-primary-green flex-shrink-0 mt-0.5" />
+                <span>{seller.address}</span>
+              </div>
             </div>
 
             {/* Products Grid */}

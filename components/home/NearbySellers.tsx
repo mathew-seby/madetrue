@@ -6,7 +6,8 @@ import dynamic from "next/dynamic";
 import { getSellers } from "@/lib/supabase/client";
 import { Seller } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
-import { MapPin, Navigation, Locate, AlertCircle } from "lucide-react";
+import { useUserLocation } from "@/lib/hooks/useUserLocation";
+import { Navigation, Locate, AlertCircle } from "lucide-react";
 
 // Leaflet touches `window` on import — client-only, never seeing the server
 const MapCanvas = dynamic(() => import("@/components/map/MapCanvas"), {
@@ -16,15 +17,18 @@ const MapCanvas = dynamic(() => import("@/components/map/MapCanvas"), {
   ),
 });
 
-// Default location centered in Kochi, Kerala
+// Default location centered in Kochi, Kerala — the honest stand-in when a
+// visitor hasn't shared location: the map opens here and cards sort from
+// here, and the alert under the header says exactly that.
 const DEFAULT_LAT = 9.9816;
 const DEFAULT_LNG = 76.2999;
 
 export default function NearbySellers() {
   const [sellers, setSellers] = useState<Seller[]>([]);
-  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [locating, setLocating] = useState(false);
-  const [locError, setLocError] = useState<string | null>(null);
+  const { userCoords, locating, locError, requestLocation } = useUserLocation({
+    fallbackNote:
+      "Meanwhile, makers are ordered by distance from the Kochi centre.",
+  });
 
   useEffect(() => {
     async function load() {
@@ -33,34 +37,6 @@ export default function NearbySellers() {
     }
     load();
   }, []);
-
-  // Use browser Geolocation to get actual location
-  const requestLocation = () => {
-    if (!navigator.geolocation) {
-      setLocError("Geolocation is not supported by your browser.");
-      return;
-    }
-
-    setLocating(true);
-    setLocError(null);
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setUserCoords({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        });
-        setLocating(false);
-      },
-      (error) => {
-        console.error("Error getting location: ", error);
-        setLocError("Could not access your location. Using Kochi center as default.");
-        setUserCoords({ lat: DEFAULT_LAT, lng: DEFAULT_LNG });
-        setLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 5000 }
-    );
-  };
 
   const centerLat = userCoords?.lat ?? DEFAULT_LAT;
   const centerLng = userCoords?.lng ?? DEFAULT_LNG;
@@ -133,19 +109,6 @@ export default function NearbySellers() {
               className="h-full w-full animate-pulse bg-primary-green/10"
               aria-hidden="true"
             />
-          )}
-
-          {/* Tiny legend so the gold dot reads at a glance */}
-          {userCoords && sortedSellers.length > 0 && (
-            <div className="pointer-events-none absolute bottom-3 left-3 z-[1100] inline-flex items-center gap-1.5 rounded-full border border-warm-brown/10 bg-cream-bg/95 px-2.5 py-1 shadow-sm">
-              <span
-                className="inline-block h-2.5 w-2.5 rounded-full border-2 border-white bg-accent-gold"
-                aria-hidden="true"
-              />
-              <span className="text-[10px] font-bold uppercase tracking-wide text-warm-brown">
-                You are here
-              </span>
-            </div>
           )}
         </div>
 
