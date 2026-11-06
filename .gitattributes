@@ -1,0 +1,30 @@
+# MADETRUE — line-ending policy
+# LF everywhere keeps diffs clean across Windows/Mac/Linux teammates
+# and stops "invisible change" noise in PRs.
+
+# Normalize all text files to LF (on checkout and on commit)
+* text=auto eol=lf
+
+# Windows scripts should keep CRLF (they must, to run correctly)
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# SVG is text — keep it normalized
+*.svg text
+
+# Binaries — never normalize these
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.mp4 binary
+*.webm binary
