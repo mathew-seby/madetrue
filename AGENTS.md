@@ -22,14 +22,32 @@ platform. Every design and code decision must reflect:
 
 | Layer | Technology |
 |---|---|
-| Framework | Next.js 14 (App Router) + TypeScript |
-| Styling | Tailwind CSS + shadcn/ui |
-| Backend / DB | Supabase (Postgres + Auth + Storage + Realtime) |
-| Payments | Razorpay (UPI + Cash on Delivery) |
-| Maps | Leaflet.js (nearby sellers, distance display) |
+| Framework | **Next.js 16.2.9** (App Router, Turbopack) + TypeScript — requires Node ≥ 20.9.0 (team standard: **22**, pinned in `.nvmrc`) |
+| Styling | **Tailwind CSS 4** (PostCSS plugin) · lucide-react icons |
+| Backend / DB | Supabase (Postgres + Auth + Storage + Realtime) — *not wired yet* |
+| Payments | Razorpay (UPI + Cash on Delivery) — *not wired yet* |
+| Maps | Leaflet.js (nearby sellers, distance display) — *not wired yet* |
 | Media | Supabase Storage (product images, seller photos, optional video) |
-| WhatsApp | Twilio or WATI (order updates + seller onboarding) |
+| WhatsApp | Twilio or WATI (order updates + seller onboarding) — order CTA is `wa.me` meanwhile |
 | Hosting | Vercel (frontend) + Supabase (backend) |
+
+> **Current build reality (mock era):** the app runs entirely on a **mock data layer** —
+> `lib/supabase/client.ts` + `lib/supabase/auth.ts` persist to browser `localStorage`
+> under `madetrue_*` keys. No Supabase, Razorpay, or Leaflet keys exist yet and no
+> `.env.local` is needed. See `.env.example` for the variables each future phase will
+> introduce. If you're hunting "missing data", wipe localStorage first.
+
+---
+
+## Locked Product Decisions (already built in — don't re-litigate)
+
+1. **Public browsing, yes.** Anyone can browse products, maker stores, and the cart
+   without an account. The login wall only appears for guests on `/checkout`,
+   `/dashboard`, and `/profile*`. `/admin` keeps its own console login.
+2. **Pickup is single-maker MVP:** pickup is offered only when the cart holds one
+   seller's items; mixed carts are delivery-only, with a flat ₹49 delivery fee.
+3. **Sign-in = identifier (email *or* phone) + password.** SMS verification is
+   deferred until a provider is chosen; phone stays a profile field meanwhile.
 
 ---
 
@@ -223,7 +241,14 @@ Primary color #2D6A4F. Mobile-first at 375px.
 
 ## Current Status
 
-> Project is in initial setup phase. Stack is decided. No code written yet.
+> The full skeleton runs end-to-end on mock data: homepage, product listing +
+> detail, seller profiles, cart, checkout (plain-text WhatsApp order summaries
+> via `wa.me`), profile, maker dashboard, and the admin console. **Phase 1
+> (buying loop) is complete.** Phase 0 (repo hygiene: line endings, env
+> template, Node pin, CI, lint gate, CODEOWNERS, PR/issue templates) is in
+> final stretches — remaining: GitHub-side settings (branch protection,
+> squash merges, collaborators, code-owner handles) and the team issue list.
+> Next build phase: **Phase 8 — Leaflet maps.**
 
 ## Team
 
