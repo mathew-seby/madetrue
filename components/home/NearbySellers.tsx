@@ -108,10 +108,11 @@ export default function NearbySellers() {
           </div>
         )}
 
-        {/* The map itself — fills and centers on the user's (default Kochi) location */}
-        {sortedSellers.length > 0 && (
-          <div className="h-[320px] sm:h-[400px] rounded-2xl overflow-hidden border border-warm-brown/10 shadow-sm bg-primary-green/5">
+        {/* The map itself — auto-fits the maker set plus the visitor's own pin */}
+        <div className="relative h-[320px] sm:h-[400px] rounded-2xl overflow-hidden border border-warm-brown/10 shadow-sm bg-primary-green/5">
+          {sortedSellers.length > 0 ? (
             <MapCanvas
+              className="h-full w-full"
               center={[centerLat, centerLng]}
               markers={sortedSellers.map((seller) => ({
                 id: seller.id,
@@ -121,9 +122,32 @@ export default function NearbySellers() {
                 subtitle: `${formatDistance(seller.distance)} away`,
                 href: `/sellers/${seller.id}`,
               }))}
+              userLocation={
+                userCoords
+                  ? { lat: userCoords.lat, lng: userCoords.lng }
+                  : undefined
+              }
             />
-          </div>
-        )}
+          ) : (
+            <div
+              className="h-full w-full animate-pulse bg-primary-green/10"
+              aria-hidden="true"
+            />
+          )}
+
+          {/* Tiny legend so the gold dot reads at a glance */}
+          {userCoords && sortedSellers.length > 0 && (
+            <div className="pointer-events-none absolute bottom-3 left-3 z-[1100] inline-flex items-center gap-1.5 rounded-full border border-warm-brown/10 bg-cream-bg/95 px-2.5 py-1 shadow-sm">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full border-2 border-white bg-accent-gold"
+                aria-hidden="true"
+              />
+              <span className="text-[10px] font-bold uppercase tracking-wide text-warm-brown">
+                You are here
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* Nearby Sellers Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">

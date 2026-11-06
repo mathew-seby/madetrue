@@ -1,8 +1,10 @@
 "use client";
 
-import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
+import { useEffect } from "react";
+import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
+import Link from "next/link";
 
 export interface MapMarker {
   id: string;
@@ -17,16 +19,27 @@ export interface MapMarker {
   hrefLabel?: string;
 }
 
+/** The visitor's own location, drawn as the distinct gold pin */
+export interface MapUserLocation {
+  lat: number;
+  lng: number;
+  /** Popup title on the user pin (defaults to "You are here") */
+  label?: string;
+}
+
 export interface MapCanvasProps {
   /** Pins to show on the map */
   markers: MapMarker[];
-  /** [lat, lng] the map starts centered on */
+  /** [lat, lng] first-frame center only — the map immediately auto-fits
+   *  the marker set afterwards (see FitToPoints) */
   center: [number, number];
   /** Leaflet zoom level — 11 is a city view (default) */
   zoom?: number;
   /** Whether the mouse wheel zooms the map. Off by default so scrolling
    *  past the map never hijacks the page. */
   wheelZoom?: boolean;
+  /** The visitor's shared location — shows their pin and pulls it into the fit */
+  userLocation?: MapUserLocation;
   /** Classes for the wrapper — the parent owns the height */
   className?: string;
 }
@@ -54,13 +67,65 @@ const MAKER_PIN = L.divIcon({
   html: `<svg width="30" height="38" viewBox="0 0 30 38" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M15 1C8.4 1 3 6.39 3 12.99C3 21.49 15 37 15 37C15 37 27 21.49 27 12.99C27 6.39 21.6 1 15 1Z" fill="#2D6A4F"/><circle cx="15" cy="12.5" r="5" fill="#F9F5F0"/></svg>`,
 });
 
+/** The visitor's mark — gold with a white ring readably on any tile */
+const USER_PIN = L.divIcon({
+  className: "madetrue-user-pin",
+  iconSize: [18, 18],
+  // The center of the dot sits exactly on the coordinate
+  iconAnchor: [9, 9],
+  popupAnchor: [0, -11],
+  html: `<svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="#E9A84C" stroke="#FFFFFF" stroke-width="2.5"/></svg>`,
+});
+
+/**
+ * Keeps the whole pin set in view. Leaflet ignores `center` changes after
+ * mount, so the fit is done by a child that reacts to the point set itself —
+ * when a visitor shares their location, or more makers load, the frame pulls
+ * everything in; every pan/zoom they do after that stays untouched.
+ */
+function FitToPoints({
+  points,
+  maxZoom = 12,
+}: {
+  points: Array<[number, number]>;
+  maxZoom?: number;
+}) {
+  const map = useMap();
+  // Refit only when a coordinate genuinely moved — compared as a string so
+  // per-render array identities never trigger it.
+  const frame = points.map((p) => `${p[0]},${p[1]}`).join("|");
+
+  useEffect(() => {
+    if (!frame) return;
+    const parsed = frame
+      .split("|")
+      .map((set) => set.split(",").map(Number) as [number, number]);
+    map.fitBounds(L.latLngBounds(parsed), {
+      padding: [36, 36],
+      maxZoom,
+    });
+  }, [frame, map, maxZoom]);
+
+  return null;
+}
+
 export default function MapCanvas({
   markers,
   center,
   zoom = 11,
   wheelZoom = false,
+  userLocation,
   className = "",
 }: MapCanvasProps) {
+  // The frame is built from whatever is on the map right now: maker pins
+  // first, then the visitor's own location if they shared it.
+  const fitPoints: Array<[number, number]> = [
+    ...markers.map((m) => [m.lat, m.lng] as [number, number]),
+    ...(userLocation
+      ? ([[userLocation.lat, userLocation.lng]] as Array<[number, number]>)
+      : []),
+  ];
+
   return (
     <div className={className}>
       <MapContainer
@@ -75,6 +140,7 @@ export default function MapCanvas({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        <FitToPoints points={fitPoints} />
         {markers.map((marker) => (
           <Marker
             key={marker.id}
@@ -90,17 +156,34 @@ export default function MapCanvas({
                   <p className="text-xs text-text-dark/60">{marker.subtitle}</p>
                 )}
                 {marker.href && (
-                  <a
+                  <Link
                     href={marker.href}
                     className="text-xs font-bold text-primary-green hover:underline"
                   >
                     {marker.hrefLabel ?? "View Store"} →
-                  </a>
+                  </Link>
                 )}
               </div>
             </Popup>
           </Marker>
         ))}
+        {userLocation && (
+          <Marker
+            position={[userLocation.lat, userLocation.lng]}
+            icon={USER_PIN}
+          >
+            <Popup maxWidth={220}>
+              <div className="space-y-1">
+                <p className="font-serif text-sm font-bold text-text-dark">
+                  {userLocation.label ?? "You are here"}
+                </p>
+                <p className="text-xs text-text-dark/60">
+                  Distances are measured from this point.
+                </p>
+              </div>
+            </Popup>
+          </Marker>
+        )}
       </MapContainer>
     </div>
   );
