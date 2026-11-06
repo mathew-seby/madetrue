@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { getProducts, getCategories, getSellers } from "@/lib/supabase/client";
+import { getProducts, getCategories, getSellers, type ProductFilters } from "@/lib/supabase/client";
 import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Product, Seller, Category } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
@@ -27,7 +27,7 @@ function ProductListingContent() {
   // Filter & Sort States
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
-  const [sortBy, setSortBy] = useState<string>("newest");
+  const [sortBy, setSortBy] = useState<ProductFilters["sortBy"]>("newest");
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   const { addItem, items } = useCart();
@@ -79,10 +79,16 @@ function ProductListingContent() {
     }
   }, []);
 
-  // Update selectedCategory if URL search parameter changes
-  useEffect(() => {
-    setSelectedCategory(searchParams.get("category") || "");
-  }, [searchParams]);
+  // URL ↔ filter sync: local changes push the param to the URL (see
+  // handleCategoryChange), while external param changes (back/forward nav,
+  // direct links) update the filter. Done during render ("adjusting state"
+  // pattern) instead of an effect so there is no cascading render.
+  const categoryParam = searchParams.get("category") || "";
+  const [lastCategoryParam, setLastCategoryParam] = useState(categoryParam);
+  if (categoryParam !== lastCategoryParam) {
+    setLastCategoryParam(categoryParam);
+    setSelectedCategory(categoryParam);
+  }
 
   // Query and filter products on state change
   useEffect(() => {
@@ -90,7 +96,7 @@ function ProductListingContent() {
       const data = await getProducts({
         category: selectedCategory || undefined,
         search: search || undefined,
-        sortBy: sortBy as any,
+        sortBy: sortBy,
       });
       setProducts(data);
     }
@@ -159,7 +165,7 @@ function ProductListingContent() {
           <div className="relative md:col-span-3">
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
+              onChange={(e) => setSortBy(e.target.value as ProductFilters["sortBy"])}
               className="w-full px-4 py-3 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:outline-none transition appearance-none cursor-pointer"
             >
               <option value="newest">Sort: Newest</option>
@@ -345,7 +351,7 @@ function ProductListingContent() {
           <SlidersHorizontal className="h-8 w-8 text-warm-brown/50 mx-auto" />
           <h3 className="font-serif text-lg font-bold text-text-dark">No Products Found</h3>
           <p className="text-sm text-text-dark/60 max-w-sm mx-auto leading-relaxed">
-            We couldn't find any local goods matching your criteria. Try adjusting your search query or switching categories.
+            We couldn&apos;t find any local goods matching your criteria. Try adjusting your search query or switching categories.
           </p>
         </div>
       )}

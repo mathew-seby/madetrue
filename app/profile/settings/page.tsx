@@ -26,12 +26,22 @@ export default function SettingsPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  // Prefill the editable profile fields when the signed-in user loads/changes
+  // ("adjusting state during render" pattern — no cascading effect needed).
+  const [lastPrefilledUser, setLastPrefilledUser] = useState(currentUser);
+  if (currentUser !== lastPrefilledUser) {
+    setLastPrefilledUser(currentUser);
     if (currentUser) {
       setEditName(currentUser.name);
       setProfilePhotoUrl(currentUser.profile_photo_url || "");
       setLanguagePref(currentUser.language_pref || "en");
-    } else {
+    }
+  }
+
+  // Send anyone without a session back to the profile screen. Navigation is
+  // a side effect, so it stays inside an effect rather than during render.
+  useEffect(() => {
+    if (!currentUser) {
       router.push("/profile");
     }
   }, [currentUser, router]);
@@ -77,8 +87,8 @@ export default function SettingsPage() {
       }
       await requestPasswordReset(identifier);
       setSuccessMsg(`A password reset link has been successfully logged/sent to: ${identifier}`);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to trigger password reset request.");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to trigger password reset request.");
     } finally {
       setLoading(false);
     }
@@ -137,8 +147,8 @@ export default function SettingsPage() {
       setTimeout(() => {
         router.push("/profile");
       }, 1500);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to update profile configurations.");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to update profile configurations.");
     } finally {
       setLoading(false);
     }

@@ -61,9 +61,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize and check current user session
   useEffect(() => {
+    // One-time read of the localStorage-backed session after hydration
+    // (an external store React can't subscribe to today). The loading gate
+    // above renders the identical loader on server and client until this
+    // read completes, so SSR markup stays stable — sync-on-mount is
+    // intentional, not a render bug.
     const user = getCurrentUser();
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time mount sync from localStorage */
     setCurrentUser(user);
     setLoading(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   const login = async (idVal: string, passVal: string) => {
@@ -189,8 +196,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         await login(identifier.trim(), password);
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || "An unexpected error occurred.");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
       setFormLoading(false);
     }

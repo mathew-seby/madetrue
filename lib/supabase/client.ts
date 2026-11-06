@@ -1,5 +1,5 @@
 import { mockCategories, mockSellers, mockProducts } from "./mockData";
-import { Category, Seller, Product } from "../../types";
+import { Category, Seller, Product, Order } from "../../types";
 
 // This is our data layer client. It serves mock data by default
 // and uses local storage to simulate write operations (approvals, product additions) on the client side.
@@ -260,12 +260,12 @@ export async function updateSellerVerification(
 }
 
 // Helper to get orders list
-function getStoredOrders(): any[] {
+function getStoredOrders(): Order[] {
   if (typeof window !== "undefined") {
     const stored = localStorage.getItem("madetrue_orders");
     if (stored) {
       try {
-        return JSON.parse(stored);
+        return JSON.parse(stored) as Order[];
       } catch (e) {
         console.error("Failed to parse stored orders", e);
       }
@@ -275,14 +275,14 @@ function getStoredOrders(): any[] {
 }
 
 // Helper to save orders list
-function saveStoredOrders(orders: any[]) {
+function saveStoredOrders(orders: Order[]) {
   if (typeof window !== "undefined") {
     localStorage.setItem("madetrue_orders", JSON.stringify(orders));
   }
 }
 
 // Get all orders for admin panel
-export async function getOrdersAdmin(): Promise<any[]> {
+export async function getOrdersAdmin(): Promise<Order[]> {
   await new Promise((resolve) => setTimeout(resolve, 100));
   return getStoredOrders();
 }
@@ -291,7 +291,7 @@ export async function getOrdersAdmin(): Promise<any[]> {
 export async function updateOrderStatus(
   id: string,
   status: 'pending' | 'accepted' | 'completed' | 'cancelled'
-): Promise<any | null> {
+): Promise<Order | null> {
   await new Promise((resolve) => setTimeout(resolve, 100));
   const orders = getStoredOrders();
   const index = orders.findIndex((o) => o.id === id);
@@ -308,7 +308,7 @@ export async function updateOrderStatus(
 export async function updateOrderWhatsappStatus(
   id: string,
   whatsapp_notified: boolean
-): Promise<any | null> {
+): Promise<Order | null> {
   await new Promise((resolve) => setTimeout(resolve, 100));
   const orders = getStoredOrders();
   const index = orders.findIndex((o) => o.id === id);

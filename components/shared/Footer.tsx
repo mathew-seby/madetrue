@@ -20,7 +20,7 @@ export default function Footer() {
         <div className="md:col-span-2 space-y-4">
           <h3 className="font-serif text-xl font-bold text-primary-green">MADETRUE</h3>
           <p className="text-sm text-text-dark/80 max-w-sm leading-relaxed">
-            Connecting Kerala's local spice growers, traditional home-cooks, and passionate artisans directly with nearby neighbors. Built on trust, local stories, and real taste.
+            Connecting Kerala&apos;s local spice growers, traditional home-cooks, and passionate artisans directly with nearby neighbors. Built on trust, local stories, and real taste.
           </p>
           <div className="flex items-center text-xs text-warm-brown font-semibold pt-2">
             <span>ഹൃദയപൂർവ്വം കേരളത്തിൽ നിന്നും</span>
@@ -81,7 +81,7 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto mt-12 pt-6 border-t border-warm-brown/5 flex flex-col sm:flex-row items-center justify-between text-xs text-text-dark/60">
         <p>&copy; {new Date().getFullYear()} MADETRUE Kerala. All rights reserved.</p>
         <p className="mt-2 sm:mt-0">
-          Made with care for Kerala's traditional producers.
+          Made with care for Kerala&apos;s traditional producers.
         </p>
       </div>
     </footer>

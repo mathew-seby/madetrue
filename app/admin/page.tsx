@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
@@ -12,13 +12,76 @@ import {
   updateOrderStatus, 
   updateOrderWhatsappStatus 
 } from "@/lib/supabase/client";
-import { Product, Seller } from "@/types";
+import { Order, Product, Seller } from "@/types";
 import { 
   ShieldCheck, LogOut, Check, X, Clock, Eye, Store, HelpCircle, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
   ChevronDown, ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
   Users, Send, Award, ShieldAlert, Calendar 
 } from "lucide-react";
+
+// Pre-seed three demo orders the first time the admin console runs.
+// Lives at module scope on purpose: Date.now() inside a component body
+// would break render-purity rules, and this only needs to run once ever.
+const MOCK_SEEDED_ORDERS = [
+  {
+    id: `order-1719736800000-0`,
+    buyer_id: "buyer-joel",
+    buyer_name: "Joel Punnen",
+    buyer_phone: "9876543210",
+    seller_id: "seller-1", // Sreedevi's Spices
+    product_id: "prod-1", // Organic Cardamom
+    product_name: "Organic Cardamom (Elakkai)",
+    price: 190,
+    quantity: 2,
+    status: "pending",
+    delivery_type: "delivery",
+    address: "Pipeline Road, Kakkanad, Kochi, Ernakulam, Kerala",
+    payment_method: "cod",
+    whatsapp_notified: true,
+    created_at: new Date(Date.now() - 3600000 * 2).toISOString(), // 2 hours ago
+    lat: 9.9816,
+    lng: 76.3400
+  },
+  {
+    id: `order-1719736800000-1`,
+    buyer_id: "buyer-mathew",
+    buyer_name: "Mathew Seby",
+    buyer_phone: "9865432107",
+    seller_id: "seller-2", // George's Farm
+    product_id: "prod-3", // Toddy-Style Coconut Vinegar
+    product_name: "Toddy-Style Coconut Vinegar",
+    price: 120,
+    quantity: 3,
+    status: "accepted",
+    delivery_type: "delivery",
+    address: "Near Church, Aluva, Kochi, Ernakulam, Kerala",
+    payment_method: "upi",
+    whatsapp_notified: false,
+    created_at: new Date(Date.now() - 3600000 * 12).toISOString(), // 12 hours ago
+    lat: 10.1076,
+    lng: 76.3501
+  },
+  {
+    id: `order-1719736800000-2`,
+    buyer_id: "buyer-guest",
+    buyer_name: "Anjali Krishna",
+    buyer_phone: "7654321098",
+    seller_id: "seller-3", // Sarah's Kitchen
+    product_id: "prod-5", // Homemade Malabar Garlic Pickle
+    product_name: "Homemade Malabar Garlic Pickle",
+    price: 150,
+    quantity: 1,
+    status: "completed",
+    delivery_type: "delivery",
+    address: "Thrikkakara, Kochi, Ernakulam, Kerala",
+    payment_method: "cod",
+    whatsapp_notified: true,
+    created_at: new Date(Date.now() - 3600000 * 48).toISOString(), // 2 days ago
+    lat: 10.0269,
+    lng: 76.3268
+  }
+];
 
 export default function AdminPage() {
   const router = useRouter();
@@ -32,7 +95,7 @@ export default function AdminPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [sellersList, setSellersList] = useState<Seller[]>([]);
   const [sellersMap, setSellersMap] = useState<{ [key: string]: Seller }>({});
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Sub-tabs filters
@@ -46,90 +109,23 @@ export default function AdminPage() {
   // Toast Notification State
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-  // Authentication check on mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const isLoggedIn = sessionStorage.getItem("admin_logged_in") === "true";
-      if (!isLoggedIn) {
-        router.push("/admin/login");
-      } else {
-        setAuthorized(true);
-        setCheckingAuth(false);
-        loadModerationData();
-      }
-    }
-  }, [router]);
+  // Stable toast helper (referenced by loadModerationData with stable deps)
+  const showToast = useCallback((message: string, type: "success" | "error") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
 
-  async function loadModerationData() {
+  const loadModerationData = useCallback(async () => {
     setLoading(true);
     try {
       const allProducts = await getAllProductsAdmin();
       const allSellers = await getSellers();
       
       // Load orders and pre-seed if empty
-      let allOrders = await getOrdersAdmin();
+      let allOrders: Order[] = await getOrdersAdmin();
       if (allOrders.length === 0 && typeof window !== "undefined") {
-        const mockOrders = [
-          {
-            id: `order-1719736800000-0`,
-            buyer_id: "buyer-joel",
-            buyer_name: "Joel Punnen",
-            buyer_phone: "9876543210",
-            seller_id: "seller-1", // Sreedevi's Spices
-            product_id: "prod-1", // Organic Cardamom
-            product_name: "Organic Cardamom (Elakkai)",
-            price: 190,
-            quantity: 2,
-            status: "pending",
-            delivery_type: "delivery",
-            address: "Pipeline Road, Kakkanad, Kochi, Ernakulam, Kerala",
-            payment_method: "cod",
-            whatsapp_notified: true,
-            created_at: new Date(Date.now() - 3600000 * 2).toISOString(), // 2 hours ago
-            lat: 9.9816,
-            lng: 76.3400
-          },
-          {
-            id: `order-1719736800000-1`,
-            buyer_id: "buyer-mathew",
-            buyer_name: "Mathew Seby",
-            buyer_phone: "9865432107",
-            seller_id: "seller-2", // George's Farm
-            product_id: "prod-3", // Toddy-Style Coconut Vinegar
-            product_name: "Toddy-Style Coconut Vinegar",
-            price: 120,
-            quantity: 3,
-            status: "accepted",
-            delivery_type: "delivery",
-            address: "Near Church, Aluva, Kochi, Ernakulam, Kerala",
-            payment_method: "upi",
-            whatsapp_notified: false,
-            created_at: new Date(Date.now() - 3600000 * 12).toISOString(), // 12 hours ago
-            lat: 10.1076,
-            lng: 76.3501
-          },
-          {
-            id: `order-1719736800000-2`,
-            buyer_id: "buyer-guest",
-            buyer_name: "Anjali Krishna",
-            buyer_phone: "7654321098",
-            seller_id: "seller-3", // Sarah's Kitchen
-            product_id: "prod-5", // Homemade Malabar Garlic Pickle
-            product_name: "Homemade Malabar Garlic Pickle",
-            price: 150,
-            quantity: 1,
-            status: "completed",
-            delivery_type: "delivery",
-            address: "Thrikkakara, Kochi, Ernakulam, Kerala",
-            payment_method: "cod",
-            whatsapp_notified: true,
-            created_at: new Date(Date.now() - 3600000 * 48).toISOString(), // 2 days ago
-            lat: 10.0269,
-            lng: 76.3268
-          }
-        ];
-        localStorage.setItem("madetrue_orders", JSON.stringify(mockOrders));
-        allOrders = mockOrders;
+        localStorage.setItem("madetrue_orders", JSON.stringify(MOCK_SEEDED_ORDERS));
+        allOrders = MOCK_SEEDED_ORDERS as Order[];
       }
 
       const sellerMap = allSellers.reduce((acc, curr) => {
@@ -146,12 +142,27 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [showToast]);
 
-  const showToast = (message: string, type: "success" | "error") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  // Authentication check on mount (sessionStorage-backed console session).
+  // The session lives in sessionStorage — an external store React can't see —
+  // so it is synced into state once on mount, after hydration. The loading
+  // gate in JSX renders the same placeholder on server and client until the
+  // read lands, keeping SSR markup stable.
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const isLoggedIn = sessionStorage.getItem("admin_logged_in") === "true";
+      if (!isLoggedIn) {
+        router.push("/admin/login");
+      } else {
+        /* eslint-disable react-hooks/set-state-in-effect -- one-time mount sync of an external (sessionStorage) store */
+        setAuthorized(true);
+        setCheckingAuth(false);
+        /* eslint-enable react-hooks/set-state-in-effect */
+        loadModerationData();
+      }
+    }
+  }, [router, loadModerationData]);
 
   const handleLogout = () => {
     if (typeof window !== "undefined") {
@@ -545,7 +556,7 @@ export default function AdminPage() {
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="space-y-4">
                               <div className="space-y-1.5">
-                                <span className="text-xs font-bold text-warm-brown uppercase tracking-wider block font-sans">Maker's Product Story</span>
+                                <span className="text-xs font-bold text-warm-brown uppercase tracking-wider block font-sans">Maker&apos;s Product Story</span>
                                 <p className="text-xs text-text-dark/80 leading-relaxed bg-cream-bg p-3.5 rounded-xl border border-warm-brown/5 italic">
                                   &quot;{product.description}&quot;
                                 </p>
@@ -747,7 +758,7 @@ export default function AdminPage() {
                       </div>
 
                       <div className="space-y-1.5">
-                        <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block font-sans">Maker's Story / Profile Summary</span>
+                        <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block font-sans">Maker&apos;s Story / Profile Summary</span>
                         <p className="text-xs text-text-dark/80 leading-relaxed italic">&quot;{seller.story}&quot;</p>
                       </div>
 
@@ -851,7 +862,7 @@ export default function AdminPage() {
             ) : filteredOrdersList.length > 0 ? (
               <div className="space-y-4">
                 {filteredOrdersList.map((order) => {
-                  const cleanPhone = order.buyer_phone.replace(/\D/g, "");
+                  const cleanPhone = (order.buyer_phone ?? "").replace(/\D/g, "");
                   const isDestinationValid = isCoordinatesInErnakulam(order.lat, order.lng);
                   const statusColors = {
                     pending: "bg-amber-100 text-amber-800 border-amber-200",
@@ -886,7 +897,7 @@ export default function AdminPage() {
                             <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block font-sans">Consumer (Buyer)</span>
                             <p className="text-xs text-text-dark font-bold">{order.buyer_name}</p>
                             <a 
-                              href={`https://wa.me/91${cleanPhone}?text=Hello%20${encodeURIComponent(order.buyer_name)},%20this%20is%20MADETRUE%20Admin%20regarding%20your%20order%20${order.id}`} 
+                              href={`https://wa.me/91${cleanPhone}?text=Hello%20${encodeURIComponent(order.buyer_name ?? "")},%20this%20is%20MADETRUE%20Admin%20regarding%20your%20order%20${order.id}`} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="text-[10.5px] font-semibold text-primary-green hover:underline block font-sans"
@@ -902,10 +913,10 @@ export default function AdminPage() {
                               Quantity: <span className="font-bold text-text-dark">{order.quantity}</span> | Price: ₹{order.price}
                             </div>
                             <div className="text-xs font-bold text-primary-green font-sans">
-                              Subtotal Total: ₹{order.price * order.quantity}
+                              Subtotal Total: ₹{(order.price ?? 0) * order.quantity}
                             </div>
                             <div className="text-[10px] text-text-dark/70 font-sans border-t border-dashed border-warm-brown/10 pt-1 mt-1 space-y-0.5">
-                              <div>Seller Share: ₹{(order.base_price || order.price) * order.quantity}</div>
+                              <div>Seller Share: ₹{(order.base_price ?? order.price ?? 0) * order.quantity}</div>
                               <div>Admin Commission: ₹{(order.commission || 0) * order.quantity}</div>
                             </div>
                           </div>

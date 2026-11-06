@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MapPin, ShoppingCart, Menu, X, Globe, User as UserIcon, LogOut, ShieldCheck } from "lucide-react";
@@ -16,11 +16,17 @@ export default function Navbar() {
   const { count: cartCount } = useCart();
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
 
-  useEffect(() => {
+  // Re-read the admin console session after each navigation ("adjusting state
+  // during render" pattern). sessionStorage is external to React and can change
+  // without a re-render (e.g. after the console login), so compare against the
+  // last path we synced for, which re-reads it exactly once per navigation.
+  const [lastSyncedPath, setLastSyncedPath] = useState<string | null>(null);
+  if (pathname !== lastSyncedPath) {
+    setLastSyncedPath(pathname);
     if (typeof window !== "undefined") {
       setIsAdminLoggedIn(sessionStorage.getItem("admin_logged_in") === "true");
     }
-  }, [pathname]);
+  }
 
   const toggleLanguage = () => {
     setLanguage((prev) => (prev === "EN" ? "ML" : "EN"));

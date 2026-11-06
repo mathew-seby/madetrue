@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSellers, getCategories, addProduct, getSellers as fetchSellers, getAllProductsAdmin, updateProduct } from "@/lib/supabase/client";
-import { Seller, Category, Product } from "@/types";
+import { Seller, Category, Product, ProductBadgeTag } from "@/types";
 import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
@@ -30,7 +30,7 @@ export default function DashboardPage() {
   const [imagesList, setImagesList] = useState<string[]>([]);
   const [customImageUrl, setCustomImageUrl] = useState("");
   const [documentsList, setDocumentsList] = useState<{ name: string; url: string }[]>([]);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = useState<ProductBadgeTag[]>([]);
   const [stock, setStock] = useState("10");
   const [originDetails, setOriginDetails] = useState("");
   const [productAddress, setProductAddress] = useState("");
@@ -142,7 +142,7 @@ export default function DashboardPage() {
     setSubmitError("");
   };
 
-  const tagOptions = ["Same Day Delivery", "Pickup Available", "Fresh Today", "Locally Made", "Eco-Friendly"];
+  const tagOptions: ProductBadgeTag[] = ["Same Day Delivery", "Pickup Available", "Fresh Today", "Locally Made", "Eco-Friendly"];
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -189,7 +189,7 @@ export default function DashboardPage() {
   };
 
 
-  const handleTagToggle = (tag: string) => {
+  const handleTagToggle = (tag: ProductBadgeTag) => {
     setSelectedTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
@@ -271,7 +271,7 @@ export default function DashboardPage() {
           base_price: parseFloat(price),
           category,
           images: finalImages,
-          tags: selectedTags as any,
+          tags: selectedTags,
           stock: parseInt(stock),
           is_available: parseInt(stock) > 0,
           origin_details: originDetails,
@@ -288,7 +288,7 @@ export default function DashboardPage() {
           price: parseFloat(price),
           category,
           images: finalImages,
-          tags: selectedTags as any,
+          tags: selectedTags,
           stock: parseInt(stock),
           is_available: true,
           origin_details: originDetails,
@@ -509,7 +509,7 @@ export default function DashboardPage() {
               <ShoppingBag className="h-10 w-10 text-warm-brown/40 mx-auto" />
               <h3 className="font-serif text-lg font-bold text-text-dark">No Products Submitted Yet</h3>
               <p className="text-xs text-text-dark/60 max-w-sm mx-auto leading-relaxed">
-                You haven't listed any regional items under this maker profile yet. Click "Submit New Product" above to start selling!
+                You haven&apos;t listed any regional items under this maker profile yet. Click &ldquo;Submit New Product&rdquo; above to start selling!
               </p>
             </div>
           )
@@ -684,7 +684,7 @@ export default function DashboardPage() {
                         </button>
                       </div>
                       <p className="text-[10px] text-text-dark/50 mt-1 font-sans">
-                        Paste any public image link and click "Add".
+                        Paste any public image link and click &ldquo;Add&rdquo;.
                       </p>
                     </div>
                   </div>
@@ -693,7 +693,7 @@ export default function DashboardPage() {
 
               {/* Description */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">Maker's Product Story & Description *</label>
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">Maker&apos;s Product Story &amp; Description *</label>
                 <textarea
                   required
                   rows={3}
@@ -723,7 +723,7 @@ export default function DashboardPage() {
                   Product Sourcing Location * (Ernakulam District Only)
                 </label>
                 <p className="text-[11px] text-text-dark/60 leading-relaxed -mt-2 font-sans">
-                  Choose how to provide the coordinates for this product's sourcing location.
+                  Choose how to provide the coordinates for this product&apos;s sourcing location.
                 </p>
 
                 <div className="space-y-3">

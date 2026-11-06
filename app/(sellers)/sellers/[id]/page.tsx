@@ -197,7 +197,7 @@ export default function SellerProfilePage({ params }: PageProps) {
             <div className="bg-[#FAF7F2] rounded-3xl border border-warm-brown/10 p-8 space-y-4">
               <h2 className="font-serif text-2xl font-bold text-text-dark">Our Story</h2>
               <p className="font-serif text-lg leading-relaxed text-text-dark/85 italic border-l-4 border-accent-gold/40 pl-4">
-                "{seller.story}"
+                &ldquo;{seller.story}&rdquo;
               </p>
             </div>
 

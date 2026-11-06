@@ -25,6 +25,9 @@ export interface Seller {
   is_verified: boolean;
 }
 
+// The exact badge tag strings allowed on products (AGENTS.md badge list)
+export type ProductBadgeTag = 'Same Day Delivery' | 'Pickup Available' | 'Fresh Today' | 'Locally Made' | 'Eco-Friendly';
+
 export interface Product {
   id: string;
   seller_id: string;
@@ -33,7 +36,7 @@ export interface Product {
   price: number;
   category: string; // category slug
   images: string[];
-  tags: ('Same Day Delivery' | 'Pickup Available' | 'Fresh Today' | 'Locally Made' | 'Eco-Friendly')[];
+  tags: ProductBadgeTag[];
   stock: number;
   is_available: boolean;
   origin_details: string;
@@ -63,6 +66,12 @@ export interface Order {
   lng?: number;
   base_price?: number;
   commission?: number;
+  // Denormalized display fields carried on stored order records and used
+  // directly by the admin console order cards.
+  buyer_name?: string;
+  buyer_phone?: string;
+  product_name?: string;
+  price?: number;
 }
 
 export interface Category {

@@ -315,7 +315,7 @@ export default function ProductDetailPage({ params }: PageProps) {
                   </h3>
                 </div>
                 <p className="text-sm text-text-dark/85 leading-relaxed italic pl-4 border-l-2 border-accent-gold/40">
-                  "{seller.story.substring(0, 220)}..."
+                  &ldquo;{seller.story.substring(0, 220)}...&rdquo;
                 </p>
                 <div className="pt-2">
                   <Link

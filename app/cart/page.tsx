@@ -125,7 +125,7 @@ export default function CartPage() {
             <ShoppingBag className="h-10 w-10 text-warm-brown/40 mx-auto" />
             <h3 className="font-serif text-lg font-bold text-text-dark">Your Basket is Empty</h3>
             <p className="text-xs text-text-dark/60 max-w-sm mx-auto leading-relaxed">
-              You haven't added any regional products under your basket yet. Go back to discover authentic spices, pickles, and crafts!
+              You haven&apos;t added any regional products under your basket yet. Go back to discover authentic spices, pickles, and crafts!
             </p>
             <div className="pt-2">
               <Link

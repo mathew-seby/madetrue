@@ -144,8 +144,8 @@ export default function ProfilePage() {
         // Redirect to seller dashboard on success
         router.push("/dashboard");
       }, 2000);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to register maker profile.");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to register maker profile.");
     } finally {
       setLoading(false);
     }
@@ -323,7 +323,7 @@ export default function ProfilePage() {
                     <Sparkles className="h-4 w-4 mr-1 text-accent-gold" /> Proximity Coordinates (Leaflet Map Integration)
                   </span>
                   <p className="text-[11px] text-text-dark/75 leading-relaxed">
-                    Choose how you'd like to set your location coordinates for nearby buyer discovery.
+                    Choose how you&apos;d like to set your location coordinates for nearby buyer discovery.
                   </p>
                 </div>
 
@@ -481,7 +481,7 @@ export default function ProfilePage() {
             <div className="space-y-1 bg-cream-bg p-4 rounded-2xl border border-warm-brown/5">
               <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider">Your Story</span>
               <p className="text-xs text-text-dark/80 leading-relaxed italic">
-                "{sellerProfile ? sellerProfile.story : "Loading story..."}"
+                &ldquo;{sellerProfile ? sellerProfile.story : "Loading story..."}&rdquo;
               </p>
             </div>
 

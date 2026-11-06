@@ -1,7 +1,6 @@
 # MADETRUE — CI
 # Runs on every push to main and on every pull request.
-# ESLint is intentionally not here yet: known lint errors must be fixed
-# first (Phase 0 Part 5), after which `npx eslint .` gets appended below.
+# Gates: ESLint (0 tolerated errors), type-check, production build.
 
 name: CI
 
@@ -38,6 +37,11 @@ jobs:
 
       - name: Type-check
         run: npx tsc --noEmit
+
+      # Errors fail CI; warnings (dead imports, <img> tags) are reported but
+      # tolerated so the gate stays meaningful without blocking on debt.
+      - name: Lint
+        run: npx eslint .
 
       # Note: in Next 16 `next build` does not run ESLint (that was removed);
       # a green build therefore guarantees compile + type safety via tsc above.

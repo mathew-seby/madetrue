@@ -80,7 +80,7 @@ export default function MeetMakers() {
 
                 {/* Story */}
                 <p className="text-sm text-text-dark/85 italic leading-relaxed pl-2 border-l-2 border-accent-gold/40">
-                  "{maker.story.substring(0, 180)}..."
+                  &ldquo;{maker.story.substring(0, 180)}...&rdquo;
                 </p>
               </div>
 

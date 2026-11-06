@@ -127,12 +127,16 @@ export default function CheckoutPage() {
   const [orderMakers, setOrderMakers] = useState<Seller[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
+  // Prefill the contact fields whenever the signed-in user loads or changes
+  // ("adjusting state during render" pattern — no cascading effect needed).
+  const [lastPrefilledUser, setLastPrefilledUser] = useState(currentUser);
+  if (currentUser !== lastPrefilledUser) {
+    setLastPrefilledUser(currentUser);
     if (currentUser) {
       setName(currentUser.name);
       setPhone(currentUser.phone || "");
     }
-  }, [currentUser]);
+  }
 
   const detectLocation = () => {
     setErrorMsg("");

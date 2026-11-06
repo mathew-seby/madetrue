@@ -23,7 +23,7 @@ export default function Hero() {
           </h1>
 
           <p className="text-base sm:text-lg text-text-dark/85 leading-relaxed max-w-xl">
-            MADETRUE connects you directly with independent spice farmers in Idukki, backyard clay pot makers in Nilambur, and grandmother's kitchens in Alappuzha. Shop fresh, support families, trace every origin.
+            MADETRUE connects you directly with independent spice farmers in Idukki, backyard clay pot makers in Nilambur, and grandmother&apos;s kitchens in Alappuzha. Shop fresh, support families, trace every origin.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-2">
@@ -71,8 +71,8 @@ export default function Hero() {
             </div>
             {/* Accent badge floating */}
             <div className="absolute -bottom-6 -left-6 bg-accent-gold text-text-dark px-5 py-4 rounded-xl shadow-lg border border-cream-bg max-w-[200px] hidden sm:block">
-              <p className="font-serif text-sm font-bold">"Sun-cured cardamoms, hand-picked in Idukki."</p>
-              <span className="text-[10px] uppercase font-bold text-warm-brown mt-1.5 block">— Kannan's Farm</span>
+              <p className="font-serif text-sm font-bold">&ldquo;Sun-cured cardamoms, hand-picked in Idukki.&rdquo;</p>
+              <span className="text-[10px] uppercase font-bold text-warm-brown mt-1.5 block">— Kannan&apos;s Farm</span>
             </div>
           </div>
         </div>

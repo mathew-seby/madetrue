@@ -19,7 +19,7 @@ export default function CTA() {
               <HeartHandshake className="h-6 w-6" />
             </div>
             <h3 className="font-serif text-2xl font-bold text-text-dark">
-              Support Kerala's Artisans & Farmers
+              Support Kerala&apos;s Artisans &amp; Farmers
             </h3>
             <p className="text-sm text-text-dark/80 leading-relaxed max-w-md">
               Buy spice mixes, pure forest honey, fresh organic crops, and hand-thrown earthenware pots directly from independent neighborhood kitchens and farms.
