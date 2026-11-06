@@ -7,11 +7,9 @@ import { getProductById, getSellerById, getProductsBySellerId } from "@/lib/supa
 import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Product, Seller } from "@/types";
 import { calculateDistance, formatDistance } from "@/lib/utils/distance";
-import { MapPin, Store, ArrowLeft, ShoppingBag, Heart, ShieldAlert, Sparkles, Zap } from "lucide-react";
-
-// Default location Kochi
-const DEFAULT_LAT = 9.9816;
-const DEFAULT_LNG = 76.2999;
+import { useUserLocation } from "@/lib/hooks/useUserLocation";
+import SellerMap from "@/components/map/SellerMap";
+import { MapPin, Store, ArrowLeft, ShoppingBag, Heart, ShieldAlert, Sparkles, Zap, Navigation } from "lucide-react";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -23,7 +21,6 @@ export default function ProductDetailPage({ params }: PageProps) {
   const [product, setProduct] = useState<Product | null>(null);
   const [seller, setSeller] = useState<Seller | null>(null);
   const [makerProducts, setMakerProducts] = useState<Product[]>([]);
-  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [addedToCart, setAddedToCart] = useState(false);
@@ -31,6 +28,7 @@ export default function ProductDetailPage({ params }: PageProps) {
 
   const router = useRouter();
   const { addItem, items } = useCart();
+  const { userCoords, requestLocation } = useUserLocation();
 
   const handleAddToBasket = () => {
     if (!product) return;
@@ -73,21 +71,10 @@ export default function ProductDetailPage({ params }: PageProps) {
     }
     loadData();
 
-    // Check browser location
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserCoords({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        },
-        () => {
-          setUserCoords({ lat: DEFAULT_LAT, lng: DEFAULT_LNG });
-        }
-      );
-    }
-  }, [id]);
+    // Ask for location so the "km away" badge is real — on a refusal or
+    // failure the hook keeps userCoords null and the badge simply stays hidden.
+    requestLocation();
+  }, [id, requestLocation]);
 
   if (loading) {
     return (
@@ -113,10 +100,10 @@ export default function ProductDetailPage({ params }: PageProps) {
     );
   }
 
-  const centerLat = userCoords?.lat ?? DEFAULT_LAT;
-  const centerLng = userCoords?.lng ?? DEFAULT_LNG;
-  const distance = seller
-    ? calculateDistance(centerLat, centerLng, seller.lat, seller.lng)
+  // Distance only exists when the visitor actually shared location — the image
+  // badge and the maker strip stay silent instead of measuring from Kochi.
+  const distance = seller && userCoords
+    ? calculateDistance(userCoords.lat, userCoords.lng, seller.lat, seller.lng)
     : null;
 
 
@@ -325,6 +312,36 @@ export default function ProductDetailPage({ params }: PageProps) {
                     Read Full Story & Explore Store &rarr;
                   </Link>
                 </div>
+              </div>
+            </div>
+
+            {/* Location strip — where this actually comes from */}
+            <div className="border-t border-warm-brown/5 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
+              <SellerMap
+                className="h-[200px] sm:h-[220px] rounded-2xl overflow-hidden border border-warm-brown/10 shadow-sm bg-primary-green/5"
+                name={seller.business_name}
+                lat={seller.lat}
+                lng={seller.lng}
+                href={`/sellers/${seller.id}`}
+                hrefLabel="Visit maker's store"
+              />
+              <div className="space-y-3">
+                <span className="text-[10px] uppercase font-bold text-warm-brown tracking-wider">
+                  Where this comes from
+                </span>
+                <div className="flex items-start text-sm leading-relaxed text-text-dark/70">
+                  <MapPin className="h-4 w-4 mr-2 text-primary-green flex-shrink-0 mt-0.5" />
+                  <span>{seller.address}</span>
+                </div>
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${seller.lat},${seller.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center w-fit px-3 py-1.5 rounded-xl border border-primary-green text-xs font-semibold text-primary-green hover:bg-primary-green hover:text-cream-bg transition duration-200"
+                >
+                  <Navigation className="h-3.5 w-3.5 mr-2" />
+                  Get directions
+                </a>
               </div>
             </div>
           </div>

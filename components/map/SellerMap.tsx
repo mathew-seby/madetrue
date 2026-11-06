@@ -16,6 +16,10 @@ export interface SellerMapProps {
   name: string;
   lat: number;
   lng: number;
+  /** Popup CTA inside the maker pin (e.g. a link to the maker's store) */
+  href?: string;
+  /** Label for the popup CTA (defaults to "View Store") */
+  hrefLabel?: string;
   /** The visitor's location, only when honestly known (absent = no user pin) */
   userLocation?: MapUserLocation | null;
   /** Classes for the wrapper — the parent owns the height */
@@ -31,6 +35,8 @@ export default function SellerMap({
   name,
   lat,
   lng,
+  href,
+  hrefLabel,
   userLocation,
   className = "",
 }: SellerMapProps) {
@@ -41,7 +47,7 @@ export default function SellerMap({
         center={[lat, lng]}
         zoom={14}
         fitMaxZoom={14}
-        markers={[{ id: "maker-pin", lat, lng, title: name }]}
+        markers={[{ id: "maker-pin", lat, lng, title: name, href, hrefLabel }]}
         userLocation={userLocation ?? undefined}
       />
     </div>
