@@ -11,8 +11,8 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 2 · Step 2/7 — Write security rules (RLS) — ⬜ pending
-**Last completed:** Phase 2 · Step 1/7 — Draw the real database — commit "feat(phase2): draw the real database schema" — 2026-11-07
+**Current position:** Phase 2 · Step 3/7 — Connect the app — ⬜ pending
+**Last completed:** Phase 2 · Step 2/7 — Write security rules (RLS) — commit "feat(phase2): add row level security" — 2026-11-07
 **Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 48 warnings) · 11-route production smoke ✅
 
 ---
@@ -34,7 +34,7 @@
 | # | Step | Milestone (short) | Status | Commit | Date |
 |---|---|---|---|---|---|
 | 1 | Draw the real database | `0001_init.sql` mirrors types + payment fields + transactions ledger | ✅ done | feat(phase2): draw the real database schema | 2026-11-07 |
-| 2 | Write security rules (RLS) | `0002_rls.sql` with documented access matrix | ⬜ pending | — | — |
+| 2 | Write security rules (RLS) | `0002_rls.sql` with documented access matrix | ✅ done | feat(phase2): add row level security | 2026-11-07 |
 | 3 | Connect the app | real clients + `MADETRUE_DATA_SOURCE` switch, keys in `.env.local` | ⬜ pending | — | — |
 | 4 | Seed the database | `seed.sql` recreates the mock catalog | ⬜ pending | — | — |
 | 5 | Move reads | listing/detail/seller/home via Supabase; UI unchanged | ⬜ pending | — | — |
@@ -147,6 +147,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-07 | Phase 2 Step 2 ✔ | `supabase/migrations/0002_rls.sql` — catalog public read, sellers own rows, buyers create/read own orders, admin all, client-write guards. SQL only. tsc clean, eslint 0 errors / 48 warnings. Owner commit pending. |
 | 2026-11-07 | Phase 2 Step 1 ✔ | `supabase/migrations/0001_init.sql` — tables, enums, payment fields, transactions ledger. SQL only. tsc clean, eslint 0 errors / 48 warnings. Owner commit pending. |
 | 2026-11-06 | Phase 8 Step 6 ✔ (pre-tracker phase closure) | honest-geo sweep (listing/checkout/onboarding) + AGENTS.md docs closure — commit `db04a3b` |
 | 2026-11-06 | Setup | master prompt v3 + this tracker created; AGENTS.md pointers added |
