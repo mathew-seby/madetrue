@@ -552,13 +552,49 @@ export async function updateUserProfile(
   return cleanUser;
 }
 
-export async function forgotPassword(identifier: string): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  const users = getStoredUsers();
-  
+export interface PasswordResetResult {
+  success: boolean;
+  message: string;
+  devResetLink?: string;
+}
+
+export async function forgotPassword(identifier: string): Promise<PasswordResetResult> {
   const trimmedId = identifier.trim();
+  if (!trimmedId) {
+    throw new Error("Please enter your email or phone number.");
+  }
+
   const isEmailInput = isEmail(trimmedId);
   const normalizedId = isEmailInput ? trimmedId.toLowerCase() : normalizePhone(trimmedId);
+
+  if (isEmailInput && !validateEmail(trimmedId)) {
+    throw new Error("Please enter a valid email address (e.g. user@example.com).");
+  }
+  if (!isEmailInput && !validatePhone(trimmedId)) {
+    throw new Error("Please enter a valid 10-digit Indian phone number.");
+  }
+
+  if (isSupabaseEnabled()) {
+    const authEmail = toAuthEmail(trimmedId);
+    const supabase = createSupabaseBrowserClient();
+    const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+    const { error } = await supabase.auth.resetPasswordForEmail(authEmail, {
+      redirectTo: `${origin}/reset-password`,
+    });
+
+    if (error) {
+      throw new Error(`[madetrue] ${error.message}`);
+    }
+
+    return {
+      success: true,
+      message: "A password reset link has been sent to your email. Please check your inbox.",
+    };
+  }
+
+  // Mock dev mode
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const users = getStoredUsers();
 
   const user = users.find(
     (u) =>
@@ -566,12 +602,71 @@ export async function forgotPassword(identifier: string): Promise<void> {
       (!isEmailInput && normalizePhone(u.phone) === normalizedId)
   );
 
-  const targetEmail = isEmailInput ? trimmedId : (user?.email || `${normalizedId}@madetrue.in`);
-  const resetLink = `https://madetrue.in/profile?reset-token=mock-${Date.now()}`;
-  
+  if (!user) {
+    throw new Error(
+      `We couldn't find an account matching that ${isEmailInput ? "email" : "phone number"}. Please check for typos.`
+    );
+  }
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+  const devResetLink = `${origin}/reset-password?id=${encodeURIComponent(normalizedId)}&token=mock-${Date.now()}`;
+
   console.log(
-    `%c[MOCK EMAIL SERVICE] To: ${targetEmail}\nSubject: Password Reset Link\n\nDear User,\n\nWe received a request to reset your password on MADETRUE.\n\nClick the link below to change your password:\n${resetLink}\n\nIf you did not request this, you can ignore this email.\n\nSincerely,\nMADETRUE Admin Team`,
-    "background: #2D6A4F; color: #FAF7F2; padding: 12px; font-family: monospace; border-left: 4px solid #E9A84C; line-height: 1.5;"
+    `%c[MADETRUE DEV EMAIL] Password Reset Link for ${user.email || user.phone}:\n${devResetLink}`,
+    "background: #2D6A4F; color: #FAF7F2; padding: 12px; font-weight: bold; font-family: monospace; border-left: 4px solid #E9A84C; line-height: 1.5;"
   );
+
+  return {
+    success: true,
+    message: "A password reset link has been prepared! Check your inbox or click the link below in dev mode.",
+    devResetLink,
+  };
+}
+
+export async function resetPassword(newPassword: string, identifier?: string): Promise<void> {
+  if (newPassword.length < 6) {
+    throw new Error("Password must be at least 6 characters long.");
+  }
+
+  if (isSupabaseEnabled()) {
+    const supabase = createSupabaseBrowserClient();
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      throw new Error(`[madetrue] ${error.message}`);
+    }
+    return;
+  }
+
+  // Mock dev mode
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const users = getStoredUsers();
+  let userIdx = -1;
+
+  if (identifier) {
+    const isEmailInput = isEmail(identifier);
+    const normalizedId = isEmailInput ? identifier.toLowerCase() : normalizePhone(identifier);
+    userIdx = users.findIndex(
+      (u) =>
+        (isEmailInput && u.email.toLowerCase() === normalizedId) ||
+        (!isEmailInput && normalizePhone(u.phone) === normalizedId)
+    );
+  }
+
+  if (userIdx === -1 && typeof window !== "undefined") {
+    const sessionStr = localStorage.getItem(SESSION_KEY);
+    if (sessionStr) {
+      try {
+        const cur = JSON.parse(sessionStr);
+        userIdx = users.findIndex((u) => u.id === cur.id);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  if (userIdx !== -1) {
+    users[userIdx].passwordHash = newPassword;
+    saveStoredUsers(users);
+  }
 }
 

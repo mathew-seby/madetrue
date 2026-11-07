@@ -10,7 +10,9 @@ import {
   logoutUser, 
   upgradeToSeller,
   updateUserProfile,
-  forgotPassword
+  forgotPassword,
+  resetPassword,
+  PasswordResetResult
 } from "@/lib/supabase/auth";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseBrowserClient } from "@/lib/supabase/supabase-browser";
@@ -31,7 +33,8 @@ interface AuthContextType {
     lng?: number
   ) => Promise<void>;
   updateUser: (name: string, password?: string, oldPassword?: string, languagePref?: string, profilePhotoUrl?: string) => Promise<void>;
-  requestPasswordReset: (identifier: string) => Promise<void>;
+  requestPasswordReset: (identifier: string) => Promise<PasswordResetResult>;
+  performPasswordReset: (newPassword: string, identifier?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -210,8 +213,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCurrentUser(updated);
   };
 
-  const requestPasswordReset = async (identifierVal: string) => {
-    await forgotPassword(identifierVal);
+  const requestPasswordReset = async (identifierVal: string): Promise<PasswordResetResult> => {
+    return await forgotPassword(identifierVal);
+  };
+
+  const performPasswordReset = async (newPasswordVal: string, identifierVal?: string): Promise<void> => {
+    await resetPassword(newPasswordVal, identifierVal);
   };
 
   // Public browsing: anyone can explore the marketplace without an account.
@@ -219,7 +226,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // order, managing a maker store, or your profile. /admin keeps its own
   // bespoke console login.
   const isAdminRoute = pathname?.startsWith("/admin");
-  const isAuthRoute = pathname === "/login" || pathname === "/signup";
+  const isAuthRoute =
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname === "/reset-password";
   const isProtectedRoute =
     pathname === "/checkout" ||
     pathname?.startsWith("/dashboard") ||
@@ -252,6 +262,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           upgradeCurrentUserToSeller,
           updateUser,
           requestPasswordReset,
+          performPasswordReset,
         }}
       >
         {children}
@@ -273,6 +284,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         upgradeCurrentUserToSeller,
         updateUser,
         requestPasswordReset,
+        performPasswordReset,
       }}
     >
       <AuthScreen

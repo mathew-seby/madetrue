@@ -11,9 +11,9 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 3 · Step 4/7 — Password reset — ⬜ pending
-**Last completed:** Phase 3 · Step 3/7 — Roles & guards — commit "feat(phase3): role guards and unauthorized access blocks" — 2026-11-07
-**Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 45 warnings) · build ✅ (17 routes)
+**Current position:** Phase 3 · Step 5/7 — Real profile — ⬜ pending
+**Last completed:** Phase 3 · Step 4/7 — Password reset — commit "feat(phase3): password reset flow and screens" — 2026-11-08
+**Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 45 warnings) · build ✅ (18 routes)
 
 ---
 
@@ -50,7 +50,7 @@
 | 1 | Sign-up & sign-in | identifier + password screens; warm specific errors | ✅ done | feat(phase3): sign-up and sign-in screens | 2026-11-07 |
 | 2 | Real sessions | Supabase sessions survive refresh; mock auth removed | ✅ done | feat(phase3): wire real Supabase Auth sessions | 2026-11-07 |
 | 3 | Roles & guards | buyer/seller/admin guards + redirects tested | ✅ done | feat(phase3): role guards and unauthorized access blocks | 2026-11-07 |
-| 4 | Password reset | email flow works in dev; friendly copy | ⬜ pending | — | — |
+| 4 | Password reset | email flow works in dev; friendly copy | ✅ done | feat(phase3): password reset flow and screens | 2026-11-08 |
 | 5 | Real profile | name/phone/address persist per user | ⬜ pending | — | — |
 | 6 | Become a Maker | application + approval; payout KYC (PAN, bank) captured | ⬜ pending | — | — |
 | 7 | Auth test pass | buyer/seller/admin journeys + logout/login green | ⬜ pending | — | — |
@@ -147,6 +147,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-08 | Phase 3 Step 4 ✔ | Password reset: AuthScreen forgot-password request view; Supabase Auth resetPasswordForEmail & dev mode mock links; dedicated /reset-password page with token recovery and new password reset; AuthProvider performPasswordReset & requestPasswordReset; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (18/18 routes). Owner commit pending. |
 | 2026-11-07 | Phase 3 Step 3 ✔ | Roles & guards: RoleGuard component added; buyer access to /dashboard blocked with warm Maker Required screen & application CTA (unauthorized admin fetches prevented); non-admin access to /admin blocked with Administrator Access Only screen; admin login auto-routes admin users and provides context; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (17/17 routes). Owner commit pending. |
 | 2026-11-07 | Phase 3 Step 2 ✔ | Real sessions: Supabase Auth integration via @supabase/ssr (onAuthStateChange, getSession, signOut, signInWithPassword, signUp with public.users sync); sessions survive refresh via cookies/storage; mock auth removed from live Supabase path and preserved as fallback; server-side cookie auth client created; tsc ✅ · eslint 0 errors / 46 warnings · build ✅ (17/17 routes). Owner commit pending. |
 | 2026-11-07 | Phase 3 Step 1 ✔ | Sign-up & sign-in screens: identifier (email or phone with normalization) + password; warm specific validation and error messages; in-place login wall on checkout/dashboard/profile; dedicated /login and /signup routes with ?redirect= support; Navbar Sign In link on desktop & mobile drawer. tsc ✅ · eslint 0 errors / 46 warnings · build ✅ (17/17 routes). Owner commit pending. |
