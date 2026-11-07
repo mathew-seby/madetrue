@@ -6,10 +6,10 @@ import { useRouter } from "next/navigation";
 import { CreditCard, ArrowLeft, CheckCircle, MapPin, AlertCircle, ShoppingBag, Phone, User as UserIcon, MessageSquare, MessageCircle } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { useCart } from "@/components/shared/CartProvider";
-import { Seller } from "@/types";
+import { Seller, Order } from "@/types";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
 import { DELIVERY_FEE } from "@/lib/utils/constants";
-import { decrementProductStock, getSellerById } from "@/lib/supabase/client";
+import { saveOrders, getSellerById } from "@/lib/supabase/client";
 import { buildWhatsAppUrl } from "@/lib/utils/whatsapp";
 
 /** The subset of a freshly placed order that the success screen needs. */
@@ -225,7 +225,7 @@ export default function CheckoutPage() {
       // Simulate slight delay
       await new Promise((resolve) => setTimeout(resolve, 800));
 
-      const newOrders = cart.map((item, idx) => ({
+      const newOrders: Order[] = cart.map((item, idx) => ({
         id: `order-${Date.now()}-${idx}`,
         buyer_id: currentUser?.id || "guest-user",
         buyer_name: name.trim(),
@@ -252,25 +252,9 @@ export default function CheckoutPage() {
         lng: longitude
       }));
 
-      // Retrieve existing orders
-      const storedOrders = localStorage.getItem("madetrue_orders");
-      let allOrders = [];
-      if (storedOrders) {
-        try {
-          allOrders = JSON.parse(storedOrders);
-        } catch (e) {
-          console.error(e);
-        }
-      }
-
-      // Add new orders
-      allOrders = [...newOrders, ...allOrders];
-      localStorage.setItem("madetrue_orders", JSON.stringify(allOrders));
-
-      // Decrement stock for purchased products
-      for (const item of cart) {
-        await decrementProductStock(item.product.id, item.quantity);
-      }
+      // Persist the basket (Supabase in the database when the switch is
+      // on; the mock store otherwise). Stock is decremented as part of it.
+      await saveOrders(newOrders);
 
       // Clear Cart
       clearCart();
@@ -282,11 +266,27 @@ export default function CheckoutPage() {
         await Promise.all(sellerIds.map((sellerId) => getSellerById(sellerId)))
       ).filter((seller): seller is Seller => seller !== null);
 
-      setCreatedOrders(newOrders);
+      setCreatedOrders(
+        newOrders.map((order) => ({
+          id: order.id,
+          seller_id: order.seller_id,
+          product_name: order.product_name ?? "",
+          price: order.price ?? 0,
+          quantity: order.quantity,
+          delivery_type: order.delivery_type,
+          address: order.address,
+          payment_method: order.payment_method,
+          delivery_fee: order.delivery_fee ?? 0,
+        }))
+      );
       setOrderMakers(makers);
       setOrderSuccess(true);
     } catch (err) {
-      setErrorMsg("Failed to place your order. Please try again.");
+      setErrorMsg(
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to place your order. Please try again."
+      );
     } finally {
       setSubmitting(false);
     }

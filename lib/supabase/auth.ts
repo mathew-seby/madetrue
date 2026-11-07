@@ -1,5 +1,7 @@
 import { User, Seller } from "@/types";
 import { addSeller } from "./client";
+import { isSupabaseEnabled } from "./dataSource";
+import { persistProfileSupabase } from "./writeSupabase";
 
 const USERS_KEY = "madetrue_users";
 const SESSION_KEY = "madetrue_current_user";
@@ -278,6 +280,21 @@ export async function updateUserProfile(
       throw new Error("New password must be at least 6 characters long.");
     }
     users[userIdx].passwordHash = password;
+  }
+
+  if (isSupabaseEnabled()) {
+    // Persist the profile fields Supabase can own pre-auth. Throws a
+    // warm error before anything is saved locally (mock-era passwords
+    // stay local; Supabase Auth owns them from Phase 3).
+    await persistProfileSupabase({
+      id: users[userIdx].id,
+      name: users[userIdx].name,
+      email: users[userIdx].email,
+      phone: users[userIdx].phone,
+      role: users[userIdx].role,
+      language_pref: users[userIdx].language_pref,
+      profile_photo_url: users[userIdx].profile_photo_url,
+    });
   }
 
   saveStoredUsers(users);

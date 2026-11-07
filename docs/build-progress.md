@@ -11,8 +11,8 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 2 · Step 6/7 — Move writes — ⬜ pending
-**Last completed:** Phase 2 · Step 5/7 — Move reads — commit "feat(phase2): move catalog reads to Supabase" — 2026-11-07
+**Current position:** Phase 2 · Step 7/7 — Close the mock era — ⬜ pending
+**Last completed:** Phase 2 · Step 6/7 — Move writes — commit "feat(phase2): move writes to Supabase through server routes" — 2026-11-07
 **Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 48 warnings) · 11-route production smoke ✅
 
 ---
@@ -38,7 +38,7 @@
 | 3 | Connect the app | real clients + `MADETRUE_DATA_SOURCE` switch, keys in `.env.local` | ✅ done | feat(phase2): connect Supabase behind a mock switch | 2026-11-07 |
 | 4 | Seed the database | `seed.sql` recreates the mock catalog | ✅ done | feat(phase2): seed the catalog | 2026-11-07 |
 | 5 | Move reads | listing/detail/seller/home via Supabase; UI unchanged | ✅ done | feat(phase2): move catalog reads to Supabase | 2026-11-07 |
-| 6 | Move writes | orders/products/profile persist; localStorage writes removed | ⬜ pending | — | — |
+| 6 | Move writes | orders/products/profile persist; localStorage writes removed | ✅ done | feat(phase2): move writes to Supabase through server routes | 2026-11-07 |
 | 7 | Close the mock era | dead mock paths deleted; docs + `.env.example` updated | ⬜ pending | — | — |
 
 **Phase done when:** a cold start with empty localStorage serves catalog, sellers, orders and profiles from Supabase — with the mock switch kept as fallback.
@@ -147,6 +147,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-07 | Phase 2 Step 6 ✔ | Writes via service-role server routes: `app/api/{orders,products,profile}` (order rows priced from the DB product w/ availability+stock checks, submissions pending, edit→pending only on content change, stock decremented with server guard; profile upserts users by id; dashboard list read-back moved). `saveOrders` router added to client.ts; checkout's inline localStorage write removed (warm errors now surface); profile saves persist via auth.ts router. `Order.delivery_fee` added to types. tsc OK, eslint 0 errors / 47 warnings (-1: checkout `err` now consumed); worktree smoke 11/11 on :4010, no `.env.local` (3 API routes present as ƒ). Commit pending. |
 | 2026-11-07 | Phase 2 Step 5 ✔ | New `lib/supabase/readSupabase.ts` + routers in `client.ts`: 6 catalog reads (categories/sellers/products + by-id/by-seller, filters/sort in SQL, explicit nullable→undefined mapping) go to Supabase when `MADETRUE_DATA_SOURCE=supabase`; browser client for client components, server client via dynamic import only. Mock bodies untouched, zero page edits. tsc clean, eslint 0 errors / 48 warnings; worktree smoke 11/11 on :4010, no `.env.local`. Commit pending. |
 | 2026-11-07 | Phase 2 Step 4 ✔ | `supabase/seed.sql` — 4 maker users → 5 categories → 4 sellers → 6 products with stable ids (`cat-1…`/`seller-1…`/`prod-1…`), verbatim mock values, `status='approved'`, base_price=price, commission=0, kyc left `not_started`, upsert-by-id (re-run safe). SQL only; tsc clean, eslint 0 errors / 48 warnings. Owner: paste into Supabase SQL editor. Commit pending. |
 | 2026-11-07 | Phase 2 Step 3 ✔ | `@supabase/supabase-js` + `@supabase/ssr` installed; new `lib/supabase/{dataSource,supabase-browser,supabase-server}.ts` — switch defaults to mock, clients refuse to boot on mock/missing keys; mock paths + pages untouched; `.env.example` documents the switch. tsc clean, eslint 0 errors / 48 warnings; worktree build + smoke 11/11 on :4010 with NO `.env.local`. Owner commit pending. |

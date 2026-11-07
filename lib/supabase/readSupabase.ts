@@ -106,7 +106,7 @@ export async function fetchSellerByIdSupabase(
 const PRODUCT_COLUMNS =
   "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission";
 
-function mapProduct(row: Record<string, unknown>): Product {
+export function mapProduct(row: Record<string, unknown>): Product {
   return {
     id: row.id as string,
     seller_id: row.seller_id as string,
