@@ -2,6 +2,7 @@ import { User, Seller } from "@/types";
 import { addSeller } from "./client";
 import { isSupabaseEnabled } from "./dataSource";
 import { persistProfileSupabase } from "./writeSupabase";
+import { createSupabaseBrowserClient } from "./supabase-browser";
 
 const USERS_KEY = "madetrue_users";
 const SESSION_KEY = "madetrue_current_user";
@@ -71,6 +72,16 @@ export function isEmail(identifier: string): boolean {
   return identifier.includes("@");
 }
 
+// Convert identifier to email for Supabase Auth (phone uses synthetic email per Locked Decision #3)
+export function toAuthEmail(identifier: string): string {
+  const trimmed = identifier.trim();
+  if (isEmail(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+  const phone = normalizePhone(trimmed);
+  return `${phone}@phone.madetrue.in`;
+}
+
 // Normalize phone numbers (strips spaces, hyphens, parentheses, and leading +91 / 91 / 0)
 export function normalizePhone(phone: string): string {
   const cleaned = phone.replace(/[\s\-\(\)]/g, "");
@@ -99,7 +110,164 @@ export function validatePhone(phone: string): boolean {
   return phoneRegex.test(normalized);
 }
 
-export async function registerUser(
+// ---------------------------------------------------------------------------
+// Supabase Auth implementations (Phase 3 Step 2)
+// ---------------------------------------------------------------------------
+
+export async function registerUserSupabase(
+  name: string,
+  identifier: string,
+  password: string
+): Promise<User> {
+  const trimmedName = name.trim();
+  if (!trimmedName || trimmedName.length < 2) {
+    throw new Error("Please tell us your name (at least 2 letters).");
+  }
+
+  const trimmedId = identifier.trim();
+  const isEmailInput = isEmail(trimmedId);
+  const normalizedPhone = isEmailInput ? "" : normalizePhone(trimmedId);
+  const authEmail = toAuthEmail(trimmedId);
+
+  if (isEmailInput) {
+    if (!validateEmail(trimmedId)) {
+      throw new Error("Please enter a valid email address (e.g. user@example.com).");
+    }
+  } else {
+    if (!validatePhone(trimmedId)) {
+      throw new Error("Please enter a valid 10-digit Indian phone number (starting with 6, 7, 8, or 9).");
+    }
+  }
+
+  if (password.length < 6) {
+    throw new Error("Please choose a password with at least 6 characters.");
+  }
+
+  const supabase = createSupabaseBrowserClient();
+
+  const { data, error } = await supabase.auth.signUp({
+    email: authEmail,
+    password,
+    options: {
+      data: {
+        name: trimmedName,
+        phone: normalizedPhone,
+      },
+    },
+  });
+
+  if (error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("already registered") || msg.includes("already exists")) {
+      throw new Error(
+        `An account with this ${isEmailInput ? "email" : "phone number"} already exists. Please sign in instead.`
+      );
+    }
+    if (msg.includes("password")) {
+      throw new Error("Please choose a password with at least 6 characters.");
+    }
+    throw new Error(`[madetrue] ${error.message}`);
+  }
+
+  if (!data.user) {
+    throw new Error("Unable to create account. Please try again.");
+  }
+
+  // Persist profile row into public.users
+  await persistProfileSupabase({
+    id: data.user.id,
+    name: trimmedName,
+    email: isEmailInput ? trimmedId.toLowerCase() : "",
+    phone: normalizedPhone,
+    role: "buyer",
+  });
+
+  return {
+    id: data.user.id,
+    name: trimmedName,
+    email: isEmailInput ? trimmedId.toLowerCase() : "",
+    phone: normalizedPhone,
+    role: "buyer",
+  };
+}
+
+export async function loginUserSupabase(
+  identifier: string,
+  password: string
+): Promise<User> {
+  const trimmedId = identifier.trim();
+  if (!trimmedId) {
+    throw new Error("Please enter your email or phone number.");
+  }
+  if (!password) {
+    throw new Error("Please enter your password.");
+  }
+
+  const isEmailInput = isEmail(trimmedId);
+  const authEmail = toAuthEmail(trimmedId);
+
+  if (isEmailInput) {
+    if (!validateEmail(trimmedId)) {
+      throw new Error("Please enter a valid email address (e.g. user@example.com).");
+    }
+  } else {
+    if (!validatePhone(trimmedId)) {
+      throw new Error("Please enter a valid 10-digit Indian phone number (starting with 6, 7, 8, or 9).");
+    }
+  }
+
+  const supabase = createSupabaseBrowserClient();
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: authEmail,
+    password,
+  });
+
+  if (error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("invalid login credentials") || msg.includes("invalid grant")) {
+      throw new Error(
+        "Invalid credentials. Please verify your email or phone and password, and try again."
+      );
+    }
+    throw new Error(`[madetrue] ${error.message}`);
+  }
+
+  if (!data.user) {
+    throw new Error("Sign in failed. Please try again.");
+  }
+
+  // Fetch full user record from public.users
+  const { data: profile } = await supabase
+    .from("users")
+    .select("id, name, email, phone, role, location_lat, location_lng, region, language_pref, profile_photo_url")
+    .eq("id", data.user.id)
+    .maybeSingle();
+
+  if (profile) {
+    return profile as User;
+  }
+
+  const meta = data.user.user_metadata || {};
+  return {
+    id: data.user.id,
+    name: (meta.name as string) || "User",
+    email: isEmailInput ? trimmedId.toLowerCase() : "",
+    phone: !isEmailInput ? normalizePhone(trimmedId) : "",
+    role: (meta.role as User["role"]) || "buyer",
+  };
+}
+
+export async function logoutUserSupabase(): Promise<void> {
+  const supabase = createSupabaseBrowserClient();
+  await supabase.auth.signOut();
+}
+
+// ---------------------------------------------------------------------------
+// Mock implementations (preserved as zero-keys fallback)
+// ---------------------------------------------------------------------------
+
+export async function registerUserMock(
   name: string,
   identifier: string,
   password: string
@@ -161,7 +329,7 @@ export async function registerUser(
   return cleanUser;
 }
 
-export async function loginUser(
+export async function loginUserMock(
   identifier: string,
   password: string
 ): Promise<User> {
@@ -215,6 +383,37 @@ export async function loginUser(
   return cleanUser;
 }
 
+export function logoutUserMock(): void {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(SESSION_KEY);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public dispatchers: routes to Supabase when enabled, falls back to mock
+// ---------------------------------------------------------------------------
+
+export async function registerUser(
+  name: string,
+  identifier: string,
+  password: string
+): Promise<User> {
+  if (isSupabaseEnabled()) {
+    return registerUserSupabase(name, identifier, password);
+  }
+  return registerUserMock(name, identifier, password);
+}
+
+export async function loginUser(
+  identifier: string,
+  password: string
+): Promise<User> {
+  if (isSupabaseEnabled()) {
+    return loginUserSupabase(identifier, password);
+  }
+  return loginUserMock(identifier, password);
+}
+
 export function getCurrentUser(): User | null {
   if (typeof window === "undefined") return null;
   const currentStr = localStorage.getItem(SESSION_KEY);
@@ -227,9 +426,14 @@ export function getCurrentUser(): User | null {
 }
 
 export function logoutUser(): void {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(SESSION_KEY);
+  if (isSupabaseEnabled()) {
+    try {
+      void logoutUserSupabase();
+    } catch {
+      // ignore
+    }
   }
+  logoutUserMock();
 }
 
 export async function upgradeToSeller(

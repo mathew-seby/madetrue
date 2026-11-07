@@ -12,6 +12,8 @@ import {
   updateUserProfile,
   forgotPassword
 } from "@/lib/supabase/auth";
+import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
+import { createSupabaseBrowserClient } from "@/lib/supabase/supabase-browser";
 import { AuthScreen } from "./AuthScreen";
 
 interface AuthContextType {
@@ -19,7 +21,7 @@ interface AuthContextType {
   loading: boolean;
   login: (identifier: string, password: string) => Promise<User>;
   signup: (name: string, identifier: string, password: string) => Promise<User>;
-  logout: () => void;
+  logout: () => Promise<void> | void;
   upgradeCurrentUserToSeller: (
     businessName: string,
     story: string,
@@ -39,14 +41,108 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Initialize and check current user session
+  // Initialize and synchronize user session
   useEffect(() => {
-    // One-time read of the session after hydration
-    const user = getCurrentUser();
-    /* eslint-disable react-hooks/set-state-in-effect -- one-time mount sync */
-    setCurrentUser(user);
-    setLoading(false);
-    /* eslint-enable react-hooks/set-state-in-effect */
+    let mounted = true;
+
+    if (!isSupabaseEnabled()) {
+      // Mock mode: one-time read of the session from localStorage after hydration
+      const user = getCurrentUser();
+      /* eslint-disable react-hooks/set-state-in-effect -- one-time mount sync from localStorage */
+      setCurrentUser(user);
+      setLoading(false);
+      /* eslint-enable react-hooks/set-state-in-effect */
+      return;
+    }
+
+    // Supabase mode: real session via @supabase/ssr cookies/storage
+    try {
+      const supabase = createSupabaseBrowserClient();
+
+      const syncProfile = async (authUser: {
+        id: string;
+        email?: string;
+        user_metadata?: Record<string, unknown>;
+      }) => {
+        try {
+          const { data: profile } = await supabase
+            .from("users")
+            .select(
+              "id, name, email, phone, role, location_lat, location_lng, region, language_pref, profile_photo_url"
+            )
+            .eq("id", authUser.id)
+            .maybeSingle();
+
+          if (!mounted) return;
+
+          if (profile) {
+            setCurrentUser(profile as User);
+          } else {
+            const meta = authUser.user_metadata || {};
+            const emailVal =
+              authUser.email && !authUser.email.endsWith("@phone.madetrue.in")
+                ? authUser.email
+                : "";
+            setCurrentUser({
+              id: authUser.id,
+              name: (meta.name as string) || "User",
+              email: emailVal,
+              phone: (meta.phone as string) || "",
+              role: (meta.role as User["role"]) || "buyer",
+            });
+          }
+        } catch (err) {
+          console.error("[madetrue] Failed to sync user profile", err);
+          if (mounted) setCurrentUser(null);
+        } finally {
+          if (mounted) setLoading(false);
+        }
+      };
+
+      // Check current session from cookies on mount (survives browser refresh)
+      supabase.auth
+        .getSession()
+        .then(({ data: { session } }) => {
+          if (!mounted) return;
+          if (session?.user) {
+            void syncProfile(session.user);
+          } else {
+            setCurrentUser(null);
+            setLoading(false);
+          }
+        })
+        .catch((err) => {
+          console.error("[madetrue] getSession error", err);
+          if (mounted) {
+            setCurrentUser(null);
+            setLoading(false);
+          }
+        });
+
+      // Listen for auth state transitions (sign in, sign out, token refresh)
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (!mounted) return;
+        if (event === "SIGNED_OUT" || !session?.user) {
+          setCurrentUser(null);
+          setLoading(false);
+        } else if (session?.user) {
+          await syncProfile(session.user);
+        }
+      });
+
+      return () => {
+        mounted = false;
+        subscription.unsubscribe();
+      };
+    } catch (err) {
+      console.error("[madetrue] Supabase auth client initialization failed", err);
+      if (mounted) {
+        setCurrentUser(null);
+        setLoading(false);
+      }
+    }
   }, []);
 
   const login = async (idVal: string, passVal: string) => {
@@ -60,8 +156,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user;
   };
 
-  const logout = () => {
-    logoutUser();
+  const logout = async () => {
+    if (isSupabaseEnabled()) {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.error("[madetrue] signOut error", err);
+      }
+    } else {
+      logoutUser();
+    }
     setCurrentUser(null);
   };
 
