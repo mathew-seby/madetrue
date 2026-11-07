@@ -84,15 +84,22 @@ task conflicts)
 ## 5. BASELINE STATE (snapshot at creation — do not rebuild; if it conflicts
 with docs/build-progress.md or git log, the tracker + git win)
 - Phase 0 ✅ repo-complete. Remaining are OWNER web tasks: protect main with
-  the CI check, squash-only merges + auto-delete branches,invite collaborators,
-  replace CODEOWNERS handles, file the team issue board
+  the CI check, squash-only merges + auto-delete branches, invite
+  collaborators, replace CODEOWNERS handles, file the team issue board
   (docs/team-issue-board.md).
 - Phase 1 ✅ COMPLETE (6/6) — buying loop, wa.me summaries, public gate.
 - Phase 8 ✅ COMPLETE (6/6) — maps, honest geolocation, Ernakulam gate.
-- Phases 2,3,4,5,6,7,9,10 ⬜ PENDING. Canonical next: Phase 2 · Step 1.
-- Baseline gates: tsc clean · eslint 0 errors / 48 warnings · 11-route
-  production smoke green. Do NOT fix pre-existing warnings unless asked.
-- HEAD at creation: db04a3b (2026-11-06).
+- Phase 2 ✅ COMPLETE (7/7) — Supabase foundation: schema + RLS + seed on the
+  live project; catalog reads and checkout/product/profile writes flow
+  through Supabase when MADETRUE_DATA_SOURCE=supabase (writes via
+  service-role server routes); "mock" stays the no-keys default + fallback.
+  Every mock export remains reachable as fallback (grep-verified in the
+  closing step — nothing deleted).
+- Phases 3,4,5,6,7,9,10 ⬜ PENDING. Canonical next: Phase 3 · Step 1.
+- Baseline gates: tsc clean · eslint 0 errors / 47 warnings · 11-route
+  production smoke green on BOTH data sources. Do NOT fix pre-existing
+  warnings unless asked.
+- Snapshot date: 2026-11-07 (commit "feat(phase2): close the mock era").
 
 ## 6. CANONICAL ROADMAP — EXACTLY 7 STEPS PER PHASE (fixed numbering)
 Rules: one step = one session turn = one owner commit. Never renumber; if a
