@@ -11,8 +11,8 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 2 · Step 4/7 — Seed the database — ⬜ pending
-**Last completed:** Phase 2 · Step 3/7 — Connect the app — commit "feat(phase2): connect Supabase behind a mock switch" — 2026-11-07
+**Current position:** Phase 2 · Step 5/7 — Move reads — ⬜ pending
+**Last completed:** Phase 2 · Step 4/7 — Seed the database — commit "feat(phase2): seed the catalog" — 2026-11-07
 **Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 48 warnings) · 11-route production smoke ✅
 
 ---
@@ -36,7 +36,7 @@
 | 1 | Draw the real database | `0001_init.sql` mirrors types + payment fields + transactions ledger | ✅ done | feat(phase2): draw the real database schema | 2026-11-07 |
 | 2 | Write security rules (RLS) | `0002_rls.sql` with documented access matrix | ✅ done | feat(phase2): add row level security | 2026-11-07 |
 | 3 | Connect the app | real clients + `MADETRUE_DATA_SOURCE` switch, keys in `.env.local` | ✅ done | feat(phase2): connect Supabase behind a mock switch | 2026-11-07 |
-| 4 | Seed the database | `seed.sql` recreates the mock catalog | ⬜ pending | — | — |
+| 4 | Seed the database | `seed.sql` recreates the mock catalog | ✅ done | feat(phase2): seed the catalog | 2026-11-07 |
 | 5 | Move reads | listing/detail/seller/home via Supabase; UI unchanged | ⬜ pending | — | — |
 | 6 | Move writes | orders/products/profile persist; localStorage writes removed | ⬜ pending | — | — |
 | 7 | Close the mock era | dead mock paths deleted; docs + `.env.example` updated | ⬜ pending | — | — |
@@ -147,6 +147,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-07 | Phase 2 Step 4 ✔ | `supabase/seed.sql` — 4 maker users → 5 categories → 4 sellers → 6 products with stable ids (`cat-1…`/`seller-1…`/`prod-1…`), verbatim mock values, `status='approved'`, base_price=price, commission=0, kyc left `not_started`, upsert-by-id (re-run safe). SQL only; tsc clean, eslint 0 errors / 48 warnings. Owner: paste into Supabase SQL editor. Commit pending. |
 | 2026-11-07 | Phase 2 Step 3 ✔ | `@supabase/supabase-js` + `@supabase/ssr` installed; new `lib/supabase/{dataSource,supabase-browser,supabase-server}.ts` — switch defaults to mock, clients refuse to boot on mock/missing keys; mock paths + pages untouched; `.env.example` documents the switch. tsc clean, eslint 0 errors / 48 warnings; worktree build + smoke 11/11 on :4010 with NO `.env.local`. Owner commit pending. |
 | 2026-11-07 | Phase 2 Step 2 ✔ | `supabase/migrations/0002_rls.sql` — catalog public read, sellers own rows, buyers create/read own orders, admin all, client-write guards. SQL only. tsc clean, eslint 0 errors / 48 warnings. Owner commit pending. |
 | 2026-11-07 | Phase 2 Step 1 ✔ | `supabase/migrations/0001_init.sql` — tables, enums, payment fields, transactions ledger. SQL only. tsc clean, eslint 0 errors / 48 warnings. Owner commit pending. |
