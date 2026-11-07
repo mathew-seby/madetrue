@@ -1,16 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ShieldCheck, ArrowLeft, Lock, Mail, AlertCircle } from "lucide-react";
+import { ShieldCheck, ArrowLeft, Lock, Mail, AlertCircle, Info } from "lucide-react";
+import { useAuth } from "@/components/shared/AuthProvider";
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const { currentUser } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (currentUser?.role === "admin") {
+      router.replace("/admin");
+    }
+  }, [currentUser, router]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +67,15 @@ export default function AdminLoginPage() {
               Vetting dashboard for MADETRUE moderators to verify organic produce and local handicrafts.
             </p>
           </div>
+
+          {currentUser && currentUser.role !== "admin" && (
+            <div className="p-3.5 rounded-xl bg-warm-brown/5 text-warm-brown text-xs border border-warm-brown/15 flex items-start space-x-2">
+              <Info className="h-4.5 w-4.5 shrink-0 mt-0.5 text-warm-brown" />
+              <span>
+                Currently signed in as <b>{currentUser.name}</b> ({currentUser.role}). Enter platform moderator credentials below to access the admin console.
+              </span>
+            </div>
+          )}
 
           {error && (
             <div className="p-3.5 rounded-xl bg-red-50 text-red-700 text-xs font-semibold border border-red-200 flex items-start space-x-2">
