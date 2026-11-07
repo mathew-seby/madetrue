@@ -399,6 +399,30 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Maker Verification & KYC Status Banner */}
+        {(() => {
+          const activeSeller = sellers.find((s) => s.id === selectedSellerId);
+          if (activeSeller && !activeSeller.is_verified) {
+            return (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-amber-900 flex items-center">
+                    <Clock className="h-4 w-4 mr-1.5 text-amber-700 shrink-0" />
+                    Maker Profile & Payout KYC Under Review
+                  </span>
+                  <p className="text-amber-800/80 leading-relaxed">
+                    Your maker application and bank details are being verified by MADETRUE moderators. You can draft products now; they will become discoverable once verified.
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 bg-amber-100 text-amber-900 font-bold uppercase text-[9px] tracking-wider rounded-full shrink-0">
+                  Pending Admin Approval
+                </span>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
         {/* Navigation Tabs */}
         <div className="flex border-b border-warm-brown/10">
           <button

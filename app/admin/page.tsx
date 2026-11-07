@@ -18,7 +18,7 @@ import {
   ShieldCheck, LogOut, Check, X, Clock, Eye, Store, HelpCircle, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
   ChevronDown, ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
-  Users, Send, Award, ShieldAlert, Calendar 
+  Users, Send, Award, ShieldAlert, Calendar, CreditCard 
 } from "lucide-react";
 
 // Pre-seed three demo orders the first time the admin console runs.
@@ -845,6 +845,44 @@ export default function AdminPage() {
                         >
                           WhatsApp Contact: +91 {seller.whatsapp_number}
                         </a>
+                      </div>
+
+                      {/* Payout KYC Details (Cashfree Easy Split) */}
+                      <div className="bg-cream-bg p-3.5 rounded-2xl border border-warm-brown/5 space-y-1.5 font-sans">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider flex items-center">
+                            <CreditCard className="h-3 w-3 mr-1 text-primary-green" /> Payout KYC Details
+                          </span>
+                          <span className={`text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                            seller.kyc_status === "verified" || seller.is_verified
+                              ? "bg-primary-green/15 text-primary-green"
+                              : "bg-amber-100 text-amber-800"
+                          }`}>
+                            KYC: {seller.kyc_status || (seller.is_verified ? "verified" : "pending")}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                          <div>
+                            <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">PAN</span>
+                            <span className="font-mono font-bold text-text-dark">{seller.pan || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">Bank Account</span>
+                            <span className="font-mono font-bold text-text-dark">
+                              {seller.bank_account_number ? `••••${seller.bank_account_number.slice(-4)}` : "—"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">IFSC</span>
+                            <span className="font-mono font-bold text-text-dark">{seller.bank_ifsc || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">Holder</span>
+                            <span className="font-medium text-text-dark truncate block" title={seller.bank_account_holder}>
+                              {seller.bank_account_holder || seller.business_name}
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
                       <div className="flex justify-end gap-2 pt-2.5">

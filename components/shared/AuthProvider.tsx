@@ -12,7 +12,8 @@ import {
   updateUserProfile,
   forgotPassword,
   resetPassword,
-  PasswordResetResult
+  PasswordResetResult,
+  SellerKycPayload
 } from "@/lib/supabase/auth";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseBrowserClient } from "@/lib/supabase/supabase-browser";
@@ -30,7 +31,8 @@ interface AuthContextType {
     whatsappNumber: string,
     address: string,
     lat?: number,
-    lng?: number
+    lng?: number,
+    kycData?: SellerKycPayload
   ) => Promise<void>;
   updateUser: (
     name: string,
@@ -209,7 +211,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     whatsappNumber: string,
     address: string,
     lat?: number,
-    lng?: number
+    lng?: number,
+    kycData?: SellerKycPayload
   ) => {
     if (!currentUser) throw new Error("No active user session.");
     const result = await upgradeToSeller(
@@ -219,7 +222,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       whatsappNumber,
       address,
       lat,
-      lng
+      lng,
+      kycData
     );
     setCurrentUser(result.user);
   };

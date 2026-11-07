@@ -8,7 +8,7 @@
 // the DB product row, exactly what 0002_rls.sql trusts to a signed-in
 // client once Phase 3 has real sessions).
 
-import type { Order, Product } from "../../types";
+import type { Order, Product, Seller } from "../../types";
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -98,5 +98,29 @@ export async function persistProfileSupabase(
   await requestJson<PersistProfile>("/api/profile", {
     method: "POST",
     body: JSON.stringify(profile),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Sellers — maker onboarding and admin moderation.
+// ---------------------------------------------------------------------------
+
+export async function submitSellerSupabase(
+  sellerData: Omit<Seller, "id">
+): Promise<Seller> {
+  return requestJson<Seller>("/api/sellers", {
+    method: "POST",
+    body: JSON.stringify({ seller: sellerData }),
+  });
+}
+
+export async function updateSellerVerificationSupabase(
+  id: string,
+  is_verified: boolean,
+  kyc_status?: Seller["kyc_status"]
+): Promise<Seller | null> {
+  return requestJson<Seller | null>("/api/sellers", {
+    method: "PATCH",
+    body: JSON.stringify({ id, is_verified, kyc_status }),
   });
 }

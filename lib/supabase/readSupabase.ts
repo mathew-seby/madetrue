@@ -54,7 +54,7 @@ export async function fetchCategoriesSupabase(): Promise<Category[]> {
 // ---------------------------------------------------------------------------
 
 const SELLER_COLUMNS =
-  "id, user_id, business_name, story, profile_photo_url, video_url, address, lat, lng, whatsapp_number, is_verified";
+  "id, user_id, business_name, story, profile_photo_url, video_url, address, lat, lng, whatsapp_number, is_verified, payment_vendor_ref, kyc_status";
 
 function mapSeller(row: Record<string, unknown>): Seller {
   return {
@@ -69,6 +69,12 @@ function mapSeller(row: Record<string, unknown>): Seller {
     lng: row.lng as number,
     whatsapp_number: row.whatsapp_number as string,
     is_verified: row.is_verified as boolean,
+    payment_vendor_ref: (row.payment_vendor_ref as string | null) ?? undefined,
+    kyc_status: (row.kyc_status as Seller["kyc_status"]) ?? undefined,
+    pan: (row.pan as string | null) ?? undefined,
+    bank_account_number: (row.bank_account_number as string | null) ?? undefined,
+    bank_ifsc: (row.bank_ifsc as string | null) ?? undefined,
+    bank_account_holder: (row.bank_account_holder as string | null) ?? undefined,
   };
 }
 

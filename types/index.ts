@@ -24,6 +24,12 @@ export interface Seller {
   lng: number;
   whatsapp_number: string;
   is_verified: boolean;
+  payment_vendor_ref?: string;
+  kyc_status?: 'not_started' | 'pending' | 'verified' | 'failed';
+  pan?: string;
+  bank_account_number?: string;
+  bank_ifsc?: string;
+  bank_account_holder?: string;
 }
 
 // The exact badge tag strings allowed on products (AGENTS.md badge list)

@@ -442,6 +442,13 @@ export function logoutUser(): void {
   logoutUserMock();
 }
 
+export interface SellerKycPayload {
+  pan?: string;
+  bank_account_number?: string;
+  bank_ifsc?: string;
+  bank_account_holder?: string;
+}
+
 export async function upgradeToSeller(
   userId: string,
   businessName: string,
@@ -449,37 +456,95 @@ export async function upgradeToSeller(
   whatsappNumber: string,
   address: string,
   lat?: number,
-  lng?: number
+  lng?: number,
+  kycData?: SellerKycPayload
 ): Promise<{ user: User; seller: Seller }> {
-  await new Promise((resolve) => setTimeout(resolve, 400));
-  const users = getStoredUsers();
-  const userIdx = users.findIndex((u) => u.id === userId);
+  if (isSupabaseEnabled()) {
+    const supabase = createSupabaseBrowserClient();
 
-  if (userIdx === -1) {
-    throw new Error("User session not found.");
+    // 1. Create seller profile via API route (which also updates public.users.role to 'seller')
+    const newSeller = await addSeller({
+      user_id: userId,
+      business_name: businessName,
+      story,
+      profile_photo_url:
+        "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80",
+      address,
+      lat: lat ?? 9.9312,
+      lng: lng ?? 76.2673,
+      whatsapp_number: whatsappNumber,
+      is_verified: false,
+      kyc_status: "pending",
+      pan: kycData?.pan,
+      bank_account_number: kycData?.bank_account_number,
+      bank_ifsc: kycData?.bank_ifsc,
+      bank_account_holder: kycData?.bank_account_holder,
+    });
+
+    // 2. Update auth session metadata role to 'seller'
+    const { data: authData, error: authErr } = await supabase.auth.updateUser({
+      data: { role: "seller" },
+    });
+    if (authErr) {
+      console.warn("[madetrue] Failed to update auth metadata role:", authErr.message);
+    }
+
+    const currentAuthUser = authData?.user;
+    const updatedUser: User = {
+      id: userId,
+      name: (currentAuthUser?.user_metadata?.name as string) || businessName,
+      email: currentAuthUser?.email && !currentAuthUser.email.endsWith("@phone.madetrue.in") ? currentAuthUser.email : "",
+      phone: whatsappNumber,
+      role: "seller",
+      address,
+    };
+
+    return { user: updatedUser, seller: newSeller };
   }
 
-  // Upgrade user role in database list
-  users[userIdx].role = "seller";
+  // Mock mode
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const users = getStoredUsers();
+  let userIdx = users.findIndex((u) => u.id === userId);
+
+  if (userIdx === -1) {
+    const freshUser: StoredUser = {
+      id: userId,
+      name: businessName,
+      email: "",
+      phone: whatsappNumber,
+      role: "seller",
+      passwordHash: "password123",
+      address,
+    };
+    users.push(freshUser);
+    userIdx = users.length - 1;
+  } else {
+    users[userIdx].role = "seller";
+  }
+
   saveStoredUsers(users);
 
-  // Create clean user object
   const { passwordHash, ...updatedUser } = users[userIdx];
 
-  // Create and add seller profile
   const newSeller = await addSeller({
     user_id: userId,
     business_name: businessName,
     story,
-    profile_photo_url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80", // placeholder matching design system
+    profile_photo_url:
+      "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80",
     address,
-    lat: lat ?? 9.9312, // default Kochi lat
-    lng: lng ?? 76.2673, // default Kochi lng
+    lat: lat ?? 9.9312,
+    lng: lng ?? 76.2673,
     whatsapp_number: whatsappNumber,
-    is_verified: false, // starts unverified, admin will approve
+    is_verified: false,
+    kyc_status: "pending",
+    pan: kycData?.pan,
+    bank_account_number: kycData?.bank_account_number,
+    bank_ifsc: kycData?.bank_ifsc,
+    bank_account_holder: kycData?.bank_account_holder,
   });
 
-  // Update current session
   if (typeof window !== "undefined") {
     localStorage.setItem(SESSION_KEY, JSON.stringify(updatedUser));
   }

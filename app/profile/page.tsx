@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { useRouter } from "next/navigation";
-import { User as UserIcon, ShieldCheck, Mail, Phone, LogOut, Store, ArrowLeft, ArrowRight, Heart, Sparkles, Settings, Globe, ChevronDown, ChevronUp, Lock, MapPin } from "lucide-react";
+import { User as UserIcon, ShieldCheck, Mail, Phone, LogOut, Store, ArrowLeft, ArrowRight, Heart, Sparkles, Settings, Globe, ChevronDown, ChevronUp, Lock, MapPin, CreditCard, Building2 } from "lucide-react";
 import Link from "next/link";
 import { getSellers } from "@/lib/supabase/client";
 import { Seller } from "@/types";
@@ -22,6 +22,12 @@ export default function ProfilePage() {
   const [lng, setLng] = useState("76.2673"); // default Kochi
   const [gmapsInput, setGmapsInput] = useState("");
   const [locationOption, setLocationOption] = useState<"paste" | "select">("select");
+
+  // Payout KYC States (Cashfree Easy Split)
+  const [pan, setPan] = useState("");
+  const [bankAccountNumber, setBankAccountNumber] = useState("");
+  const [bankIfsc, setBankIfsc] = useState("");
+  const [bankAccountHolder, setBankAccountHolder] = useState("");
 
   // Feedback
   const [errorMsg, setErrorMsg] = useState("");
@@ -130,6 +136,40 @@ export default function ProfilePage() {
       return;
     }
 
+    // Payout KYC Validation (Cashfree Easy Split)
+    const cleanPan = pan.trim().toUpperCase();
+    if (!cleanPan) {
+      setErrorMsg("Please provide your 10-character PAN number for payout verification.");
+      setLoading(false);
+      return;
+    }
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(cleanPan)) {
+      setErrorMsg("Please enter a valid 10-character Indian PAN number (e.g. ABCDE1234F).");
+      setLoading(false);
+      return;
+    }
+
+    const cleanAccountHolder = bankAccountHolder.trim() || businessName.trim();
+    if (!cleanAccountHolder) {
+      setErrorMsg("Please enter the bank account holder's name.");
+      setLoading(false);
+      return;
+    }
+
+    const cleanAccountNum = bankAccountNumber.replace(/\s/g, "");
+    if (!cleanAccountNum || !/^\d{9,18}$/.test(cleanAccountNum)) {
+      setErrorMsg("Please enter a valid bank account number (9 to 18 digits).");
+      setLoading(false);
+      return;
+    }
+
+    const cleanIfsc = bankIfsc.trim().toUpperCase();
+    if (!cleanIfsc || !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(cleanIfsc)) {
+      setErrorMsg("Please enter a valid 11-character Indian IFSC code (e.g. SBIN0001234).");
+      setLoading(false);
+      return;
+    }
+
     try {
       await upgradeCurrentUserToSeller(
         businessName.trim(),
@@ -137,7 +177,13 @@ export default function ProfilePage() {
         whatsappNumber.trim(),
         address.trim(),
         latitude,
-        longitude
+        longitude,
+        {
+          pan: cleanPan,
+          bank_account_number: cleanAccountNum,
+          bank_ifsc: cleanIfsc,
+          bank_account_holder: cleanAccountHolder,
+        }
       );
       setSuccess(true);
       setTimeout(() => {
@@ -419,6 +465,86 @@ export default function ProfilePage() {
                 )}
               </div>
 
+              {/* Payout KYC & Bank Verification Section (Cashfree Easy Split) */}
+              <div className="bg-[#FAF7F2] border border-warm-brown/15 p-5 sm:p-6 rounded-2xl space-y-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-primary-green uppercase tracking-wider flex items-center">
+                    <CreditCard className="h-4 w-4 mr-1.5 text-primary-green" /> Payout KYC & Bank Details (Cashfree Easy Split)
+                  </span>
+                  <p className="text-[11px] text-text-dark/75 leading-relaxed">
+                    Required for direct, automated split settlements into your bank account under RBI and payment gateway guidelines.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  {/* PAN Card */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
+                      Permanent Account Number (PAN) *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={10}
+                      value={pan}
+                      onChange={(e) => setPan(e.target.value.toUpperCase())}
+                      placeholder="e.g. ABCDE1234F"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-white text-xs font-mono uppercase text-text-dark focus:border-primary-green focus:outline-none transition"
+                    />
+                    <span className="text-[9px] text-warm-brown/60 block">10-character alphanumeric PAN</span>
+                  </div>
+
+                  {/* Bank Account Holder */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
+                      <Building2 className="h-3 w-3 mr-1 text-primary-green" /> Account Holder Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={bankAccountHolder}
+                      onChange={(e) => setBankAccountHolder(e.target.value)}
+                      placeholder="Name as per bank passbook"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-white text-xs text-text-dark focus:border-primary-green focus:outline-none transition"
+                    />
+                    <span className="text-[9px] text-warm-brown/60 block">Must match bank statement</span>
+                  </div>
+
+                  {/* Bank Account Number */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                      Bank Account Number *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={bankAccountNumber}
+                      onChange={(e) => setBankAccountNumber(e.target.value.replace(/\D/g, ""))}
+                      placeholder="9 to 18 digit account number"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-white text-xs font-mono text-text-dark focus:border-primary-green focus:outline-none transition"
+                    />
+                    <span className="text-[9px] text-warm-brown/60 block">Direct payout settlement account</span>
+                  </div>
+
+                  {/* Bank IFSC Code */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                      Bank IFSC Code *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={11}
+                      value={bankIfsc}
+                      onChange={(e) => setBankIfsc(e.target.value.toUpperCase())}
+                      placeholder="e.g. SBIN0001234"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-white text-xs font-mono uppercase text-text-dark focus:border-primary-green focus:outline-none transition"
+                    />
+                    <span className="text-[9px] text-warm-brown/60 block">11-character branch IFSC</span>
+                  </div>
+                </div>
+              </div>
+
               {/* Submit Action */}
               <div className="pt-2 flex justify-end">
                 <button
@@ -488,6 +614,43 @@ export default function ProfilePage() {
               <p className="text-xs text-text-dark/80 leading-relaxed italic">
                 &ldquo;{sellerProfile ? sellerProfile.story : "Loading story..."}&rdquo;
               </p>
+            </div>
+
+            {/* Payout KYC Status (Cashfree Easy Split) */}
+            <div className="bg-cream-bg p-4 rounded-2xl border border-warm-brown/5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider flex items-center">
+                  <CreditCard className="h-3.5 w-3.5 mr-1 text-primary-green" /> Payout KYC & Bank Settlement
+                </span>
+                <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                  sellerProfile?.kyc_status === "verified" || sellerProfile?.is_verified
+                    ? "bg-primary-green/15 text-primary-green"
+                    : "bg-amber-100 text-amber-800"
+                }`}>
+                  {sellerProfile?.kyc_status === "verified" || sellerProfile?.is_verified ? "KYC Verified" : "KYC Pending Verification"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <span className="text-[9px] font-bold text-warm-brown/60 uppercase tracking-wider block">PAN Number</span>
+                  <span className="font-mono text-text-dark font-semibold">
+                    {sellerProfile?.pan ? `•••••${sellerProfile.pan.slice(-4)}` : "Registered"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-warm-brown/60 uppercase tracking-wider block">Bank Account</span>
+                  <span className="font-mono text-text-dark font-semibold">
+                    {sellerProfile?.bank_account_number ? `••••••••${sellerProfile.bank_account_number.slice(-4)}` : "Registered"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-warm-brown/60 uppercase tracking-wider block">IFSC Code</span>
+                  <span className="font-mono text-text-dark font-semibold">
+                    {sellerProfile?.bank_ifsc || "Registered"}
+                  </span>
+                </div>
+              </div>
             </div>
 
           </div>
