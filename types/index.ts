@@ -9,6 +9,7 @@ export interface User {
   region?: string;
   language_pref?: string;
   profile_photo_url?: string;
+  address?: string;
 }
 
 export interface Seller {

@@ -89,6 +89,7 @@ export interface PersistProfile {
   role: "buyer" | "seller" | "admin";
   language_pref?: string;
   profile_photo_url?: string;
+  address?: string;
 }
 
 export async function persistProfileSupabase(

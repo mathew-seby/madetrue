@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { useRouter } from "next/navigation";
-import { User as UserIcon, ShieldCheck, Mail, Phone, LogOut, Store, ArrowLeft, ArrowRight, Heart, Sparkles, Settings, Globe, ChevronDown, ChevronUp, Lock } from "lucide-react";
+import { User as UserIcon, ShieldCheck, Mail, Phone, LogOut, Store, ArrowLeft, ArrowRight, Heart, Sparkles, Settings, Globe, ChevronDown, ChevronUp, Lock, MapPin } from "lucide-react";
 import Link from "next/link";
 import { getSellers } from "@/lib/supabase/client";
 import { Seller } from "@/types";
@@ -194,6 +194,11 @@ export default function ProfilePage() {
                   <Phone className="h-3.5 w-3.5 mr-1 text-primary-green" /> {currentUser.phone}
                 </span>
               )}
+              {currentUser.address && (
+                <span className="flex items-center text-text-dark/70">
+                  <MapPin className="h-3.5 w-3.5 mr-1 text-primary-green shrink-0" /> {currentUser.address}
+                </span>
+              )}
             </div>
           </div>
           <div className="shrink-0">
@@ -217,7 +222,7 @@ export default function ProfilePage() {
               Account Settings & Preferences
             </h2>
             <p className="text-xs text-text-dark/60">
-              Configure your display name, language preferences, password verification, and profile avatar.
+              Update your display name, contact phone, delivery address, language preferences, and secure credentials.
             </p>
           </div>
           <Link

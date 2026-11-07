@@ -244,17 +244,23 @@ export async function loginUserSupabase(
     .eq("id", data.user.id)
     .maybeSingle();
 
+  const meta = data.user.user_metadata || {};
   if (profile) {
-    return profile as User;
+    const profRecord = profile as Record<string, unknown>;
+    const userAddress = (profRecord.address as string) || (profile.region as string) || (meta.address as string) || undefined;
+    return {
+      ...(profile as User),
+      address: userAddress,
+    };
   }
 
-  const meta = data.user.user_metadata || {};
   return {
     id: data.user.id,
     name: (meta.name as string) || "User",
     email: isEmailInput ? trimmedId.toLowerCase() : "",
-    phone: !isEmailInput ? normalizePhone(trimmedId) : "",
+    phone: !isEmailInput ? normalizePhone(trimmedId) : ((meta.phone as string) || ""),
     role: (meta.role as User["role"]) || "buyer",
+    address: (meta.address as string) || undefined,
   };
 }
 
@@ -487,58 +493,120 @@ export async function updateUserProfile(
   password?: string,
   oldPassword?: string,
   languagePref?: string,
-  profilePhotoUrl?: string
+  profilePhotoUrl?: string,
+  phone?: string,
+  address?: string
 ): Promise<User> {
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  const users = getStoredUsers();
-  const userIdx = users.findIndex((u) => u.id === userId);
-
-  if (userIdx === -1) {
-    throw new Error("User session not found.");
+  const trimmedName = name.trim();
+  if (!trimmedName || trimmedName.length < 2) {
+    throw new Error("Please enter a valid display name (at least 2 letters).");
   }
 
-  // Update display name (username)
-  if (name.trim()) {
-    users[userIdx].name = name.trim();
-  }
-
-  // Update language preference
-  if (languagePref) {
-    users[userIdx].language_pref = languagePref;
-  }
-
-  // Update profile photo url
-  if (profilePhotoUrl !== undefined) {
-    users[userIdx].profile_photo_url = profilePhotoUrl;
-  }
-
-  // Update password if provided
-  if (password && password.trim()) {
-    if (!oldPassword) {
-      throw new Error("Old password is required to change passcode.");
-    }
-    if (users[userIdx].passwordHash !== oldPassword) {
-      throw new Error("Incorrect old password. Please try again.");
-    }
-    if (password.length < 6) {
-      throw new Error("New password must be at least 6 characters long.");
-    }
-    users[userIdx].passwordHash = password;
+  const normalizedPhone = phone !== undefined && phone.trim() ? normalizePhone(phone) : undefined;
+  if (normalizedPhone !== undefined && !validatePhone(normalizedPhone)) {
+    throw new Error("Please enter a valid 10-digit Indian phone number.");
   }
 
   if (isSupabaseEnabled()) {
-    // Persist the profile fields Supabase can own pre-auth. Throws a
-    // warm error before anything is saved locally (mock-era passwords
-    // stay local; Supabase Auth owns them from Phase 3).
-    await persistProfileSupabase({
-      id: users[userIdx].id,
-      name: users[userIdx].name,
-      email: users[userIdx].email,
-      phone: users[userIdx].phone,
-      role: users[userIdx].role,
-      language_pref: users[userIdx].language_pref,
-      profile_photo_url: users[userIdx].profile_photo_url,
+    const supabase = createSupabaseBrowserClient();
+
+    // 1. If password change requested in Supabase mode
+    if (password && password.trim()) {
+      if (password.length < 6) {
+        throw new Error("New password must be at least 6 characters long.");
+      }
+      const { error: pwdErr } = await supabase.auth.updateUser({ password });
+      if (pwdErr) {
+        throw new Error(`[madetrue] ${pwdErr.message}`);
+      }
+    }
+
+    // 2. Update user metadata in Supabase Auth session
+    const metaUpdates: Record<string, unknown> = {
+      name: trimmedName,
+      ...(languagePref ? { language_pref: languagePref } : {}),
+      ...(profilePhotoUrl !== undefined ? { profile_photo_url: profilePhotoUrl } : {}),
+      ...(normalizedPhone !== undefined ? { phone: normalizedPhone } : {}),
+      ...(address !== undefined ? { address: address.trim() } : {}),
+    };
+
+    const { data: authData, error: authErr } = await supabase.auth.updateUser({
+      data: metaUpdates,
     });
+    if (authErr) {
+      console.warn("[madetrue] Auth metadata update warning:", authErr.message);
+    }
+
+    // 3. Persist to public.users via /api/profile
+    const currentAuthUser = authData?.user;
+    const currentEmail =
+      currentAuthUser?.email && !currentAuthUser.email.endsWith("@phone.madetrue.in")
+        ? currentAuthUser.email
+        : "";
+
+    await persistProfileSupabase({
+      id: userId,
+      name: trimmedName,
+      email: currentEmail,
+      phone: normalizedPhone ?? (currentAuthUser?.user_metadata?.phone as string) ?? "",
+      role: (currentAuthUser?.user_metadata?.role as User["role"]) ?? "buyer",
+      language_pref: languagePref,
+      profile_photo_url: profilePhotoUrl,
+      address: address?.trim(),
+    });
+
+    const updatedUser: User = {
+      id: userId,
+      name: trimmedName,
+      email: currentEmail,
+      phone: normalizedPhone ?? (currentAuthUser?.user_metadata?.phone as string) ?? "",
+      role: (currentAuthUser?.user_metadata?.role as User["role"]) ?? "buyer",
+      language_pref: languagePref,
+      profile_photo_url: profilePhotoUrl,
+      address: address?.trim(),
+    };
+
+    return updatedUser;
+  }
+
+  // Mock mode
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const users = getStoredUsers();
+  let userIdx = users.findIndex((u) => u.id === userId);
+
+  if (userIdx === -1) {
+    const newUser: StoredUser = {
+      id: userId,
+      name: trimmedName,
+      email: "",
+      phone: normalizedPhone || "",
+      role: "buyer",
+      passwordHash: "password123",
+      address: address?.trim(),
+      language_pref: languagePref,
+      profile_photo_url: profilePhotoUrl,
+    };
+    users.push(newUser);
+    userIdx = users.length - 1;
+  } else {
+    users[userIdx].name = trimmedName;
+    if (languagePref) users[userIdx].language_pref = languagePref;
+    if (profilePhotoUrl !== undefined) users[userIdx].profile_photo_url = profilePhotoUrl;
+    if (normalizedPhone !== undefined) users[userIdx].phone = normalizedPhone;
+    if (address !== undefined) users[userIdx].address = address.trim();
+
+    if (password && password.trim()) {
+      if (!oldPassword) {
+        throw new Error("Old password is required to change passcode.");
+      }
+      if (users[userIdx].passwordHash !== oldPassword) {
+        throw new Error("Incorrect old password. Please try again.");
+      }
+      if (password.length < 6) {
+        throw new Error("New password must be at least 6 characters long.");
+      }
+      users[userIdx].passwordHash = password;
+    }
   }
 
   saveStoredUsers(users);

@@ -32,7 +32,15 @@ interface AuthContextType {
     lat?: number,
     lng?: number
   ) => Promise<void>;
-  updateUser: (name: string, password?: string, oldPassword?: string, languagePref?: string, profilePhotoUrl?: string) => Promise<void>;
+  updateUser: (
+    name: string,
+    password?: string,
+    oldPassword?: string,
+    languagePref?: string,
+    profilePhotoUrl?: string,
+    phone?: string,
+    address?: string
+  ) => Promise<void>;
   requestPasswordReset: (identifier: string) => Promise<PasswordResetResult>;
   performPasswordReset: (newPassword: string, identifier?: string) => Promise<void>;
 }
@@ -68,32 +76,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user_metadata?: Record<string, unknown>;
       }) => {
         try {
-          const { data: profile } = await supabase
-            .from("users")
-            .select(
-              "id, name, email, phone, role, location_lat, location_lng, region, language_pref, profile_photo_url"
-            )
-            .eq("id", authUser.id)
-            .maybeSingle();
+          const meta = authUser.user_metadata || {};
+          let profile: Record<string, unknown> | null = null;
+
+          try {
+            const { data } = await supabase
+              .from("users")
+              .select(
+                "id, name, email, phone, role, location_lat, location_lng, region, language_pref, profile_photo_url, address"
+              )
+              .eq("id", authUser.id)
+              .maybeSingle();
+            profile = data as Record<string, unknown> | null;
+          } catch {
+            const { data } = await supabase
+              .from("users")
+              .select(
+                "id, name, email, phone, role, location_lat, location_lng, region, language_pref, profile_photo_url"
+              )
+              .eq("id", authUser.id)
+              .maybeSingle();
+            profile = data as Record<string, unknown> | null;
+          }
 
           if (!mounted) return;
 
-          if (profile) {
-            setCurrentUser(profile as User);
-          } else {
-            const meta = authUser.user_metadata || {};
-            const emailVal =
-              authUser.email && !authUser.email.endsWith("@phone.madetrue.in")
-                ? authUser.email
-                : "";
-            setCurrentUser({
-              id: authUser.id,
-              name: (meta.name as string) || "User",
-              email: emailVal,
-              phone: (meta.phone as string) || "",
-              role: (meta.role as User["role"]) || "buyer",
-            });
-          }
+          const emailVal =
+            authUser.email && !authUser.email.endsWith("@phone.madetrue.in")
+              ? authUser.email
+              : (profile?.email as string) || "";
+
+          const phoneVal = (profile?.phone as string) || (meta.phone as string) || "";
+          const addressVal = (profile?.address as string) || (profile?.region as string) || (meta.address as string) || "";
+          const nameVal = (profile?.name as string) || (meta.name as string) || "User";
+          const roleVal = (profile?.role as User["role"]) || (meta.role as User["role"]) || "buyer";
+
+          setCurrentUser({
+            id: authUser.id,
+            name: nameVal,
+            email: emailVal,
+            phone: phoneVal,
+            role: roleVal,
+            address: addressVal || undefined,
+            language_pref: (profile?.language_pref as string) || (meta.language_pref as string) || undefined,
+            profile_photo_url: (profile?.profile_photo_url as string) || (meta.profile_photo_url as string) || undefined,
+            location_lat: (profile?.location_lat as number) ?? undefined,
+            location_lng: (profile?.location_lng as number) ?? undefined,
+            region: (profile?.region as string) ?? undefined,
+          });
         } catch (err) {
           console.error("[madetrue] Failed to sync user profile", err);
           if (mounted) setCurrentUser(null);
@@ -199,7 +229,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     passwordVal?: string,
     oldPasswordVal?: string,
     languagePrefVal?: string,
-    profilePhotoUrlVal?: string
+    profilePhotoUrlVal?: string,
+    phoneVal?: string,
+    addressVal?: string
   ) => {
     if (!currentUser) throw new Error("No active user session.");
     const updated = await updateUserProfile(
@@ -208,7 +240,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       passwordVal,
       oldPasswordVal,
       languagePrefVal,
-      profilePhotoUrlVal
+      profilePhotoUrlVal,
+      phoneVal,
+      addressVal
     );
     setCurrentUser(updated);
   };

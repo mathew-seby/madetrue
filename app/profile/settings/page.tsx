@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, User as UserIcon, Settings, Globe, Lock, Upload, Link as LinkIcon, X, Sparkles } from "lucide-react";
+import { ArrowLeft, User as UserIcon, Settings, Globe, Lock, Upload, Link as LinkIcon, X, Sparkles, Phone, MapPin, Mail } from "lucide-react";
 import Link from "next/link";
 
 export default function SettingsPage() {
@@ -12,6 +12,8 @@ export default function SettingsPage() {
 
   // Form State
   const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editAddress, setEditAddress] = useState("");
   const [profilePhotoUrl, setProfilePhotoUrl] = useState("");
   const [uploadedPhoto, setUploadedPhoto] = useState("");
   const [languagePref, setLanguagePref] = useState("en");
@@ -33,6 +35,8 @@ export default function SettingsPage() {
     setLastPrefilledUser(currentUser);
     if (currentUser) {
       setEditName(currentUser.name);
+      setEditPhone(currentUser.phone || "");
+      setEditAddress(currentUser.address || "");
       setProfilePhotoUrl(currentUser.profile_photo_url || "");
       setLanguagePref(currentUser.language_pref || "en");
     }
@@ -111,6 +115,15 @@ export default function SettingsPage() {
       return;
     }
 
+    if (editPhone.trim()) {
+      const cleanPhone = editPhone.replace(/[\s\-\(\)]/g, "");
+      if (!/^(?:\+91|91|0)?[6-9]\d{9}$/.test(cleanPhone)) {
+        setErrorMsg("Please enter a valid 10-digit Indian mobile number.");
+        setLoading(false);
+        return;
+      }
+    }
+
     if (editPassword) {
       if (editPassword.length < 6) {
         setErrorMsg("New password must be at least 6 characters long.");
@@ -137,7 +150,9 @@ export default function SettingsPage() {
         editPassword || undefined, 
         editOldPassword || undefined, 
         languagePref, 
-        finalPhoto
+        finalPhoto,
+        editPhone.trim() || undefined,
+        editAddress.trim() || undefined
       );
       setSuccessMsg("Settings updated successfully! Redirecting to profile...");
       setEditOldPassword("");
@@ -270,6 +285,34 @@ export default function SettingsPage() {
                 />
               </div>
 
+              {/* Phone Number */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
+                  <Phone className="h-3.5 w-3.5 mr-1 text-primary-green" /> Contact Phone Number
+                </label>
+                <input
+                  type="tel"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="e.g. 9876543210"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:outline-none transition font-sans"
+                />
+                <p className="text-[10px] text-text-dark/50">Used for delivery updates & maker coordination.</p>
+              </div>
+
+              {/* Email (Read-Only display) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
+                  <Mail className="h-3.5 w-3.5 mr-1 text-primary-green" /> Registered Email
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={currentUser.email || "No email registered"}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/10 bg-warm-brown/5 text-sm text-text-dark/60 font-sans cursor-not-allowed"
+                />
+              </div>
+
               {/* Language Selection */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
@@ -283,6 +326,21 @@ export default function SettingsPage() {
                   <option value="en">English</option>
                   <option value="ml">മലയാളം (Malayalam)</option>
                 </select>
+              </div>
+
+              {/* Delivery Address (Full width) */}
+              <div className="sm:col-span-2 space-y-1.5">
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
+                  <MapPin className="h-3.5 w-3.5 mr-1 text-primary-green" /> Default Delivery Address
+                </label>
+                <textarea
+                  rows={2}
+                  value={editAddress}
+                  onChange={(e) => setEditAddress(e.target.value)}
+                  placeholder="House/flat name, street or landmark, Ernakulam, Kerala"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:outline-none transition font-sans resize-none"
+                />
+                <p className="text-[10px] text-text-dark/50">Auto-fills as your destination during checkout within Ernakulam district.</p>
               </div>
             </div>
 
@@ -358,7 +416,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between pt-2">
               <span className="text-[10px] text-warm-brown/60 font-semibold uppercase tracking-wider">
                 <Sparkles className="h-3 w-3 mr-1 inline-block text-accent-gold" />
-                Saves to Local Storage Database
+                Saved to your personal account
               </span>
               
               <div className="flex space-x-3">
