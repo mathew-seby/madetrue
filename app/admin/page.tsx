@@ -15,9 +15,9 @@ import {
 import { Order, Product, Seller } from "@/types";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { 
-  ShieldCheck, LogOut, Check, X, Clock, Eye, Store, HelpCircle, Tag, 
+  ShieldCheck, LogOut, Check, X, Clock, Eye, Store, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
-  ChevronDown, ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
+  ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
   Users, Send, Award, ShieldAlert, Calendar, CreditCard 
 } from "lucide-react";
 
@@ -139,7 +139,7 @@ export default function AdminPage() {
       setSellersList(allSellers);
       setSellersMap(sellerMap);
       setOrders(allOrders);
-    } catch (error) {
+    } catch {
       showToast("Failed to fetch admin dashboard data", "error");
     } finally {
       setLoading(false);
@@ -224,7 +224,7 @@ export default function AdminPage() {
         showToast(msg, "success");
         loadModerationData();
       }
-    } catch (err) {
+    } catch {
       showToast("Operation failed. Try again.", "error");
     }
   };
@@ -239,7 +239,7 @@ export default function AdminPage() {
         );
         loadModerationData();
       }
-    } catch (err) {
+    } catch {
       showToast("Failed to update seller verification.", "error");
     }
   };
@@ -251,7 +251,7 @@ export default function AdminPage() {
         showToast(`Order status updated to "${newStatus}"`, "success");
         loadModerationData();
       }
-    } catch (err) {
+    } catch {
       showToast("Failed to update order status.", "error");
     }
   };
@@ -268,7 +268,7 @@ export default function AdminPage() {
         );
         loadModerationData();
       }
-    } catch (err) {
+    } catch {
       showToast("Failed to update WhatsApp notification status.", "error");
     }
   };

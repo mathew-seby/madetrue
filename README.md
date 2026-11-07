@@ -9,8 +9,11 @@ neighbors who love them. Story-driven, trust-first, and mobile-first at heart.
   ✅ **Phase 8** — Leaflet maps + honest geolocation ·
   ✅ **Phase 2** — Supabase foundation (schema, RLS, seed; catalog reads and
   checkout/product/profile writes behind the `MADETRUE_DATA_SOURCE` switch,
-  with mock kept as the no-keys fallback)
-- ▶️ **Now: Phase 3 — Auth & roles** (real sign-in, sessions, buyer/seller/admin)
+  with mock kept as the no-keys fallback) ·
+  ✅ **Phase 3** — Auth & roles (real Supabase Auth sessions, RoleGuard,
+  password reset, persistent profile prefilling checkout, Become a Maker
+  onboarding with Cashfree Easy Split payout KYC and admin moderation)
+- ▶️ **Now: Phase 4 — Seller dashboard** (products CRUD, stock enforcement, order inbox, store settings)
 - Live tracker: [`docs/build-progress.md`](./docs/build-progress.md). The
   workflow and phase-completion status-sync rules live in
   [`docs/master-build-prompt.md`](./docs/master-build-prompt.md) (§10b).

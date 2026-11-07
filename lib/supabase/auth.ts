@@ -56,7 +56,7 @@ export function getStoredUsers(): StoredUser[] {
   }
   try {
     return JSON.parse(usersStr);
-  } catch (e) {
+  } catch {
     return [];
   }
 }
@@ -426,7 +426,7 @@ export function getCurrentUser(): User | null {
   if (!currentStr) return null;
   try {
     return JSON.parse(currentStr);
-  } catch (e) {
+  } catch {
     return null;
   }
 }

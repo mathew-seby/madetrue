@@ -11,9 +11,9 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 3 · Step 7/7 — Auth test pass — ⬜ pending
-**Last completed:** Phase 3 · Step 6/7 — Become a Maker — commit "feat(phase3): become a maker application and payout kyc" — 2026-11-08
-**Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 45 warnings) · build ✅ (19 routes)
+**Current position:** Phase 4 · Step 1/7 — Products CRUD — ⬜ pending
+**Last completed:** Phase 3 · Step 7/7 — Auth test pass — commit "feat(phase3): auth journey test pass and phase 3 closure" — 2026-11-08
+**Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 36 warnings) · build ✅ (19 routes)
 
 ---
 
@@ -24,6 +24,8 @@
 | 0 | Project hygiene (repo) | ✅ repo-complete | Owner web tasks remain: protect `main` with the CI check, squash-only merges + auto-delete branches, invite collaborators, CODEOWNERS handles, file the issue board (`docs/team-issue-board.md`) |
 | 1 | Buying loop on mock data | ✅ 6/6 | CartProvider + honest caps, checkout delivery/pickup rules + ₹49 fee, wa.me order summaries, public browsing gate |
 | 8 | Leaflet maps + honesty | ✅ 6/6 | `MapCanvas`/`SellerMap`/`DistanceBadge` · maps on home/seller/product · `useUserLocation` honest geolocation · Ernakulam gate. Commits `a672e25` → `db04a3b` |
+| 2 | Supabase foundation | ✅ 7/7 | Schema + RLS + seed on live project; catalog reads and checkout/product/profile writes flow through Supabase via server routes; mock fallback preserved |
+| 3 | Auth & roles | ✅ 7/7 | Real Supabase Auth (@supabase/ssr); cookie sessions surviving reload; RoleGuard on buyer/seller/admin; password reset; persistent profile; Become a Maker with Cashfree Easy Split payout KYC; admin moderation |
 
 ---
 
@@ -53,9 +55,9 @@
 | 4 | Password reset | email flow works in dev; friendly copy | ✅ done | feat(phase3): password reset flow and screens | 2026-11-08 |
 | 5 | Real profile | name/phone/address persist per user | ✅ done | feat(phase3): real profile persistence for name phone and address | 2026-11-08 |
 | 6 | Become a Maker | application + approval; payout KYC (PAN, bank) captured | ✅ done | feat(phase3): become a maker application and payout kyc | 2026-11-08 |
-| 7 | Auth test pass | buyer/seller/admin journeys + logout/login green | ⬜ pending | — | — |
+| 7 | Auth test pass | buyer/seller/admin journeys + logout/login green | ✅ done | feat(phase3): auth journey test pass and phase 3 closure | 2026-11-08 |
 
-**Phase done when:** fresh buyer, seller and admin accounts each land on the right pages; sessions survive refresh; the onboarding form stores payout KYC for gateway vendor registration.
+**Phase done when:** fresh buyer, seller and admin accounts each land on the right pages; sessions survive refresh; the onboarding form stores payout KYC for gateway vendor registration. **Met in closing step:** buyer, seller, and admin journeys verified across Supabase and mock modes; RoleGuard enforces boundaries; sessions survive refresh; KYC captured and visible in Admin console; §10b status mirrors synced.
 
 ### Phase 4 — Seller dashboard
 
@@ -147,6 +149,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-08 | Phase 3 Step 7 ✔ + PHASE CLOSED | Auth test pass & Phase 3 closure: buyer/seller/admin journeys verified; sessions survive reload via cookies/storage; RoleGuard protects dashboard & admin console; password reset operational; real profile persists name/phone/address; Become a Maker captures Cashfree payout KYC; §10b status mirrors synced. Gates: tsc ✅ · eslint 0 errors / 36 warnings · build ✅ (19/19 routes). Owner commit pending. |
 | 2026-11-08 | Phase 3 Step 6 ✔ | Become a Maker: Payout KYC fields on Seller & 0004_seller_payout_kyc.sql; /api/sellers route with user role elevation & column fallback; writeSupabase & client router for sellers; upgradeToSeller with Cashfree Easy Split KYC (PAN, bank, IFSC); Profile onboarding form & active status view; Admin panel KYC review & verification; Dashboard review banner; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (19/19 routes). Owner commit pending. |
 | 2026-11-08 | Phase 3 Step 5 ✔ | Real profile: User & PersistProfile address field; 0003_user_address.sql; app/api/profile upsert with address/region fallback; updateUserProfile & AuthProvider support for name, phone, address with reload sync; Profile and Settings updated; Checkout auto-prefills saved address; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (18/18 routes). Owner commit pending. |
 | 2026-11-08 | Phase 3 Step 4 ✔ | Password reset: AuthScreen forgot-password request view; Supabase Auth resetPasswordForEmail & dev mode mock links; dedicated /reset-password page with token recovery and new password reset; AuthProvider performPasswordReset & requestPasswordReset; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (18/18 routes). Owner commit pending. |

@@ -95,11 +95,15 @@ with docs/build-progress.md or git log, the tracker + git win)
   service-role server routes); "mock" stays the no-keys default + fallback.
   Every mock export remains reachable as fallback (grep-verified in the
   closing step — nothing deleted).
-- Phases 3,4,5,6,7,9,10 ⬜ PENDING. Canonical next: Phase 3 · Step 1.
-- Baseline gates: tsc clean · eslint 0 errors / 47 warnings · 11-route
-  production smoke green on BOTH data sources. Do NOT fix pre-existing
-  warnings unless asked.
-- Snapshot date: 2026-11-07 (commit "feat(phase2): close the mock era").
+- Phase 3 ✅ COMPLETE (7/7) — Auth & roles: Supabase Auth integration via
+  @supabase/ssr; cookie sessions surviving reload; RoleGuard on buyer/seller/admin
+  routes; password reset with dev links; persistent profile (name, phone, address)
+  pre-filling checkout; Become a Maker onboarding with Cashfree Easy Split payout
+  KYC (PAN, bank, IFSC) and admin moderation.
+- Phases 4,5,6,7,9,10 ⬜ PENDING. Canonical next: Phase 4 · Step 1 (Products CRUD).
+- Baseline gates: tsc clean · eslint 0 errors / 36 warnings · build ✅ (19 routes).
+  Do NOT fix pre-existing warnings unless asked.
+- Snapshot date: 2026-11-08 (commit "feat(phase3): auth journey test pass and phase 3 closure").
 
 ## 6. CANONICAL ROADMAP — EXACTLY 7 STEPS PER PHASE (fixed numbering)
 Rules: one step = one session turn = one owner commit. Never renumber; if a
@@ -111,6 +115,8 @@ step must split, use 3a/3b under the same number. Statuses: ⬜ pending ·
 | 0 | Project hygiene (repo) | ✅ repo-complete; owner web tasks remain |
 | 1 | Buying loop on mock data | ✅ 6/6 |
 | 8 | Leaflet maps + honesty | ✅ 6/6 |
+| 2 | Supabase foundation | ✅ 7/7 |
+| 3 | Auth & roles | ✅ 7/7 |
 
 ### Phase 2 — Supabase foundation (7 steps)
 | # | Step | Done when |
