@@ -1,5 +1,14 @@
 import { mockCategories, mockSellers, mockProducts } from "./mockData";
 import { Category, Seller, Product, Order } from "../../types";
+import { isSupabaseEnabled } from "./dataSource";
+import {
+  fetchCategoriesSupabase,
+  fetchSellersSupabase,
+  fetchSellerByIdSupabase,
+  fetchProductsSupabase,
+  fetchProductByIdSupabase,
+  fetchProductsBySellerIdSupabase,
+} from "./readSupabase";
 
 // This is our data layer client. It serves mock data by default
 // and uses local storage to simulate write operations (approvals, product additions) on the client side.
@@ -54,17 +63,20 @@ function saveStoredSellers(sellers: Seller[]) {
 }
 
 export async function getCategories(): Promise<Category[]> {
+  if (isSupabaseEnabled()) return fetchCategoriesSupabase();
   // Simulate network delay
   await new Promise((resolve) => setTimeout(resolve, 100));
   return mockCategories;
 }
 
 export async function getSellers(): Promise<Seller[]> {
+  if (isSupabaseEnabled()) return fetchSellersSupabase();
   await new Promise((resolve) => setTimeout(resolve, 100));
   return getStoredSellers();
 }
 
 export async function getSellerById(id: string): Promise<Seller | null> {
+  if (isSupabaseEnabled()) return fetchSellerByIdSupabase(id);
   await new Promise((resolve) => setTimeout(resolve, 50));
   const sellers = getStoredSellers();
   const seller = sellers.find((s) => s.id === id);
@@ -79,6 +91,7 @@ export interface ProductFilters {
 }
 
 export async function getProducts(filters?: ProductFilters): Promise<Product[]> {
+  if (isSupabaseEnabled()) return fetchProductsSupabase(filters);
   await new Promise((resolve) => setTimeout(resolve, 150));
   const allProducts = getStoredProducts();
 
@@ -112,6 +125,7 @@ export async function getProducts(filters?: ProductFilters): Promise<Product[]> 
 }
 
 export async function getProductById(id: string): Promise<Product | null> {
+  if (isSupabaseEnabled()) return fetchProductByIdSupabase(id);
   await new Promise((resolve) => setTimeout(resolve, 50));
   const products = getStoredProducts();
   const product = products.find((p) => p.id === id);
@@ -119,6 +133,7 @@ export async function getProductById(id: string): Promise<Product | null> {
 }
 
 export async function getProductsBySellerId(sellerId: string): Promise<Product[]> {
+  if (isSupabaseEnabled()) return fetchProductsBySellerIdSupabase(sellerId);
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
   // Filter by seller id and ensure they are approved for public listing
