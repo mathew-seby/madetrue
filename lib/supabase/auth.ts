@@ -71,16 +71,32 @@ export function isEmail(identifier: string): boolean {
   return identifier.includes("@");
 }
 
+// Normalize phone numbers (strips spaces, hyphens, parentheses, and leading +91 / 91 / 0)
+export function normalizePhone(phone: string): string {
+  const cleaned = phone.replace(/[\s\-\(\)]/g, "");
+  if (cleaned.startsWith("+91") && cleaned.length === 13) {
+    return cleaned.slice(3);
+  }
+  if (cleaned.startsWith("91") && cleaned.length === 12) {
+    return cleaned.slice(2);
+  }
+  if (cleaned.startsWith("0") && cleaned.length === 11) {
+    return cleaned.slice(1);
+  }
+  return cleaned;
+}
+
 // Input validation functions
 export function validateEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+  return emailRegex.test(email.trim());
 }
 
 export function validatePhone(phone: string): boolean {
-  // Matches typical 10-digit Indian mobile numbers with optional +91 or 0 prefix
-  const phoneRegex = /^(?:\+91|0)?[6-9]\d{9}$/;
-  return phoneRegex.test(phone);
+  const normalized = normalizePhone(phone);
+  // Matches 10-digit Indian mobile numbers starting with 6, 7, 8, or 9
+  const phoneRegex = /^[6-9]\d{9}$/;
+  return phoneRegex.test(normalized);
 }
 
 export async function registerUser(
@@ -91,39 +107,48 @@ export async function registerUser(
   await new Promise((resolve) => setTimeout(resolve, 300));
   const users = getStoredUsers();
 
-  const isEmailInput = isEmail(identifier);
+  const trimmedName = name.trim();
+  if (!trimmedName || trimmedName.length < 2) {
+    throw new Error("Please tell us your name (at least 2 letters).");
+  }
+
+  const trimmedId = identifier.trim();
+  const isEmailInput = isEmail(trimmedId);
+  const normalizedId = isEmailInput ? trimmedId.toLowerCase() : normalizePhone(trimmedId);
   
   // Validate identifier first
   if (isEmailInput) {
-    if (!validateEmail(identifier)) {
-      throw new Error("Please enter a valid email address.");
+    if (!validateEmail(trimmedId)) {
+      throw new Error("Please enter a valid email address (e.g. user@example.com).");
     }
   } else {
-    if (!validatePhone(identifier)) {
-      throw new Error("Please enter a valid 10-digit Indian phone number.");
+    if (!validatePhone(trimmedId)) {
+      throw new Error("Please enter a valid 10-digit Indian phone number (starting with 6, 7, 8, or 9).");
     }
   }
 
   if (password.length < 6) {
-    throw new Error("Password must be at least 6 characters.");
+    throw new Error("Please choose a password with at least 6 characters.");
   }
 
   // Check duplicate
   const exists = users.find(
     (u) =>
-      (isEmailInput && u.email === identifier) ||
-      (!isEmailInput && u.phone === identifier)
+      (isEmailInput && u.email.toLowerCase() === normalizedId) ||
+      (!isEmailInput && normalizePhone(u.phone) === normalizedId)
   );
 
   if (exists) {
-    throw new Error("Account already exists with this email or phone number.");
+    throw new Error(
+      `An account with this ${isEmailInput ? "email" : "phone number"} already exists. Please sign in instead.`
+    );
   }
 
   const newUser: StoredUser = {
     id: `user-${Date.now()}`,
-    name,
-    email: isEmailInput ? identifier : "",
-    phone: !isEmailInput ? identifier : "",
+    name: trimmedName,
+    email: isEmailInput ? normalizedId : "",
+    phone: !isEmailInput ? normalizedId : "",
     role: "buyer",
     passwordHash: password, // plaintext mock password
   };
@@ -143,27 +168,42 @@ export async function loginUser(
   await new Promise((resolve) => setTimeout(resolve, 300));
   const users = getStoredUsers();
 
-  const isEmailInput = isEmail(identifier);
+  const trimmedId = identifier.trim();
+  if (!trimmedId) {
+    throw new Error("Please enter your email or phone number.");
+  }
+  if (!password) {
+    throw new Error("Please enter your password.");
+  }
+
+  const isEmailInput = isEmail(trimmedId);
+  const normalizedId = isEmailInput ? trimmedId.toLowerCase() : normalizePhone(trimmedId);
 
   // Validate format first
   if (isEmailInput) {
-    if (!validateEmail(identifier)) {
-      throw new Error("Please enter a valid email address.");
+    if (!validateEmail(trimmedId)) {
+      throw new Error("Please enter a valid email address (e.g. user@example.com).");
     }
   } else {
-    if (!validatePhone(identifier)) {
-      throw new Error("Please enter a valid 10-digit Indian phone number.");
+    if (!validatePhone(trimmedId)) {
+      throw new Error("Please enter a valid 10-digit Indian phone number (starting with 6, 7, 8, or 9).");
     }
   }
 
   const user = users.find(
     (u) =>
-      (isEmailInput && u.email.toLowerCase() === identifier.toLowerCase()) ||
-      (!isEmailInput && u.phone === identifier)
+      (isEmailInput && u.email.toLowerCase() === normalizedId) ||
+      (!isEmailInput && normalizePhone(u.phone) === normalizedId)
   );
 
-  if (!user || user.passwordHash !== password) {
-    throw new Error("Invalid credentials. Please verify details and try again.");
+  if (!user) {
+    throw new Error(
+      `We couldn't find an account matching that ${isEmailInput ? "email" : "phone number"}. Please check for typos or sign up first.`
+    );
+  }
+
+  if (user.passwordHash !== password) {
+    throw new Error("The password you entered doesn't match our records. Please try again.");
   }
 
   // Save current user session
@@ -312,14 +352,17 @@ export async function forgotPassword(identifier: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 200));
   const users = getStoredUsers();
   
-  const isEmailInput = identifier.includes("@");
+  const trimmedId = identifier.trim();
+  const isEmailInput = isEmail(trimmedId);
+  const normalizedId = isEmailInput ? trimmedId.toLowerCase() : normalizePhone(trimmedId);
+
   const user = users.find(
     (u) =>
-      (isEmailInput && u.email.toLowerCase() === identifier.toLowerCase()) ||
-      (!isEmailInput && u.phone === identifier)
+      (isEmailInput && u.email.toLowerCase() === normalizedId) ||
+      (!isEmailInput && normalizePhone(u.phone) === normalizedId)
   );
 
-  const targetEmail = isEmailInput ? identifier : (user?.email || `${identifier.replace(/\D/g, "")}@madetrue.in`);
+  const targetEmail = isEmailInput ? trimmedId : (user?.email || `${normalizedId}@madetrue.in`);
   const resetLink = `https://madetrue.in/profile?reset-token=mock-${Date.now()}`;
   
   console.log(

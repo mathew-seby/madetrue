@@ -11,9 +11,9 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 3 · Step 1/7 — Sign-up & sign-in — ⬜ pending
-**Last completed:** Phase 2 · Step 7/7 — Close the mock era — commit "feat(phase2): close the mock era" — 2026-11-07 — **PHASE 2 CLOSED (7/7)**
-**Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 48 warnings) · 11-route production smoke ✅
+**Current position:** Phase 3 · Step 2/7 — Real sessions — ⬜ pending
+**Last completed:** Phase 3 · Step 1/7 — Sign-up & sign-in — commit "feat(phase3): sign-up and sign-in screens" — 2026-11-07
+**Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 46 warnings) · build ✅ (17 routes)
 
 ---
 
@@ -47,7 +47,7 @@
 
 | # | Step | Milestone (short) | Status | Commit | Date |
 |---|---|---|---|---|---|
-| 1 | Sign-up & sign-in | identifier + password screens; warm specific errors | ⬜ pending | — | — |
+| 1 | Sign-up & sign-in | identifier + password screens; warm specific errors | ✅ done | feat(phase3): sign-up and sign-in screens | 2026-11-07 |
 | 2 | Real sessions | Supabase sessions survive refresh; mock auth removed | ⬜ pending | — | — |
 | 3 | Roles & guards | buyer/seller/admin guards + redirects tested | ⬜ pending | — | — |
 | 4 | Password reset | email flow works in dev; friendly copy | ⬜ pending | — | — |
@@ -147,6 +147,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-07 | Phase 3 Step 1 ✔ | Sign-up & sign-in screens: identifier (email or phone with normalization) + password; warm specific validation and error messages; in-place login wall on checkout/dashboard/profile; dedicated /login and /signup routes with ?redirect= support; Navbar Sign In link on desktop & mobile drawer. tsc ✅ · eslint 0 errors / 46 warnings · build ✅ (17/17 routes). Owner commit pending. |
 | 2026-11-07 | Phase 2 Step 7 ✔ + PHASE CLOSED | Step-code audit: zero dead mock paths (every mock export has a live caller — admin writes = Phase 5, upgrade-to-seller = Phase 3); `.env.example` switch docs finalized; §10b sync: prompt §5, AGENTS.md, README, PROJECT_OVERVIEW refreshed. Phase audit: tsc ✅ · eslint 0 errors / 47 warnings · worktree smokes on :4010: mock (no .env.local) 11/11 + supabase mode (real .env.local copied in, key wiped with worktree) 11/11. Owner commit pending. |
 | 2026-11-07 | Phase 2 Step 6 ✔ | Writes via service-role server routes: `app/api/{orders,products,profile}` (order rows priced from the DB product w/ availability+stock checks, submissions pending, edit→pending only on content change, stock decremented with server guard; profile upserts users by id; dashboard list read-back moved). `saveOrders` router added to client.ts; checkout's inline localStorage write removed (warm errors now surface); profile saves persist via auth.ts router. `Order.delivery_fee` added to types. tsc OK, eslint 0 errors / 47 warnings (-1: checkout `err` now consumed); worktree smoke 11/11 on :4010, no `.env.local` (3 API routes present as ƒ). Commit pending. |
 | 2026-11-07 | Phase 2 Step 5 ✔ | New `lib/supabase/readSupabase.ts` + routers in `client.ts`: 6 catalog reads (categories/sellers/products + by-id/by-seller, filters/sort in SQL, explicit nullable→undefined mapping) go to Supabase when `MADETRUE_DATA_SOURCE=supabase`; browser client for client components, server client via dynamic import only. Mock bodies untouched, zero page edits. tsc clean, eslint 0 errors / 48 warnings; worktree smoke 11/11 on :4010, no `.env.local`. Commit pending. |
