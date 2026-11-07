@@ -11,8 +11,8 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 2 · Step 1/7 — Draw the real database — ⬜ pending
-**Last completed:** Phase 8 · Step 6/6 — honest geolocation sweep + docs closure — commit `db04a3b` — 2026-11-06
+**Current position:** Phase 3 · Step 1/7 — Sign-up & sign-in — ⬜ pending
+**Last completed:** Phase 2 · Step 7/7 — Close the mock era — commit "feat(phase2): close the mock era" — 2026-11-07 — **PHASE 2 CLOSED (7/7)**
 **Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 48 warnings) · 11-route production smoke ✅
 
 ---
@@ -33,15 +33,15 @@
 
 | # | Step | Milestone (short) | Status | Commit | Date |
 |---|---|---|---|---|---|
-| 1 | Draw the real database | `0001_init.sql` mirrors types + payment fields + transactions ledger | ⬜ pending | — | — |
-| 2 | Write security rules (RLS) | `0002_rls.sql` with documented access matrix | ⬜ pending | — | — |
-| 3 | Connect the app | real clients + `MADETRUE_DATA_SOURCE` switch, keys in `.env.local` | ⬜ pending | — | — |
-| 4 | Seed the database | `seed.sql` recreates the mock catalog | ⬜ pending | — | — |
-| 5 | Move reads | listing/detail/seller/home via Supabase; UI unchanged | ⬜ pending | — | — |
-| 6 | Move writes | orders/products/profile persist; localStorage writes removed | ⬜ pending | — | — |
-| 7 | Close the mock era | dead mock paths deleted; docs + `.env.example` updated | ⬜ pending | — | — |
+| 1 | Draw the real database | `0001_init.sql` mirrors types + payment fields + transactions ledger | ✅ done | feat(phase2): draw the real database schema | 2026-11-07 |
+| 2 | Write security rules (RLS) | `0002_rls.sql` with documented access matrix | ✅ done | feat(phase2): add row level security | 2026-11-07 |
+| 3 | Connect the app | real clients + `MADETRUE_DATA_SOURCE` switch, keys in `.env.local` | ✅ done | feat(phase2): connect Supabase behind a mock switch | 2026-11-07 |
+| 4 | Seed the database | `seed.sql` recreates the mock catalog | ✅ done | feat(phase2): seed the catalog | 2026-11-07 |
+| 5 | Move reads | listing/detail/seller/home via Supabase; UI unchanged | ✅ done | feat(phase2): move catalog reads to Supabase | 2026-11-07 |
+| 6 | Move writes | orders/products/profile persist; localStorage writes removed | ✅ done | feat(phase2): move writes to Supabase through server routes | 2026-11-07 |
+| 7 | Close the mock era | dead mock paths deleted; docs + `.env.example` updated | ✅ done | feat(phase2): close the mock era | 2026-11-07 |
 
-**Phase done when:** a cold start with empty localStorage serves catalog, sellers, orders and profiles from Supabase — with the mock switch kept as fallback.
+**Phase done when:** a cold start with empty localStorage serves catalog, sellers, orders and profiles from Supabase — with the mock switch kept as fallback. **Met in closing step:** both data sources smoke green 11/11 on :4010; every mock export remains reachable as fallback (grep-verified); status mirrors synced (§10b).
 
 ### Phase 3 — Auth & roles
 
@@ -147,6 +147,13 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-07 | Phase 2 Step 7 ✔ + PHASE CLOSED | Step-code audit: zero dead mock paths (every mock export has a live caller — admin writes = Phase 5, upgrade-to-seller = Phase 3); `.env.example` switch docs finalized; §10b sync: prompt §5, AGENTS.md, README, PROJECT_OVERVIEW refreshed. Phase audit: tsc ✅ · eslint 0 errors / 47 warnings · worktree smokes on :4010: mock (no .env.local) 11/11 + supabase mode (real .env.local copied in, key wiped with worktree) 11/11. Owner commit pending. |
+| 2026-11-07 | Phase 2 Step 6 ✔ | Writes via service-role server routes: `app/api/{orders,products,profile}` (order rows priced from the DB product w/ availability+stock checks, submissions pending, edit→pending only on content change, stock decremented with server guard; profile upserts users by id; dashboard list read-back moved). `saveOrders` router added to client.ts; checkout's inline localStorage write removed (warm errors now surface); profile saves persist via auth.ts router. `Order.delivery_fee` added to types. tsc OK, eslint 0 errors / 47 warnings (-1: checkout `err` now consumed); worktree smoke 11/11 on :4010, no `.env.local` (3 API routes present as ƒ). Commit pending. |
+| 2026-11-07 | Phase 2 Step 5 ✔ | New `lib/supabase/readSupabase.ts` + routers in `client.ts`: 6 catalog reads (categories/sellers/products + by-id/by-seller, filters/sort in SQL, explicit nullable→undefined mapping) go to Supabase when `MADETRUE_DATA_SOURCE=supabase`; browser client for client components, server client via dynamic import only. Mock bodies untouched, zero page edits. tsc clean, eslint 0 errors / 48 warnings; worktree smoke 11/11 on :4010, no `.env.local`. Commit pending. |
+| 2026-11-07 | Phase 2 Step 4 ✔ | `supabase/seed.sql` — 4 maker users → 5 categories → 4 sellers → 6 products with stable ids (`cat-1…`/`seller-1…`/`prod-1…`), verbatim mock values, `status='approved'`, base_price=price, commission=0, kyc left `not_started`, upsert-by-id (re-run safe). SQL only; tsc clean, eslint 0 errors / 48 warnings. Owner: paste into Supabase SQL editor. Commit pending. |
+| 2026-11-07 | Phase 2 Step 3 ✔ | `@supabase/supabase-js` + `@supabase/ssr` installed; new `lib/supabase/{dataSource,supabase-browser,supabase-server}.ts` — switch defaults to mock, clients refuse to boot on mock/missing keys; mock paths + pages untouched; `.env.example` documents the switch. tsc clean, eslint 0 errors / 48 warnings; worktree build + smoke 11/11 on :4010 with NO `.env.local`. Owner commit pending. |
+| 2026-11-07 | Phase 2 Step 2 ✔ | `supabase/migrations/0002_rls.sql` — catalog public read, sellers own rows, buyers create/read own orders, admin all, client-write guards. SQL only. tsc clean, eslint 0 errors / 48 warnings. Owner commit pending. |
+| 2026-11-07 | Phase 2 Step 1 ✔ | `supabase/migrations/0001_init.sql` — tables, enums, payment fields, transactions ledger. SQL only. tsc clean, eslint 0 errors / 48 warnings. Owner commit pending. |
 | 2026-11-06 | Phase 8 Step 6 ✔ (pre-tracker phase closure) | honest-geo sweep (listing/checkout/onboarding) + AGENTS.md docs closure — commit `db04a3b` |
 | 2026-11-06 | Setup | master prompt v3 + this tracker created; AGENTS.md pointers added |
 | 2026-11-07 | Setup | §10b status-sync protocol added (tracker, prompt §5, AGENTS, README, overview); README + PROJECT_OVERVIEW modernized |

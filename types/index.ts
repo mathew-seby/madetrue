@@ -72,6 +72,8 @@ export interface Order {
   buyer_phone?: string;
   product_name?: string;
   price?: number;
+  // Recorded once per delivery basket on its first line (checkout rule).
+  delivery_fee?: number;
 }
 
 export interface Category {

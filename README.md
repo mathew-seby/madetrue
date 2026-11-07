@@ -6,8 +6,11 @@ neighbors who love them. Story-driven, trust-first, and mobile-first at heart.
 ## Project status
 
 - ✅ **Phase 0** — repo hygiene · ✅ **Phase 1** — buying loop on mock data ·
-  ✅ **Phase 8** — Leaflet maps + honest geolocation
-- ▶️ **Now: Phase 2 — Supabase foundation** (database schema, RLS, real data plumbing)
+  ✅ **Phase 8** — Leaflet maps + honest geolocation ·
+  ✅ **Phase 2** — Supabase foundation (schema, RLS, seed; catalog reads and
+  checkout/product/profile writes behind the `MADETRUE_DATA_SOURCE` switch,
+  with mock kept as the no-keys fallback)
+- ▶️ **Now: Phase 3 — Auth & roles** (real sign-in, sessions, buyer/seller/admin)
 - Live tracker: [`docs/build-progress.md`](./docs/build-progress.md). The
   workflow and phase-completion status-sync rules live in
   [`docs/master-build-prompt.md`](./docs/master-build-prompt.md) (§10b).

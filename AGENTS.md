@@ -263,9 +263,14 @@ Use exactly these strings — no variations:
 > Phase 0 (repo hygiene) is in final stretches — remaining: GitHub-side
 > settings (branch protection, squash merges, collaborators, code-owner
 > handles) and the team issue list.
-> Next build phase: **Phase 2 — Supabase foundation.** Payment strategy is
-> locked: **Cashfree Easy Split** primary (see Locked Decisions #4), with
-> Razorpay Route / PayU Split Settlements as adapter-backed alternates.
+> Next build phase: **Phase 3 — Auth & roles.** **Phase 2 (Supabase foundation)
+> is complete:** schema + RLS + seed live in the Supabase project; catalog
+> reads and checkout/product/profile writes flow through Supabase when
+> `MADETRUE_DATA_SOURCE=supabase` (writes via service-role server routes),
+> and the mock layer stays as the no-keys default + fallback. Payment
+> strategy remains locked: **Cashfree Easy Split** primary (see Locked
+> Decisions #4), with Razorpay Route / PayU Split Settlements as
+> adapter-backed alternates.
 > Work is driven by `docs/master-build-prompt.md` and tracked in
 > `docs/build-progress.md` (finished phases + 7-step remaining phases).
 > When a phase closes, the agent refreshes this block automatically

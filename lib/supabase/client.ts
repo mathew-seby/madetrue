@@ -1,5 +1,20 @@
 import { mockCategories, mockSellers, mockProducts } from "./mockData";
 import { Category, Seller, Product, Order } from "../../types";
+import { isSupabaseEnabled } from "./dataSource";
+import {
+  fetchCategoriesSupabase,
+  fetchSellersSupabase,
+  fetchSellerByIdSupabase,
+  fetchProductsSupabase,
+  fetchProductByIdSupabase,
+  fetchProductsBySellerIdSupabase,
+} from "./readSupabase";
+import {
+  saveOrdersSupabase,
+  submitProductSupabase,
+  editProductSupabase,
+  fetchAllProductsSupabase,
+} from "./writeSupabase";
 
 // This is our data layer client. It serves mock data by default
 // and uses local storage to simulate write operations (approvals, product additions) on the client side.
@@ -54,17 +69,20 @@ function saveStoredSellers(sellers: Seller[]) {
 }
 
 export async function getCategories(): Promise<Category[]> {
+  if (isSupabaseEnabled()) return fetchCategoriesSupabase();
   // Simulate network delay
   await new Promise((resolve) => setTimeout(resolve, 100));
   return mockCategories;
 }
 
 export async function getSellers(): Promise<Seller[]> {
+  if (isSupabaseEnabled()) return fetchSellersSupabase();
   await new Promise((resolve) => setTimeout(resolve, 100));
   return getStoredSellers();
 }
 
 export async function getSellerById(id: string): Promise<Seller | null> {
+  if (isSupabaseEnabled()) return fetchSellerByIdSupabase(id);
   await new Promise((resolve) => setTimeout(resolve, 50));
   const sellers = getStoredSellers();
   const seller = sellers.find((s) => s.id === id);
@@ -79,6 +97,7 @@ export interface ProductFilters {
 }
 
 export async function getProducts(filters?: ProductFilters): Promise<Product[]> {
+  if (isSupabaseEnabled()) return fetchProductsSupabase(filters);
   await new Promise((resolve) => setTimeout(resolve, 150));
   const allProducts = getStoredProducts();
 
@@ -112,6 +131,7 @@ export async function getProducts(filters?: ProductFilters): Promise<Product[]> 
 }
 
 export async function getProductById(id: string): Promise<Product | null> {
+  if (isSupabaseEnabled()) return fetchProductByIdSupabase(id);
   await new Promise((resolve) => setTimeout(resolve, 50));
   const products = getStoredProducts();
   const product = products.find((p) => p.id === id);
@@ -119,6 +139,7 @@ export async function getProductById(id: string): Promise<Product | null> {
 }
 
 export async function getProductsBySellerId(sellerId: string): Promise<Product[]> {
+  if (isSupabaseEnabled()) return fetchProductsBySellerIdSupabase(sellerId);
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
   // Filter by seller id and ensure they are approved for public listing
@@ -137,12 +158,14 @@ export function sendMockEmail(to: string, subject: string, body: string) {
 
 // Get all products (including pending and rejected) for admin
 export async function getAllProductsAdmin(): Promise<Product[]> {
+  if (isSupabaseEnabled()) return fetchAllProductsSupabase();
   await new Promise((resolve) => setTimeout(resolve, 100));
   return getStoredProducts();
 }
 
 // Submit a new product (defaults to 'pending' review)
 export async function addProduct(productData: Omit<Product, "id" | "created_at">): Promise<Product> {
+  if (isSupabaseEnabled()) return submitProductSupabase(productData);
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
 
@@ -321,11 +344,41 @@ export async function updateOrderWhatsappStatus(
   return null;
 }
 
+// Persist a basket as orders (one row per line). Supabase writes go
+// through the server routes (service role) in Step 6; the mock path is
+// the localStorage flow that used to live inline in checkout/page.tsx.
+export async function saveOrders(newOrders: Order[]): Promise<Order[]> {
+  if (isSupabaseEnabled()) return saveOrdersSupabase(newOrders);
+
+  // Retrieve existing orders
+  const storedOrders = localStorage.getItem("madetrue_orders");
+  let allOrders: Order[] = [];
+  if (storedOrders) {
+    try {
+      allOrders = JSON.parse(storedOrders) as Order[];
+    } catch (e) {
+      console.error("Failed to parse stored orders", e);
+    }
+  }
+
+  // Add new orders
+  allOrders = [...newOrders, ...allOrders];
+  localStorage.setItem("madetrue_orders", JSON.stringify(allOrders));
+
+  // Decrement stock for purchased products
+  for (const item of newOrders) {
+    await decrementProductStock(item.product_id, item.quantity);
+  }
+
+  return newOrders;
+}
+
 // Update a product and reset its status to pending review
 export async function updateProduct(
   id: string,
   productData: Partial<Product>
 ): Promise<Product | null> {
+  if (isSupabaseEnabled()) return editProductSupabase(id, productData);
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
   const index = products.findIndex((p) => p.id === id);
