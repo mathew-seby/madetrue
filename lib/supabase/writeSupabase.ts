@@ -75,6 +75,52 @@ export async function fetchAllProductsSupabase(): Promise<Product[]> {
   return requestJson<Product[]>("/api/products", { method: "GET" });
 }
 
+export async function fetchProductsForSellerSupabase(sellerId: string): Promise<Product[]> {
+  return requestJson<Product[]>(`/api/products?seller_id=${encodeURIComponent(sellerId)}`, {
+    method: "GET",
+  });
+}
+
+export async function deleteProductSupabase(id: string, sellerId?: string): Promise<boolean> {
+  const query = sellerId
+    ? `?id=${encodeURIComponent(id)}&seller_id=${encodeURIComponent(sellerId)}`
+    : `?id=${encodeURIComponent(id)}`;
+  const res = await requestJson<{ success: boolean }>(`/api/products${query}`, {
+    method: "DELETE",
+  });
+  return Boolean(res.success);
+}
+
+export async function uploadProductImageSupabase(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch("/api/upload", {
+    method: "POST",
+    body: formData,
+  });
+
+  let data: unknown = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok) {
+    const message =
+      data !== null &&
+      typeof data === "object" &&
+      "error" in data &&
+      typeof (data as { error: unknown }).error === "string"
+        ? (data as { error: string }).error
+        : "Failed to upload image.";
+    throw new Error(`[madetrue] ${message}`);
+  }
+
+  return (data as { url: string }).url;
+}
+
 // ---------------------------------------------------------------------------
 // Profile — the fields Supabase can own pre-auth (name, phone, email,
 // language, photo). Mock-era passwords stay local; Phase 3 migrates them

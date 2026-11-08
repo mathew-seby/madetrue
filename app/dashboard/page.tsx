@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSellers, getCategories, addProduct, getSellers as fetchSellers, getAllProductsAdmin, updateProduct } from "@/lib/supabase/client";
+import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage } from "@/lib/supabase/client";
 import { Seller, Category, Product, ProductBadgeTag } from "@/types";
-import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText } from "lucide-react";
+import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2 } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { RoleGuard } from "@/components/shared/RoleGuard";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
@@ -39,6 +39,9 @@ export default function DashboardPage() {
   const [productLng, setProductLng] = useState("");
   const [productGmapsInput, setProductGmapsInput] = useState("");
   const [productLocationOption, setProductLocationOption] = useState<"paste" | "select">("select");
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
 
   const detectProductLocation = () => {
     setSubmitError("");
@@ -98,7 +101,7 @@ export default function DashboardPage() {
     });
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -110,24 +113,30 @@ export default function DashboardPage() {
 
     const filesToProcess = Array.from(files).slice(0, availableSlots);
 
-    filesToProcess.forEach((file) => {
+    for (const file of filesToProcess) {
       if (!file.type.startsWith("image/")) {
-        setSubmitError("Please upload image files only (PNG, JPG, etc.).");
+        setSubmitError("Please upload image files only (PNG, JPG, WebP, etc.).");
         return;
       }
+    }
 
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === "string") {
-          setImagesList((prev) => [...prev, reader.result as string].slice(0, 5));
-          setSubmitError("");
-        }
-      };
-      reader.onerror = () => {
-        setSubmitError("Failed to read the image file.");
-      };
-      reader.readAsDataURL(file);
-    });
+    setIsUploadingImages(true);
+    setSubmitError("");
+
+    try {
+      const uploadedUrls: string[] = [];
+      for (const file of filesToProcess) {
+        const url = await uploadProductImage(file);
+        uploadedUrls.push(url);
+      }
+      setImagesList((prev) => [...prev, ...uploadedUrls].slice(0, 5));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to upload image.";
+      setSubmitError(msg);
+    } finally {
+      setIsUploadingImages(false);
+      e.target.value = "";
+    }
   };
 
   const handleAddCustomUrl = () => {
@@ -156,7 +165,6 @@ export default function DashboardPage() {
       setLoading(true);
       const fetchedSellers = await getSellers();
       const fetchedCategories = await getCategories();
-      const fetchedProducts = await getAllProductsAdmin();
 
       setSellers(fetchedSellers);
       setCategories(fetchedCategories);
@@ -166,10 +174,13 @@ export default function DashboardPage() {
 
       if (matchingSeller) {
         setSelectedSellerId(matchingSeller.id);
-        setMyProducts(fetchedProducts.filter(p => p.seller_id === matchingSeller.id));
+        const sellerProds = await getProductsForSeller(matchingSeller.id);
+        setMyProducts(sellerProds);
       } else if (currentUser?.role === "admin" && fetchedSellers.length > 0) {
-        setSelectedSellerId(fetchedSellers[0].id);
-        setMyProducts(fetchedProducts.filter(p => p.seller_id === fetchedSellers[0].id));
+        const defaultSellerId = fetchedSellers[0].id;
+        setSelectedSellerId(defaultSellerId);
+        const sellerProds = await getProductsForSeller(defaultSellerId);
+        setMyProducts(sellerProds);
       } else {
         setMyProducts([]);
       }
@@ -184,15 +195,16 @@ export default function DashboardPage() {
   }, [currentUser, router]);
 
   // Update product list when active seller changes
-  const handleSellerChange = (sellerId: string) => {
+  const handleSellerChange = async (sellerId: string) => {
     setSelectedSellerId(sellerId);
     setLoading(true);
-    getAllProductsAdmin().then((allProds) => {
-      setMyProducts(allProds.filter((p) => p.seller_id === sellerId));
+    try {
+      const sellerProds = await getProductsForSeller(sellerId);
+      setMyProducts(sellerProds);
+    } finally {
       setLoading(false);
-    });
+    }
   };
-
 
   const handleTagToggle = (tag: ProductBadgeTag) => {
     setSelectedTags((prev) =>
@@ -217,14 +229,48 @@ export default function DashboardPage() {
     setActiveTab("add");
   };
 
+  const handleCancelEdit = () => {
+    setEditingProduct(null);
+    setName("");
+    setDescription("");
+    setPrice("");
+    setStock("10");
+    setOriginDetails("");
+    setSelectedTags([]);
+    setImagesList([]);
+    setDocumentsList([]);
+    setCustomImageUrl("");
+    setProductAddress("");
+    setProductLat("");
+    setProductLng("");
+    setProductGmapsInput("");
+    setActiveTab("list");
+  };
+
   const handleMarkSoldOut = async (productId: string) => {
     setSubmitError("");
     try {
       await updateProduct(productId, { stock: 0, is_available: false });
-      const updatedProds = await getAllProductsAdmin();
-      setMyProducts(updatedProds.filter((p) => p.seller_id === selectedSellerId));
-    } catch (err) {
+      const updatedProds = await getProductsForSeller(selectedSellerId);
+      setMyProducts(updatedProds);
+    } catch {
       setSubmitError("Failed to update stock status.");
+    }
+  };
+
+  const handleDeleteProduct = async (productId: string) => {
+    setSubmitError("");
+    setDeletingProductId(productId);
+    try {
+      await deleteProduct(productId, selectedSellerId);
+      const updatedProds = await getProductsForSeller(selectedSellerId);
+      setMyProducts(updatedProds);
+      setDeleteConfirmId(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to delete product.";
+      setSubmitError(msg);
+    } finally {
+      setDeletingProductId(null);
     }
   };
 
@@ -323,16 +369,17 @@ export default function DashboardPage() {
       setEditingProduct(null);
 
       // Refresh list
-      const updatedProds = await getAllProductsAdmin();
-      setMyProducts(updatedProds.filter((p) => p.seller_id === selectedSellerId));
+      const updatedProds = await getProductsForSeller(selectedSellerId);
+      setMyProducts(updatedProds);
 
       // Redirect back to list after delay
       setTimeout(() => {
         setActiveTab("list");
         setSubmitSuccess(false);
       }, 2000);
-    } catch (err) {
-      setSubmitError("Failed to save product details. Please try again.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to save product details. Please try again.";
+      setSubmitError(msg);
     }
   };
 
@@ -510,7 +557,7 @@ export default function DashboardPage() {
                       <span className="text-[10px] text-warm-brown font-bold uppercase tracking-wider">
                         Stock: {product.stock > 0 && product.is_available ? `${product.stock} units` : "Finished (Out of Stock)"}
                       </span>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <button
                           type="button"
                           onClick={() => handleStartEdit(product)}
@@ -522,9 +569,38 @@ export default function DashboardPage() {
                           <button
                             type="button"
                             onClick={() => handleMarkSoldOut(product.id)}
-                            className="text-[10px] font-bold text-red-600 hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                            className="text-[10px] font-bold text-warm-brown hover:underline uppercase tracking-wider font-sans cursor-pointer"
                           >
                             Finish Stock
+                          </button>
+                        )}
+                        {deleteConfirmId === product.id ? (
+                          <div className="flex items-center gap-1 bg-red-50 px-2 py-0.5 rounded-lg border border-red-200">
+                            <span className="text-[9px] font-bold text-red-700">Delete?</span>
+                            <button
+                              type="button"
+                              disabled={deletingProductId === product.id}
+                              onClick={() => handleDeleteProduct(product.id)}
+                              className="text-[9px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded hover:bg-red-700 transition cursor-pointer disabled:opacity-50"
+                            >
+                              {deletingProductId === product.id ? "..." : "Yes"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmId(null)}
+                              className="text-[9px] font-bold text-text-dark/60 hover:text-text-dark px-1 cursor-pointer"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmId(product.id)}
+                            className="text-[10px] font-bold text-red-600 hover:underline uppercase tracking-wider font-sans cursor-pointer flex items-center"
+                            title="Delete this listing"
+                          >
+                            <Trash2 className="h-3 w-3 mr-0.5" /> Delete
                           </button>
                         )}
                         {getStatusBadge(product.status)}
@@ -683,12 +759,22 @@ export default function DashboardPage() {
                           type="file"
                           accept="image/*"
                           multiple
+                          disabled={isUploadingImages}
                           onChange={handleFileChange}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed"
                         />
-                        <Upload className="h-6 w-6 text-warm-brown/60 mb-2" />
-                        <span className="text-xs font-semibold text-text-dark/80 font-sans">Click or drag images here</span>
-                        <span className="text-[10px] text-text-dark/50 mt-1 font-sans">Supports multiple files, up to {5 - imagesList.length} more</span>
+                        {isUploadingImages ? (
+                          <>
+                            <Loader2 className="h-6 w-6 text-primary-green animate-spin mb-2" />
+                            <span className="text-xs font-semibold text-primary-green font-sans">Uploading photo to storage...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-6 w-6 text-warm-brown/60 mb-2" />
+                            <span className="text-xs font-semibold text-text-dark/80 font-sans">Click or drag images here</span>
+                            <span className="text-[10px] text-text-dark/50 mt-1 font-sans">Supports multiple files, up to {5 - imagesList.length} more</span>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -980,13 +1066,24 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Submit Button */}
-              <div className="pt-4 flex items-center justify-end">
+              {/* Submit & Cancel Buttons */}
+              <div className="pt-4 flex items-center justify-end gap-3 flex-wrap">
+                {editingProduct && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="w-full sm:w-auto px-5 py-3 rounded-xl border border-warm-brown/20 text-warm-brown font-semibold text-sm hover:bg-warm-brown/5 transition duration-200 cursor-pointer"
+                  >
+                    Cancel / Discard Changes
+                  </button>
+                )}
                 <button
                   type="submit"
-                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200"
+                  disabled={isUploadingImages}
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  Submit for Review
+                  {isUploadingImages && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {editingProduct ? "Save Changes" : "Submit for Review"}
                 </button>
               </div>
 

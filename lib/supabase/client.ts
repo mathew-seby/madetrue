@@ -14,6 +14,9 @@ import {
   submitProductSupabase,
   editProductSupabase,
   fetchAllProductsSupabase,
+  fetchProductsForSellerSupabase,
+  deleteProductSupabase,
+  uploadProductImageSupabase,
   submitSellerSupabase,
   updateSellerVerificationSupabase,
 } from "./writeSupabase";
@@ -163,6 +166,49 @@ export async function getAllProductsAdmin(): Promise<Product[]> {
   if (isSupabaseEnabled()) return fetchAllProductsSupabase();
   await new Promise((resolve) => setTimeout(resolve, 100));
   return getStoredProducts();
+}
+
+// Get all products belonging to a seller (including pending and rejected) for seller dashboard
+export async function getProductsForSeller(sellerId: string): Promise<Product[]> {
+  if (isSupabaseEnabled()) return fetchProductsForSellerSupabase(sellerId);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const products = getStoredProducts();
+  return products.filter((p) => p.seller_id === sellerId);
+}
+
+// Delete a product listing (used by seller dashboard and admin console)
+export async function deleteProduct(id: string, sellerId?: string): Promise<boolean> {
+  if (isSupabaseEnabled()) return deleteProductSupabase(id, sellerId);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const products = getStoredProducts();
+  const index = products.findIndex((p) => p.id === id);
+  if (index === -1) return false;
+  if (sellerId && products[index].seller_id !== sellerId) {
+    throw new Error("[madetrue] You can only delete your own products.");
+  }
+  const remaining = products.filter((p) => p.id !== id);
+  saveStoredProducts(remaining);
+  return true;
+}
+
+// Upload product image to Supabase Storage, with offline DataURL fallback for mock mode
+export async function uploadProductImage(file: File): Promise<string> {
+  if (isSupabaseEnabled()) {
+    return uploadProductImageSupabase(file);
+  }
+  // Mock mode: encode as base64 DataURL for local persistence
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("[madetrue] Failed to read image file."));
+      }
+    };
+    reader.onerror = () => reject(new Error("[madetrue] Error reading image file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 // Submit a new product (defaults to 'pending' review)

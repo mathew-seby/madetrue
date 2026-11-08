@@ -11,9 +11,9 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 4 · Step 1/7 — Products CRUD — ⬜ pending
-**Last completed:** Phase 3 · Step 7/7 — Auth test pass — commit "feat(phase3): auth journey test pass and phase 3 closure" — 2026-11-08
-**Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 36 warnings) · build ✅ (19 routes)
+**Current position:** Phase 4 · Step 2/7 — Stock enforcement — ⬜ pending
+**Last completed:** Phase 4 · Step 1/7 — Products CRUD — commit "feat(phase4): products crud and storage uploads" — 2026-11-08
+**Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 33 warnings) · build ✅ (20 routes)
 
 ---
 
@@ -63,7 +63,7 @@
 
 | # | Step | Milestone (short) | Status | Commit | Date |
 |---|---|---|---|---|---|
-| 1 | Products CRUD | create/edit/delete own products; images to Storage | ⬜ pending | — | — |
+| 1 | Products CRUD | create/edit/delete own products; images to Storage | ✅ done | feat(phase4): products crud and storage uploads | 2026-11-08 |
 | 2 | Stock enforcement | DB-backed stock/availability; honest sold-out | ⬜ pending | — | — |
 | 3 | Order inbox | seller sees own orders only; tabs by status | ⬜ pending | — | — |
 | 4 | Status actions | accept→ready→delivered persists; invalid rejected | ⬜ pending | — | — |
@@ -149,6 +149,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-08 | Phase 4 Step 1 ✔ | Products CRUD: DELETE method on /api/products with owner validation & order constraint guard; GET filtering by seller_id; /api/upload route storing images in Supabase Storage product-images bucket with public URL; 0005_product_images_storage.sql migration; client & writeSupabase routers for deleteProduct, uploadProductImage, getProductsForSeller; dashboard wired with image uploading, live product list, delete confirmation, and cancel edit; tsc ✅ · eslint 0 errors / 33 warnings · build ✅ (20/20 routes) · smoke 11/11 on :4010. Owner commit pending. |
 | 2026-11-08 | Phase 3 Step 7 ✔ + PHASE CLOSED | Auth test pass & Phase 3 closure: buyer/seller/admin journeys verified; sessions survive reload via cookies/storage; RoleGuard protects dashboard & admin console; password reset operational; real profile persists name/phone/address; Become a Maker captures Cashfree payout KYC; §10b status mirrors synced. Gates: tsc ✅ · eslint 0 errors / 36 warnings · build ✅ (19/19 routes). Owner commit pending. |
 | 2026-11-08 | Phase 3 Step 6 ✔ | Become a Maker: Payout KYC fields on Seller & 0004_seller_payout_kyc.sql; /api/sellers route with user role elevation & column fallback; writeSupabase & client router for sellers; upgradeToSeller with Cashfree Easy Split KYC (PAN, bank, IFSC); Profile onboarding form & active status view; Admin panel KYC review & verification; Dashboard review banner; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (19/19 routes). Owner commit pending. |
 | 2026-11-08 | Phase 3 Step 5 ✔ | Real profile: User & PersistProfile address field; 0003_user_address.sql; app/api/profile upsert with address/region fallback; updateUserProfile & AuthProvider support for name, phone, address with reload sync; Profile and Settings updated; Checkout auto-prefills saved address; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (18/18 routes). Owner commit pending. |
