@@ -7,13 +7,20 @@
 //   * edits go back to pending only when listing content changes; a
 //     stock/is_available-only patch keeps its review status (the rule
 //     guard_product_review documents in 0002_rls.sql).
-// seller_id and status are never accepted from the client.
+// seller_id and status are never trusted from the client: identity comes
+// from the session cookie (Phase 4 Step 7 isolation). Sellers see only
+// their own products in full (all statuses); everyone else sees the
+// approved catalog.
 
 import { NextResponse } from "next/server";
 import type { Product } from "@/types";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
+import { getServerUser, getOwnSellerId } from "@/lib/supabase/server-auth";
 import { mapProduct } from "@/lib/supabase/readSupabase";
+
+const PRODUCT_SELECT_COLUMNS =
+  "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission";
 
 const EDITABLE_COLUMNS = [
   "name",
@@ -60,17 +67,37 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const sellerId = searchParams.get("seller_id");
+  const sellerIdParam = searchParams.get("seller_id");
 
   const supabase = createSupabaseServerClient();
+
+  // Visibility (Step 7): the public catalog is approved rows only. A maker
+  // sees their own products in every review state — derived from the
+  // session, never from the query param. Admins see everything.
+  const user = await getServerUser();
+
+  let effectiveSellerId: string | null = null;
+  if (user?.role === "admin") {
+    effectiveSellerId = sellerIdParam;
+  } else if (user?.role === "seller") {
+    const ownSellerId = await getOwnSellerId(supabase, user.id);
+    if (!ownSellerId) {
+      return NextResponse.json(
+        { error: "You do not have a maker store yet." },
+        { status: 403 }
+      );
+    }
+    effectiveSellerId = ownSellerId;
+  }
+
   let query = supabase
     .from("products")
-    .select(
-      "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission"
-    );
+    .select(PRODUCT_SELECT_COLUMNS);
 
-  if (sellerId) {
-    query = query.eq("seller_id", sellerId);
+  if (effectiveSellerId) {
+    query = query.eq("seller_id", effectiveSellerId);
+  } else {
+    query = query.eq("status", "approved");
   }
 
   const { data, error } = await query.order("id", { ascending: true });
@@ -112,8 +139,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const productIdValue = product.seller_id;
-  const required = ["seller_id", "name", "description", "price", "category"];
+  const required = ["name", "description", "price", "category"];
   for (const field of required) {
     if (product[field] === undefined || product[field] === null) {
       return NextResponse.json(
@@ -130,14 +156,55 @@ export async function POST(request: Request) {
     );
   }
 
+  // Identity (Step 7): a maker lists products on their own store — the
+  // seller id is derived from the session. Admins may submit on behalf of
+  // a store they act as. A buyer or guest can never create products.
+  const user = await getServerUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: "Sign in as a maker to list products." },
+      { status: 401 }
+    );
+  }
+  if (user.role !== "seller" && user.role !== "admin") {
+    return NextResponse.json(
+      { error: "Only makers can list products." },
+      { status: 403 }
+    );
+  }
+
   const supabase = createSupabaseServerClient();
 
+  let sellerIdToUse: string;
+  if (user.role === "admin") {
+    const requested = product.seller_id;
+    sellerIdToUse =
+      typeof requested === "string" && requested.trim()
+        ? requested.trim()
+        : "";
+    if (!sellerIdToUse) {
+      return NextResponse.json(
+        { error: "Choose the maker store this product belongs to." },
+        { status: 400 }
+      );
+    }
+  } else {
+    const ownSellerId = await getOwnSellerId(supabase, user.id);
+    if (!ownSellerId) {
+      return NextResponse.json(
+        { error: "You do not have a maker store yet." },
+        { status: 403 }
+      );
+    }
+    sellerIdToUse = ownSellerId;
+  }
+
   // The maker store must be a real, seeded row: locally-created mock
-  // sellers cannot exist in the database until Phase 3 wires identity.
+  // sellers cannot exist in the database until identity is wired.
   const { data: sellerRow, error: sellerError } = await supabase
     .from("sellers")
     .select("id")
-    .eq("id", String(productIdValue))
+    .eq("id", sellerIdToUse)
     .maybeSingle();
 
   if (sellerError) {
@@ -158,7 +225,7 @@ export async function POST(request: Request) {
 
   const stockValue = Number(product.stock ?? 0);
   const submitRow = {
-    seller_id: String(productIdValue),
+    seller_id: sellerIdToUse,
     name: String(product.name),
     description: String(product.description ?? ""),
     price,
@@ -233,11 +300,20 @@ export async function PATCH(request: Request) {
     );
   }
 
+  // Step 7: only the owning maker (session-derived) or an admin edits.
+  const user = await getServerUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: "Sign in to edit your products." },
+      { status: 401 }
+    );
+  }
+
   const supabase = createSupabaseServerClient();
 
   const { data: existing, error: readError } = await supabase
     .from("products")
-    .select("status")
+    .select("id, seller_id, status")
     .eq("id", id)
     .maybeSingle();
 
@@ -252,6 +328,16 @@ export async function PATCH(request: Request) {
       { error: "That product could not be found." },
       { status: 404 }
     );
+  }
+
+  if (user.role !== "admin") {
+    const ownSellerId = await getOwnSellerId(supabase, user.id);
+    if (user.role !== "seller" || !ownSellerId || existing.seller_id !== ownSellerId) {
+      return NextResponse.json(
+        { error: "You can only edit your own products." },
+        { status: 403 }
+      );
+    }
   }
 
   // Only listing content sends a product back for review; a stock or
@@ -305,17 +391,14 @@ export async function DELETE(request: Request) {
   }
 
   let id: string | null = null;
-  let sellerId: string | null = null;
 
   const url = new URL(request.url);
   id = url.searchParams.get("id");
-  sellerId = url.searchParams.get("seller_id");
 
   if (!id) {
     try {
       const payload = (await request.json()) as Record<string, unknown>;
       if (typeof payload?.id === "string") id = payload.id;
-      if (typeof payload?.seller_id === "string") sellerId = payload.seller_id;
     } catch {
       // payload wasn't JSON, rely on query params
     }
@@ -328,30 +411,44 @@ export async function DELETE(request: Request) {
     );
   }
 
+  // Step 7: only the owning maker (session-derived) or an admin deletes.
+  const user = await getServerUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: "Sign in to delete your products." },
+      { status: 401 }
+    );
+  }
+
   const supabase = createSupabaseServerClient();
 
-  if (sellerId) {
-    const { data: existing, error: checkError } = await supabase
-      .from("products")
-      .select("seller_id")
-      .eq("id", id)
-      .maybeSingle();
+  const { data: existing, error: checkError } = await supabase
+    .from("products")
+    .select("seller_id")
+    .eq("id", id)
+    .maybeSingle();
 
-    if (checkError) {
-      return NextResponse.json(
-        { error: `Database check failed: ${checkError.message}` },
-        { status: 500 }
-      );
-    }
+  if (checkError) {
+    return NextResponse.json(
+      { error: `Database check failed: ${checkError.message}` },
+      { status: 500 }
+    );
+  }
 
-    if (!existing) {
-      return NextResponse.json(
-        { error: "That product could not be found." },
-        { status: 404 }
-      );
-    }
+  if (!existing) {
+    return NextResponse.json(
+      { error: "That product could not be found." },
+      { status: 404 }
+    );
+  }
 
-    if (existing.seller_id !== sellerId) {
+  if (user.role !== "admin") {
+    const ownSellerId = await getOwnSellerId(supabase, user.id);
+    if (
+      user.role !== "seller" ||
+      !ownSellerId ||
+      existing.seller_id !== ownSellerId
+    ) {
       return NextResponse.json(
         { error: "You can only delete your own products." },
         { status: 403 }

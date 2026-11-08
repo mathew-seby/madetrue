@@ -94,12 +94,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const userId = typeof seller.user_id === "string" ? seller.user_id.trim() : "";
+  // Identity (Step 7): a maker application is always for the signed-in
+  // account — the session user id wins, the payload's user_id is ignored.
+  const user = await getServerUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: "Sign in before applying as a maker." },
+      { status: 401 }
+    );
+  }
+  const userId = user.id;
+
   const businessName = typeof seller.business_name === "string" ? seller.business_name.trim() : "";
   const story = typeof seller.story === "string" ? seller.story.trim() : "";
   const whatsappNumber = typeof seller.whatsapp_number === "string" ? seller.whatsapp_number.trim() : "";
   const address = typeof seller.address === "string" ? seller.address.trim() : "";
-  const profilePhotoUrl = typeof seller.profile_photo_url === "string" ? seller.profile_photo_url.trim() : "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80";
+  const profilePhotoUrl = typeof seller.profile_photo_url === "string" && seller.profile_photo_url.trim() ? seller.profile_photo_url.trim() : "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80";
   const lat = typeof seller.lat === "number" ? seller.lat : 9.9312;
   const lng = typeof seller.lng === "number" ? seller.lng : 76.2673;
 
@@ -109,7 +119,7 @@ export async function POST(request: Request) {
   const bankIfsc = typeof seller.bank_ifsc === "string" && seller.bank_ifsc.trim() ? seller.bank_ifsc.trim().toUpperCase() : undefined;
   const bankAccountHolder = typeof seller.bank_account_holder === "string" && seller.bank_account_holder.trim() ? seller.bank_account_holder.trim() : businessName;
 
-  if (!userId || !businessName || !story || !address || !whatsappNumber) {
+  if (!businessName || !story || !address || !whatsappNumber) {
     return NextResponse.json(
       { error: "Please fill out all required maker and business details." },
       { status: 400 }
@@ -118,7 +128,9 @@ export async function POST(request: Request) {
 
   const supabase = createSupabaseServerClient();
 
-  // 1. Upgrade user role to 'seller' in public.users table using service_role client
+  // 1. Upgrade the signed-in user's role to 'seller' in public.users
+  //    (service role; the role guard trigger is bypassed here by design —
+  //    the route decides the role, never the request).
   const { error: userRoleErr } = await supabase
     .from("users")
     .update({ role: "seller" })
@@ -128,8 +140,10 @@ export async function POST(request: Request) {
     console.warn("[madetrue] Failed to update user role to seller:", userRoleErr.message);
   }
 
-  // 2. Insert or upsert seller profile in public.sellers
-  const baseSellerRow = {
+  // 2. Upsert the seller profile. Payout secrets are NOT columns of this
+  //    row since 0006_payout_privacy_and_stock_rpc.sql — they belong to
+  //    the private seller_payout_kyc table.
+  const sellerRow = {
     user_id: userId,
     business_name: businessName,
     story,
@@ -142,43 +156,55 @@ export async function POST(request: Request) {
     kyc_status: "pending" as const,
   };
 
-  const fullSellerRow = {
-    ...baseSellerRow,
-    pan,
-    bank_account_number: bankAccountNumber,
-    bank_ifsc: bankIfsc,
-    bank_account_holder: bankAccountHolder,
-  };
-
-  // Attempt insert with KYC columns
-  let result = await supabase
+  const { data: sellerData, error: sellerError } = await supabase
     .from("sellers")
-    .upsert(fullSellerRow, { onConflict: "user_id" })
+    .upsert(sellerRow, { onConflict: "user_id" })
     .select("*")
     .single();
 
-  // If KYC columns do not exist yet (code 42703), fallback to base row
-  if (result.error && (result.error.code === "42703" || result.error.message.includes("pan") || result.error.message.includes("bank"))) {
-    result = await supabase
-      .from("sellers")
-      .upsert(baseSellerRow, { onConflict: "user_id" })
-      .select("*")
-      .single();
-  }
-
-  if (result.error) {
+  if (sellerError) {
     return NextResponse.json(
-      { error: `Saving maker profile failed: ${result.error.message}` },
+      { error: `Saving maker profile failed: ${sellerError.message}` },
       { status: 500 }
     );
   }
 
+  // 3. Payout KYC → private table (service_role only: no anon/authenticated
+  //    grants, RLS enabled with no policies). If the migration has not
+  //    reached this environment yet, onboarding still completes; the
+  //    warning makes the gap visible in server logs.
+  const sellerIdOut = (sellerData as { id?: string }).id;
+  if (
+    sellerIdOut &&
+    (pan || bankAccountNumber || bankIfsc || bankAccountHolder)
+  ) {
+    const { error: payoutError } = await supabase
+      .from("seller_payout_kyc")
+      .upsert(
+        {
+          seller_id: sellerIdOut,
+          pan: pan ?? null,
+          bank_account_number: bankAccountNumber ?? null,
+          bank_ifsc: bankIfsc ?? null,
+          bank_account_holder: bankAccountHolder ?? null,
+        },
+        { onConflict: "seller_id" }
+      );
+    if (payoutError) {
+      console.warn(
+        "[madetrue] Payout KYC could not be stored (is 0006 applied?):",
+        payoutError.message
+      );
+    }
+  }
+
+  // Echo only what the maker themselves just submitted (their own data).
   const responseSeller: Seller = {
-    ...(result.data as Seller),
-    pan: (result.data as Record<string, unknown>).pan as string || pan,
-    bank_account_number: (result.data as Record<string, unknown>).bank_account_number as string || bankAccountNumber,
-    bank_ifsc: (result.data as Record<string, unknown>).bank_ifsc as string || bankIfsc,
-    bank_account_holder: (result.data as Record<string, unknown>).bank_account_holder as string || bankAccountHolder,
+    ...(sellerData as Seller),
+    pan,
+    bank_account_number: bankAccountNumber,
+    bank_ifsc: bankIfsc,
+    bank_account_holder: bankAccountHolder,
   };
 
   return NextResponse.json(responseSeller);

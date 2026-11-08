@@ -1,16 +1,16 @@
 // Server-side profile persistence for MADETRUE_DATA_SOURCE=supabase.
-// Upserts the mock-era user into public.users by id. Supabase Auth owns
+// Upserts the signed-in user into public.users. Supabase Auth owns
 // passwords from Phase 3, so passwords are never accepted here — name,
 // email, phone, language and photo are the fields that can persist today.
-// The service role bypasses the role guard trigger, so role is validated
-// server-side against the exact enum values.
+// Step 7 identity: id and role always come from the session cookie; the
+// saved profile is always the caller's own, and role can never be risen
+// by request payload (the service role bypasses the role guard trigger,
+// so the server validates it against the session instead).
 
 import { NextResponse } from "next/server";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
-import type { PersistProfile } from "@/lib/supabase/writeSupabase";
-
-const ROLES: PersistProfile["role"][] = ["buyer", "seller", "admin"];
+import { getServerUser } from "@/lib/supabase/server-auth";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -42,15 +42,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const id = typeof profile.id === "string" && profile.id ? profile.id : null;
+  // Id and role come from the session (Step 7) — never from the payload.
+  const user = await getServerUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: "Sign in before saving your profile." },
+      { status: 401 }
+    );
+  }
+  const id = user.id;
+  const role = user.role;
+
   const name = typeof profile.name === "string" ? profile.name : "";
   const email = typeof profile.email === "string" ? profile.email : "";
   const phone = typeof profile.phone === "string" ? profile.phone : "";
-  const role = ROLES.includes(profile.role as PersistProfile["role"])
-    ? (profile.role as PersistProfile["role"])
-    : ("buyer" as const);
 
-  if (!id || !name.trim()) {
+  if (!name.trim()) {
     return NextResponse.json(
       { error: "Your profile needs a name before it can be saved." },
       { status: 400 }

@@ -8,13 +8,21 @@
 //     off that DB row, never off the request;
 //   * status 'pending', whatsapp_notified false, gateway refs empty —
 //     Cashfree owns those in Phase 6.
-// Stock is decremented after insertion with an on-server guard
-// (stock >= qty). Phase 4 hardens this into a single locked transaction.
+// Stock is decremented through the atomic 0006 RPC
+// (decrement_product_stock) — check and decrement share one row lock, so
+// two concurrent buyers cannot oversell; a guarded update remains as the
+// fallback for environments the migration has not reached yet.
+//
+// Identity (Phase 4 Step 7 — isolation): the session cookie decides who
+// the caller is, never the request body. Sellers only ever read their own
+// orders (their seller id is derived from `sellers.user_id`), buyers only
+// their own; guests are refused.
 
 import { NextResponse } from "next/server";
 import type { Order } from "@/types";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
+import { getServerUser, getOwnSellerId } from "@/lib/supabase/server-auth";
 import {
   isValidOrderTransition,
   getInvalidTransitionMessage,
@@ -35,17 +43,42 @@ export async function GET(request: Request) {
     );
   }
 
+  const user = await getServerUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: "Sign in to view orders." },
+      { status: 401 }
+    );
+  }
+
   const { searchParams } = new URL(request.url);
-  const sellerId = searchParams.get("seller_id");
-  const buyerId = searchParams.get("buyer_id");
 
   const supabase = createSupabaseServerClient();
   let query = supabase.from("orders").select("*");
 
-  if (sellerId) {
-    query = query.eq("seller_id", sellerId);
-  } else if (buyerId) {
-    query = query.eq("buyer_id", buyerId);
+  if (user.role === "admin") {
+    // Admin overview: filters (seller_id / buyer_id) stay available.
+    const sellerId = searchParams.get("seller_id");
+    const buyerId = searchParams.get("buyer_id");
+    if (sellerId) {
+      query = query.eq("seller_id", sellerId);
+    } else if (buyerId) {
+      query = query.eq("buyer_id", buyerId);
+    }
+  } else if (user.role === "seller") {
+    // Maker inbox: only their own orders — the session-derived seller id
+    // wins over anything the request carries (Step 7 isolation).
+    const ownSellerId = await getOwnSellerId(supabase, user.id);
+    if (!ownSellerId) {
+      return NextResponse.json(
+        { error: "You do not have a maker store yet." },
+        { status: 403 }
+      );
+    }
+    query = query.eq("seller_id", ownSellerId);
+  } else {
+    // Buyer history: only their own orders.
+    query = query.eq("buyer_id", user.id);
   }
 
   const { data, error } = await query.order("created_at", { ascending: false });
@@ -84,6 +117,16 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Your basket is empty — there is nothing to order." },
       { status: 400 }
+    );
+  }
+
+  // Checkout is a signed-in moment (Phase 3): guests are refused, so the
+  // buyer on every row is the session user — never a payload value.
+  const user = await getServerUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: "Sign in before placing your order." },
+      { status: 401 }
     );
   }
 
@@ -152,7 +195,7 @@ export async function POST(request: Request) {
   for (const { incoming, product } of validated) {
     const row = {
       id: typeof incoming.id === "string" ? incoming.id : undefined,
-      buyer_id: String(incoming.buyer_id ?? "guest-user"),
+      buyer_id: user.id,
       buyer_name:
         incoming.buyer_name === null || incoming.buyer_name === undefined
           ? null
@@ -215,26 +258,67 @@ export async function POST(request: Request) {
     inserted.push(mapOrderRow(data));
   }
 
-  // 3) Decrement stock with a server-side guard.
+  // 3) Decrement stock atomically (0006_payout_privacy_and_stock_rpc.sql):
+  //    check + decrement share one row lock, so concurrent buyers cannot
+  //    oversell. If the RPC has not been applied yet, fall back to the
+  //    guarded single-condition update.
   for (const { incoming, product } of validated) {
-    const newStock = Math.max(0, Number(product.stock) - Number(incoming.quantity));
-    const { data: decremented, error: updateError } = await supabase
-      .from("products")
-      .update({
-        stock: newStock,
-        is_available: newStock > 0,
-      })
-      .eq("id", String(product.id))
-      .gte("stock", Number(incoming.quantity))
-      .select("id");
+    const quantity = Number(incoming.quantity);
+    const { error: rpcError } = await supabase.rpc(
+      "decrement_product_stock",
+      {
+        p_product_id: String(product.id),
+        p_quantity: quantity,
+      }
+    );
 
-    if (updateError || !decremented || decremented.length === 0) {
+    if (rpcError) {
+      const rpcMessage = String(rpcError.message ?? "");
+      if (
+        rpcError.code === "42883" ||
+        rpcMessage.includes("decrement_product_stock")
+      ) {
+        // RPC missing (0006 not applied): legacy guarded path.
+        const newStock = Math.max(0, Number(product.stock) - quantity);
+        const { data: decremented, error: updateError } = await supabase
+          .from("products")
+          .update({
+            stock: newStock,
+            is_available: newStock > 0,
+          })
+          .eq("id", String(product.id))
+          .gte("stock", quantity)
+          .select("id");
+
+        if (updateError || !decremented || decremented.length === 0) {
+          return NextResponse.json(
+            {
+              error:
+                "Your order was saved, but the stock could not be updated. The makers' dashboard shows your order — please contact them about availability.",
+            },
+            { status: 409 }
+          );
+        }
+        continue;
+      }
+      if (
+        rpcError.code === "MT002" ||
+        rpcMessage.includes("not available to order")
+      ) {
+        return NextResponse.json(
+          { error: "That product is not available to order." },
+          { status: 409 }
+        );
+      }
+      if (rpcError.code === "MT001") {
+        return NextResponse.json(
+          { error: "Order quantities must be whole numbers above zero." },
+          { status: 400 }
+        );
+      }
       return NextResponse.json(
-        {
-          error:
-            "Your order was saved, but the stock could not be updated. The makers' dashboard shows your order — please contact them about availability.",
-        },
-        { status: 409 }
+        { error: `Updating stock failed: ${rpcMessage}` },
+        { status: 500 }
       );
     }
   }
@@ -266,13 +350,22 @@ export async function PATCH(request: Request) {
     typeof body?.status === "string"
       ? (body.status.trim() as Order["status"])
       : null;
-  const sellerId =
-    typeof body?.seller_id === "string" ? body.seller_id.trim() : null;
 
   if (!orderId || !newStatus) {
     return NextResponse.json(
       { error: "Order ID and target status are required." },
       { status: 400 }
+    );
+  }
+
+  // Status moves are maker/admin work (0002_rls.sql orders_update). The
+  // maker identity comes from the session — the request's seller_id is
+  // never trusted (Step 7 isolation).
+  const user = await getServerUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: "Sign in to update an order." },
+      { status: 401 }
     );
   }
 
@@ -316,12 +409,23 @@ export async function PATCH(request: Request) {
     );
   }
 
-  // 2) Enforce seller isolation if seller_id was provided
-  if (sellerId && order.seller_id !== sellerId) {
+  // 2) Ownership: sellers may move only their own orders' state.
+  if (user.role === "seller") {
+    const ownSellerId = await getOwnSellerId(supabase, user.id);
+    if (!ownSellerId || order.seller_id !== ownSellerId) {
+      return NextResponse.json(
+        {
+          error:
+            "You do not have permission to modify orders belonging to another maker.",
+        },
+        { status: 403 }
+      );
+    }
+  } else if (user.role !== "admin") {
     return NextResponse.json(
       {
         error:
-          "You do not have permission to modify orders belonging to another maker.",
+          "Order status updates belong to the maker or MADETRUE moderators.",
       },
       { status: 403 }
     );
