@@ -12,8 +12,13 @@ neighbors who love them. Story-driven, trust-first, and mobile-first at heart.
   with mock kept as the no-keys fallback) ·
   ✅ **Phase 3** — Auth & roles (real Supabase Auth sessions, RoleGuard,
   password reset, persistent profile prefilling checkout, Become a Maker
-  onboarding with Cashfree Easy Split payout KYC and admin moderation)
-- ▶️ **Now: Phase 4 — Seller dashboard** (products CRUD, stock enforcement, order inbox, store settings)
+  onboarding with Cashfree Easy Split payout KYC and admin moderation) ·
+  ✅ **Phase 4** — Seller dashboard (products CRUD + Storage uploads, DB-backed
+  stock, session-scoped order inbox, dashboard stats, store settings, and the
+  isolation close-out: payout KYC behind a private table, atomic stock RPC,
+  session-derived identity on every write route, 17/17 live proof)
+- ▶️ **Now: Phase 5 — Admin console** (admin guard, seller management, product
+  moderation, order overview, categories, analytics, audit trail)
 - Live tracker: [`docs/build-progress.md`](./docs/build-progress.md). The
   workflow and phase-completion status-sync rules live in
   [`docs/master-build-prompt.md`](./docs/master-build-prompt.md) (§10b).

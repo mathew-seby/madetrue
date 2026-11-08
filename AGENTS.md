@@ -273,7 +273,17 @@ Use exactly these strings — no variations:
 > persistent profile (name, phone, address) auto-prefills checkout; Become a
 > Maker captures Cashfree Easy Split payout KYC (PAN, bank, IFSC) with admin
 > moderation.
-> Next build phase: **Phase 4 — Seller dashboard.**
+> **Phase 4 (Seller dashboard) is complete:** maker products CRUD with
+> Supabase Storage uploads; DB-backed stock with honest sold-out states;
+> session-scoped maker order inbox; accept→complete/cancel status machine
+> (`ready`/`delivered` deferred to Phase 7); accurate dashboard stats; store
+> settings tab (story, WhatsApp, location, payout status); isolation closed —
+> every write route derives identity from the session
+> (`getServerUser`/`getOwnSellerId`), payout KYC moved to a private
+> `seller_payout_kyc` table (migration 0006, applied live), checkout stock
+> decremented atomically, and a 17/17 live isolation proof recorded in
+> `docs/phase4-isolation-proof.md`.
+> Next build phase: **Phase 5 — Admin console.**
 > Payment strategy remains locked: **Cashfree Easy Split** primary (see Locked
 > Decisions #4), with Razorpay Route / PayU Split Settlements as
 > adapter-backed alternates.
