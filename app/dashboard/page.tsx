@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import StatsCard from '@/components/dashboard/StatsCard';
-import { getDashboardStats } from '@/lib/utils/dashboardStats';
-import type { DashboardStats } from '@/lib/utils/dashboardStats';
+import { computeDashboardStats } from '@/lib/utils/dashboardStats';
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus } from "@/lib/supabase/client";
@@ -24,7 +23,7 @@ export default function DashboardPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [myProducts, setMyProducts] = useState<Product[]>([]);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const stats = useMemo(() => computeDashboardStats(myOrders), [myOrders]);
   const [orderFilter, setOrderFilter] = useState<"all" | "pending" | "accepted" | "completed" | "cancelled">("all");
   const [loading, setLoading] = useState(true);
 
@@ -563,6 +562,39 @@ export default function DashboardPage() {
           }
           return null;
         })()}
+
+        {/* Store Stats — derived from the same list the Order Inbox shows */}
+        {!loading && (
+          <section
+            aria-label="Store statistics"
+            className="grid grid-cols-2 md:grid-cols-4 gap-4"
+          >
+            <StatsCard
+              title="Orders Today"
+              value={stats.todayOrders}
+              icon={<ShoppingBag className="h-4 w-4" />}
+              description="Placed by buyers today"
+            />
+            <StatsCard
+              title="Total Orders"
+              value={stats.totalOrders}
+              icon={<Package className="h-4 w-4" />}
+              description="Everything in your inbox"
+            />
+            <StatsCard
+              title="Revenue"
+              value={`₹${stats.totalRevenue.toLocaleString("en-IN")}`}
+              icon={<CheckCircle className="h-4 w-4" />}
+              description="Order value, cancelled excluded"
+            />
+            <StatsCard
+              title="Pending"
+              value={stats.pendingOrders}
+              icon={<Clock className="h-4 w-4" />}
+              description="Awaiting your acceptance"
+            />
+          </section>
+        )}
 
         {/* Navigation Tabs */}
         <div className="flex border-b border-warm-brown/10 overflow-x-auto whitespace-nowrap scrollbar-none">
