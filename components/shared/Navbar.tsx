@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MapPin, ShoppingCart, Menu, X, Globe, User as UserIcon, LogOut, ShieldCheck } from "lucide-react";
+import { MapPin, ShoppingCart, Menu, X, Globe, LogOut, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { useCart } from "@/components/shared/CartProvider";
 
@@ -126,8 +126,8 @@ export default function Navbar() {
                   )}
                 </Link>
 
-                {/* User Profile Info */}
-                {currentUser && (
+                {/* User Profile Info or Sign In */}
+                {currentUser ? (
                   <div className="flex items-center space-x-3 border-l border-warm-brown/20 pl-4">
                     <Link
                       href="/profile"
@@ -141,11 +141,20 @@ export default function Navbar() {
                     </Link>
                     <button
                       onClick={logout}
-                      className="p-1.5 text-text-dark/60 hover:text-red-600 transition"
+                      className="p-1.5 text-text-dark/60 hover:text-red-600 transition cursor-pointer"
                       title="Sign Out"
                     >
                       <LogOut className="h-4.5 w-4.5" />
                     </button>
+                  </div>
+                ) : (
+                  <div className="border-l border-warm-brown/20 pl-4">
+                    <Link
+                      href="/login"
+                      className="text-xs font-semibold px-3 py-1.5 rounded-full border border-warm-brown/20 text-warm-brown hover:bg-primary-green hover:text-cream-bg transition duration-200"
+                    >
+                      Sign In
+                    </Link>
                   </div>
                 )}
               </>
@@ -261,7 +270,7 @@ export default function Navbar() {
             </Link>
           )}
 
-          {currentUser && (
+          {currentUser ? (
             <div className="border-t border-warm-brown/10 pt-2 mt-2 space-y-1">
               <Link
                 href="/profile"
@@ -275,10 +284,20 @@ export default function Navbar() {
                   setIsOpen(false);
                   logout();
                 }}
-                className="w-full text-left block px-3 py-2 rounded-lg text-base font-medium text-red-600 hover:bg-red-50 transition"
+                className="w-full text-left block px-3 py-2 rounded-lg text-base font-medium text-red-600 hover:bg-red-50 transition cursor-pointer"
               >
                 Sign Out
               </button>
+            </div>
+          ) : (
+            <div className="border-t border-warm-brown/10 pt-2 mt-2 space-y-1">
+              <Link
+                href="/login"
+                onClick={() => setIsOpen(false)}
+                className="block px-3 py-2 rounded-lg text-base font-semibold text-primary-green hover:bg-primary-green/5 transition"
+              >
+                Sign In / Create Account
+              </Link>
             </div>
           )}
         </div>

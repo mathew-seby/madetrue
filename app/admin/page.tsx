@@ -13,11 +13,12 @@ import {
   updateOrderWhatsappStatus 
 } from "@/lib/supabase/client";
 import { Order, Product, Seller } from "@/types";
+import { useAuth } from "@/components/shared/AuthProvider";
 import { 
-  ShieldCheck, LogOut, Check, X, Clock, Eye, Store, HelpCircle, Tag, 
+  ShieldCheck, LogOut, Check, X, Clock, Eye, Store, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
-  ChevronDown, ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
-  Users, Send, Award, ShieldAlert, Calendar 
+  ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
+  Users, Send, Award, ShieldAlert, Calendar, CreditCard 
 } from "lucide-react";
 
 // Pre-seed three demo orders the first time the admin console runs.
@@ -85,6 +86,7 @@ const MOCK_SEEDED_ORDERS = [
 
 export default function AdminPage() {
   const router = useRouter();
+  const { currentUser, loading: authLoading } = useAuth();
   const [authorized, setAuthorized] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
@@ -137,32 +139,45 @@ export default function AdminPage() {
       setSellersList(allSellers);
       setSellersMap(sellerMap);
       setOrders(allOrders);
-    } catch (error) {
+    } catch {
       showToast("Failed to fetch admin dashboard data", "error");
     } finally {
       setLoading(false);
     }
   }, [showToast]);
 
-  // Authentication check on mount (sessionStorage-backed console session).
-  // The session lives in sessionStorage — an external store React can't see —
-  // so it is synced into state once on mount, after hydration. The loading
-  // gate in JSX renders the same placeholder on server and client until the
-  // read lands, keeping SSR markup stable.
+  // Authentication check on mount (user role or sessionStorage-backed console session).
   useEffect(() => {
+    if (authLoading) return;
+
+    /* eslint-disable react-hooks/set-state-in-effect -- mount sync of external/auth store */
+    if (currentUser) {
+      if (currentUser.role === "admin") {
+        setAuthorized(true);
+        setCheckingAuth(false);
+        loadModerationData();
+      } else {
+        // Block signed-in non-admin accounts
+        setAuthorized(false);
+        setCheckingAuth(false);
+      }
+      return;
+    }
+
     if (typeof window !== "undefined") {
       const isLoggedIn = sessionStorage.getItem("admin_logged_in") === "true";
       if (!isLoggedIn) {
+        setAuthorized(false);
+        setCheckingAuth(false);
         router.push("/admin/login");
       } else {
-        /* eslint-disable react-hooks/set-state-in-effect -- one-time mount sync of an external (sessionStorage) store */
         setAuthorized(true);
         setCheckingAuth(false);
-        /* eslint-enable react-hooks/set-state-in-effect */
         loadModerationData();
       }
     }
-  }, [router, loadModerationData]);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [router, loadModerationData, currentUser, authLoading]);
 
   const handleLogout = () => {
     if (typeof window !== "undefined") {
@@ -209,7 +224,7 @@ export default function AdminPage() {
         showToast(msg, "success");
         loadModerationData();
       }
-    } catch (err) {
+    } catch {
       showToast("Operation failed. Try again.", "error");
     }
   };
@@ -224,7 +239,7 @@ export default function AdminPage() {
         );
         loadModerationData();
       }
-    } catch (err) {
+    } catch {
       showToast("Failed to update seller verification.", "error");
     }
   };
@@ -236,7 +251,7 @@ export default function AdminPage() {
         showToast(`Order status updated to "${newStatus}"`, "success");
         loadModerationData();
       }
-    } catch (err) {
+    } catch {
       showToast("Failed to update order status.", "error");
     }
   };
@@ -253,7 +268,7 @@ export default function AdminPage() {
         );
         loadModerationData();
       }
-    } catch (err) {
+    } catch {
       showToast("Failed to update WhatsApp notification status.", "error");
     }
   };
@@ -310,7 +325,7 @@ export default function AdminPage() {
     return lat >= 9.77 && lat <= 10.30 && lng >= 76.16 && lng <= 77.09;
   };
 
-  if (checkingAuth) {
+  if (checkingAuth || authLoading) {
     return (
       <div className="max-w-md mx-auto py-32 text-center space-y-4">
         <div className="w-10 h-10 border-4 border-primary-green border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -320,7 +335,35 @@ export default function AdminPage() {
   }
 
   if (!authorized) {
-    return null;
+    return (
+      <div className="bg-cream-bg min-h-[75vh] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 bg-red-100 text-red-700 rounded-full flex items-center justify-center mb-4">
+          <ShieldAlert className="h-8 w-8" />
+        </div>
+        <h2 className="font-serif text-3xl font-bold text-text-dark mb-2">
+          Administrator Access Only
+        </h2>
+        <p className="text-sm text-text-dark/70 max-w-lg mb-6 leading-relaxed">
+          {currentUser
+            ? `You are signed in as a ${currentUser.role} (${currentUser.name}). The moderation console is restricted to verified MADETRUE platform moderators.`
+            : "Administrator credentials are required to view the platform moderation console."}
+        </p>
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          <Link
+            href="/admin/login"
+            className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition"
+          >
+            Admin Sign In
+          </Link>
+          <Link
+            href="/"
+            className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 rounded-xl border border-warm-brown/20 text-warm-brown hover:bg-white text-sm font-semibold transition"
+          >
+            Return to Marketplace
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -802,6 +845,44 @@ export default function AdminPage() {
                         >
                           WhatsApp Contact: +91 {seller.whatsapp_number}
                         </a>
+                      </div>
+
+                      {/* Payout KYC Details (Cashfree Easy Split) */}
+                      <div className="bg-cream-bg p-3.5 rounded-2xl border border-warm-brown/5 space-y-1.5 font-sans">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider flex items-center">
+                            <CreditCard className="h-3 w-3 mr-1 text-primary-green" /> Payout KYC Details
+                          </span>
+                          <span className={`text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                            seller.kyc_status === "verified" || seller.is_verified
+                              ? "bg-primary-green/15 text-primary-green"
+                              : "bg-amber-100 text-amber-800"
+                          }`}>
+                            KYC: {seller.kyc_status || (seller.is_verified ? "verified" : "pending")}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                          <div>
+                            <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">PAN</span>
+                            <span className="font-mono font-bold text-text-dark">{seller.pan || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">Bank Account</span>
+                            <span className="font-mono font-bold text-text-dark">
+                              {seller.bank_account_number ? `••••${seller.bank_account_number.slice(-4)}` : "—"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">IFSC</span>
+                            <span className="font-mono font-bold text-text-dark">{seller.bank_ifsc || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">Holder</span>
+                            <span className="font-medium text-text-dark truncate block" title={seller.bank_account_holder}>
+                              {seller.bank_account_holder || seller.business_name}
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
                       <div className="flex justify-end gap-2 pt-2.5">

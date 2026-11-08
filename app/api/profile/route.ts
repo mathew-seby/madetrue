@@ -65,7 +65,12 @@ export async function POST(request: Request) {
 
   const supabase = createSupabaseServerClient();
 
-  const row = {
+  const address =
+    typeof profile.address === "string" && profile.address.trim()
+      ? profile.address.trim()
+      : null;
+
+  const baseRow = {
     id,
     name: name.trim(),
     email: email.trim(),
@@ -79,16 +84,27 @@ export async function POST(request: Request) {
       typeof profile.profile_photo_url === "string" && profile.profile_photo_url.trim()
         ? profile.profile_photo_url.trim()
         : null,
+    region: address,
   };
 
-  const { data, error } = await supabase
+  // Attempt upsert with address column (0003_user_address.sql)
+  let result = await supabase
     .from("users")
-    .upsert(row, { onConflict: "id" })
-    .select("id, name, email, phone, role, language_pref, profile_photo_url")
+    .upsert({ ...baseRow, address }, { onConflict: "id" })
+    .select("id, name, email, phone, role, language_pref, profile_photo_url, address, region")
     .single();
 
-  if (error) {
-    if (error.code === "23505") {
+  // If address column does not exist yet (Postgres code 42703), retry without it
+  if (result.error && (result.error.code === "42703" || result.error.message.includes("address"))) {
+    result = await supabase
+      .from("users")
+      .upsert(baseRow, { onConflict: "id" })
+      .select("id, name, email, phone, role, language_pref, profile_photo_url, region")
+      .single();
+  }
+
+  if (result.error) {
+    if (result.error.code === "23505") {
       return NextResponse.json(
         {
           error:
@@ -98,10 +114,23 @@ export async function POST(request: Request) {
       );
     }
     return NextResponse.json(
-      { error: `Saving your profile failed: ${error.message}` },
+      { error: `Saving your profile failed: ${result.error.message}` },
       { status: 500 }
     );
   }
 
-  return NextResponse.json(data);
+  const savedRecord = result.data as Record<string, unknown>;
+  const resolvedAddress =
+    typeof savedRecord.address === "string" && savedRecord.address
+      ? savedRecord.address
+      : typeof savedRecord.region === "string" && savedRecord.region
+      ? savedRecord.region
+      : address || undefined;
+
+  const responsePayload = {
+    ...result.data,
+    address: resolvedAddress,
+  };
+
+  return NextResponse.json(responsePayload);
 }

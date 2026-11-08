@@ -253,7 +253,7 @@ Use exactly these strings — no variations:
 
 ## Current Status
 
-> The full skeleton runs end-to-end on mock data: homepage, product listing +
+> The full skeleton runs end-to-end on mock data and Supabase: homepage, product listing +
 > detail, seller profiles, cart, checkout (plain-text WhatsApp order summaries
 > via `wa.me`), profile, maker dashboard, and the admin console. **Phase 1
 > (buying loop) is complete.** **Phase 8 (Leaflet maps) is complete:** shared
@@ -263,12 +263,18 @@ Use exactly these strings — no variations:
 > Phase 0 (repo hygiene) is in final stretches — remaining: GitHub-side
 > settings (branch protection, squash merges, collaborators, code-owner
 > handles) and the team issue list.
-> Next build phase: **Phase 3 — Auth & roles.** **Phase 2 (Supabase foundation)
-> is complete:** schema + RLS + seed live in the Supabase project; catalog
-> reads and checkout/product/profile writes flow through Supabase when
-> `MADETRUE_DATA_SOURCE=supabase` (writes via service-role server routes),
-> and the mock layer stays as the no-keys default + fallback. Payment
-> strategy remains locked: **Cashfree Easy Split** primary (see Locked
+> **Phase 2 (Supabase foundation) is complete:** schema + RLS + seed live in
+> the Supabase project; catalog reads and checkout/product/profile writes flow
+> through Supabase when `MADETRUE_DATA_SOURCE=supabase` (writes via service-role
+> server routes), and the mock layer stays as the no-keys default + fallback.
+> **Phase 3 (Auth & roles) is complete:** Supabase Auth integration via
+> `@supabase/ssr` cookies; sessions survive refresh; RoleGuard enforces buyer,
+> maker, and admin boundaries; password reset works in dev and Supabase;
+> persistent profile (name, phone, address) auto-prefills checkout; Become a
+> Maker captures Cashfree Easy Split payout KYC (PAN, bank, IFSC) with admin
+> moderation.
+> Next build phase: **Phase 4 — Seller dashboard.**
+> Payment strategy remains locked: **Cashfree Easy Split** primary (see Locked
 > Decisions #4), with Razorpay Route / PayU Split Settlements as
 > adapter-backed alternates.
 > Work is driven by `docs/master-build-prompt.md` and tracked in

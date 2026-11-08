@@ -14,6 +14,8 @@ import {
   submitProductSupabase,
   editProductSupabase,
   fetchAllProductsSupabase,
+  submitSellerSupabase,
+  updateSellerVerificationSupabase,
 } from "./writeSupabase";
 
 // This is our data layer client. It serves mock data by default
@@ -250,8 +252,11 @@ export async function updateProductStatus(
   return null;
 }
 
-// Add a new seller (mock signup)
+// Add a new seller (maker onboarding)
 export async function addSeller(sellerData: Omit<Seller, "id">): Promise<Seller> {
+  if (isSupabaseEnabled()) {
+    return submitSellerSupabase(sellerData);
+  }
   await new Promise((resolve) => setTimeout(resolve, 100));
   const sellers = getStoredSellers();
 
@@ -268,14 +273,22 @@ export async function addSeller(sellerData: Omit<Seller, "id">): Promise<Seller>
 // Update verification status of a seller
 export async function updateSellerVerification(
   id: string,
-  is_verified: boolean
+  is_verified: boolean,
+  kyc_status?: Seller["kyc_status"]
 ): Promise<Seller | null> {
+  if (isSupabaseEnabled()) {
+    return updateSellerVerificationSupabase(id, is_verified, kyc_status);
+  }
   await new Promise((resolve) => setTimeout(resolve, 100));
   const sellers = getStoredSellers();
   const index = sellers.findIndex((s) => s.id === id);
 
   if (index !== -1) {
-    sellers[index] = { ...sellers[index], is_verified };
+    sellers[index] = {
+      ...sellers[index],
+      is_verified,
+      kyc_status: kyc_status ?? (is_verified ? "verified" : "pending"),
+    };
     saveStoredSellers(sellers);
     return sellers[index];
   }

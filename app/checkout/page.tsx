@@ -135,6 +135,9 @@ export default function CheckoutPage() {
     if (currentUser) {
       setName(currentUser.name);
       setPhone(currentUser.phone || "");
+      if (currentUser.address) {
+        setAddress(currentUser.address);
+      }
     }
   }
 

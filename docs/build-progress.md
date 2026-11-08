@@ -11,9 +11,9 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 3 · Step 1/7 — Sign-up & sign-in — ⬜ pending
-**Last completed:** Phase 2 · Step 7/7 — Close the mock era — commit "feat(phase2): close the mock era" — 2026-11-07 — **PHASE 2 CLOSED (7/7)**
-**Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 48 warnings) · 11-route production smoke ✅
+**Current position:** Phase 4 · Step 1/7 — Products CRUD — ⬜ pending
+**Last completed:** Phase 3 · Step 7/7 — Auth test pass — commit "feat(phase3): auth journey test pass and phase 3 closure" — 2026-11-08
+**Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 36 warnings) · build ✅ (19 routes)
 
 ---
 
@@ -24,6 +24,8 @@
 | 0 | Project hygiene (repo) | ✅ repo-complete | Owner web tasks remain: protect `main` with the CI check, squash-only merges + auto-delete branches, invite collaborators, CODEOWNERS handles, file the issue board (`docs/team-issue-board.md`) |
 | 1 | Buying loop on mock data | ✅ 6/6 | CartProvider + honest caps, checkout delivery/pickup rules + ₹49 fee, wa.me order summaries, public browsing gate |
 | 8 | Leaflet maps + honesty | ✅ 6/6 | `MapCanvas`/`SellerMap`/`DistanceBadge` · maps on home/seller/product · `useUserLocation` honest geolocation · Ernakulam gate. Commits `a672e25` → `db04a3b` |
+| 2 | Supabase foundation | ✅ 7/7 | Schema + RLS + seed on live project; catalog reads and checkout/product/profile writes flow through Supabase via server routes; mock fallback preserved |
+| 3 | Auth & roles | ✅ 7/7 | Real Supabase Auth (@supabase/ssr); cookie sessions surviving reload; RoleGuard on buyer/seller/admin; password reset; persistent profile; Become a Maker with Cashfree Easy Split payout KYC; admin moderation |
 
 ---
 
@@ -47,15 +49,15 @@
 
 | # | Step | Milestone (short) | Status | Commit | Date |
 |---|---|---|---|---|---|
-| 1 | Sign-up & sign-in | identifier + password screens; warm specific errors | ⬜ pending | — | — |
-| 2 | Real sessions | Supabase sessions survive refresh; mock auth removed | ⬜ pending | — | — |
-| 3 | Roles & guards | buyer/seller/admin guards + redirects tested | ⬜ pending | — | — |
-| 4 | Password reset | email flow works in dev; friendly copy | ⬜ pending | — | — |
-| 5 | Real profile | name/phone/address persist per user | ⬜ pending | — | — |
-| 6 | Become a Maker | application + approval; payout KYC (PAN, bank) captured | ⬜ pending | — | — |
-| 7 | Auth test pass | buyer/seller/admin journeys + logout/login green | ⬜ pending | — | — |
+| 1 | Sign-up & sign-in | identifier + password screens; warm specific errors | ✅ done | feat(phase3): sign-up and sign-in screens | 2026-11-07 |
+| 2 | Real sessions | Supabase sessions survive refresh; mock auth removed | ✅ done | feat(phase3): wire real Supabase Auth sessions | 2026-11-07 |
+| 3 | Roles & guards | buyer/seller/admin guards + redirects tested | ✅ done | feat(phase3): role guards and unauthorized access blocks | 2026-11-07 |
+| 4 | Password reset | email flow works in dev; friendly copy | ✅ done | feat(phase3): password reset flow and screens | 2026-11-08 |
+| 5 | Real profile | name/phone/address persist per user | ✅ done | feat(phase3): real profile persistence for name phone and address | 2026-11-08 |
+| 6 | Become a Maker | application + approval; payout KYC (PAN, bank) captured | ✅ done | feat(phase3): become a maker application and payout kyc | 2026-11-08 |
+| 7 | Auth test pass | buyer/seller/admin journeys + logout/login green | ✅ done | feat(phase3): auth journey test pass and phase 3 closure | 2026-11-08 |
 
-**Phase done when:** fresh buyer, seller and admin accounts each land on the right pages; sessions survive refresh; the onboarding form stores payout KYC for gateway vendor registration.
+**Phase done when:** fresh buyer, seller and admin accounts each land on the right pages; sessions survive refresh; the onboarding form stores payout KYC for gateway vendor registration. **Met in closing step:** buyer, seller, and admin journeys verified across Supabase and mock modes; RoleGuard enforces boundaries; sessions survive refresh; KYC captured and visible in Admin console; §10b status mirrors synced.
 
 ### Phase 4 — Seller dashboard
 
@@ -147,6 +149,13 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-08 | Phase 3 Step 7 ✔ + PHASE CLOSED | Auth test pass & Phase 3 closure: buyer/seller/admin journeys verified; sessions survive reload via cookies/storage; RoleGuard protects dashboard & admin console; password reset operational; real profile persists name/phone/address; Become a Maker captures Cashfree payout KYC; §10b status mirrors synced. Gates: tsc ✅ · eslint 0 errors / 36 warnings · build ✅ (19/19 routes). Owner commit pending. |
+| 2026-11-08 | Phase 3 Step 6 ✔ | Become a Maker: Payout KYC fields on Seller & 0004_seller_payout_kyc.sql; /api/sellers route with user role elevation & column fallback; writeSupabase & client router for sellers; upgradeToSeller with Cashfree Easy Split KYC (PAN, bank, IFSC); Profile onboarding form & active status view; Admin panel KYC review & verification; Dashboard review banner; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (19/19 routes). Owner commit pending. |
+| 2026-11-08 | Phase 3 Step 5 ✔ | Real profile: User & PersistProfile address field; 0003_user_address.sql; app/api/profile upsert with address/region fallback; updateUserProfile & AuthProvider support for name, phone, address with reload sync; Profile and Settings updated; Checkout auto-prefills saved address; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (18/18 routes). Owner commit pending. |
+| 2026-11-08 | Phase 3 Step 4 ✔ | Password reset: AuthScreen forgot-password request view; Supabase Auth resetPasswordForEmail & dev mode mock links; dedicated /reset-password page with token recovery and new password reset; AuthProvider performPasswordReset & requestPasswordReset; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (18/18 routes). Owner commit pending. |
+| 2026-11-07 | Phase 3 Step 3 ✔ | Roles & guards: RoleGuard component added; buyer access to /dashboard blocked with warm Maker Required screen & application CTA (unauthorized admin fetches prevented); non-admin access to /admin blocked with Administrator Access Only screen; admin login auto-routes admin users and provides context; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (17/17 routes). Owner commit pending. |
+| 2026-11-07 | Phase 3 Step 2 ✔ | Real sessions: Supabase Auth integration via @supabase/ssr (onAuthStateChange, getSession, signOut, signInWithPassword, signUp with public.users sync); sessions survive refresh via cookies/storage; mock auth removed from live Supabase path and preserved as fallback; server-side cookie auth client created; tsc ✅ · eslint 0 errors / 46 warnings · build ✅ (17/17 routes). Owner commit pending. |
+| 2026-11-07 | Phase 3 Step 1 ✔ | Sign-up & sign-in screens: identifier (email or phone with normalization) + password; warm specific validation and error messages; in-place login wall on checkout/dashboard/profile; dedicated /login and /signup routes with ?redirect= support; Navbar Sign In link on desktop & mobile drawer. tsc ✅ · eslint 0 errors / 46 warnings · build ✅ (17/17 routes). Owner commit pending. |
 | 2026-11-07 | Phase 2 Step 7 ✔ + PHASE CLOSED | Step-code audit: zero dead mock paths (every mock export has a live caller — admin writes = Phase 5, upgrade-to-seller = Phase 3); `.env.example` switch docs finalized; §10b sync: prompt §5, AGENTS.md, README, PROJECT_OVERVIEW refreshed. Phase audit: tsc ✅ · eslint 0 errors / 47 warnings · worktree smokes on :4010: mock (no .env.local) 11/11 + supabase mode (real .env.local copied in, key wiped with worktree) 11/11. Owner commit pending. |
 | 2026-11-07 | Phase 2 Step 6 ✔ | Writes via service-role server routes: `app/api/{orders,products,profile}` (order rows priced from the DB product w/ availability+stock checks, submissions pending, edit→pending only on content change, stock decremented with server guard; profile upserts users by id; dashboard list read-back moved). `saveOrders` router added to client.ts; checkout's inline localStorage write removed (warm errors now surface); profile saves persist via auth.ts router. `Order.delivery_fee` added to types. tsc OK, eslint 0 errors / 47 warnings (-1: checkout `err` now consumed); worktree smoke 11/11 on :4010, no `.env.local` (3 API routes present as ƒ). Commit pending. |
 | 2026-11-07 | Phase 2 Step 5 ✔ | New `lib/supabase/readSupabase.ts` + routers in `client.ts`: 6 catalog reads (categories/sellers/products + by-id/by-seller, filters/sort in SQL, explicit nullable→undefined mapping) go to Supabase when `MADETRUE_DATA_SOURCE=supabase`; browser client for client components, server client via dynamic import only. Mock bodies untouched, zero page edits. tsc clean, eslint 0 errors / 48 warnings; worktree smoke 11/11 on :4010, no `.env.local`. Commit pending. |
