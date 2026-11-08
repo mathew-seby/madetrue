@@ -26,6 +26,9 @@ export interface Seller {
   is_verified: boolean;
   payment_vendor_ref?: string;
   kyc_status?: 'not_started' | 'pending' | 'verified' | 'failed';
+  // Admin application lifecycle (Phase 5): pending → approved | rejected.
+  // Marketplace verification — separate from gateway kyc_status above.
+  application_status?: 'pending' | 'approved' | 'rejected';
   pan?: string;
   bank_account_number?: string;
   bank_ifsc?: string;

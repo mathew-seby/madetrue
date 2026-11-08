@@ -188,6 +188,52 @@ export async function updateSellerVerificationSupabase(
   });
 }
 
+// Phase 5 Step 2 — admin moderation of a maker application. One action =
+// one consistent state: approve opens the store (verified + approved +
+// gateway-KYC marked verified for Cashfree Easy Split onboarding), reject
+// parks the application as declined, reopen/revoke return it to the
+// pending queue.
+export type SellerApplicationAction = "approve" | "reject" | "reopen" | "revoke";
+
+export async function updateSellerApplicationSupabase(
+  id: string,
+  action: SellerApplicationAction
+): Promise<Seller | null> {
+  return requestJson<Seller | null>("/api/sellers", {
+    method: "PATCH",
+    // Legacy admin shape of PATCH /api/sellers (admin-only fields).
+    body: JSON.stringify({
+      id,
+      is_verified: action === "approve",
+      kyc_status: action === "approve" ? "verified" : "pending",
+      application_status:
+        action === "approve"
+          ? "approved"
+          : action === "reject"
+            ? "rejected"
+            : "pending",
+    }),
+  });
+}
+
+// The four payout-display fields of the private seller_payout_kyc table
+// (0006) — served by the admin-only /api/sellers/[id]/payout route.
+export interface SellerPayoutDetails {
+  pan?: string;
+  bank_account_number?: string;
+  bank_ifsc?: string;
+  bank_account_holder?: string;
+}
+
+export async function fetchSellerPayoutSupabase(
+  id: string
+): Promise<SellerPayoutDetails> {
+  return requestJson<SellerPayoutDetails>(
+    `/api/sellers/${encodeURIComponent(id)}/payout`,
+    { method: "GET" }
+  );
+}
+
 // Step 6 — a maker edits their own storefront (name, story, WhatsApp,
 // address, coordinates). Sends the structured { id, updates } shape the
 // PATCH route expects; the route re-derives ownership from the cookie

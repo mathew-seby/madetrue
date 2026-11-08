@@ -20,10 +20,21 @@ import {
   uploadProductImageSupabase,
   submitSellerSupabase,
   updateSellerVerificationSupabase,
+  updateSellerApplicationSupabase,
+  fetchSellerPayoutSupabase,
   updateSellerProfileSupabase,
   updateOrderStatusSupabase,
+  type SellerApplicationAction,
+  type SellerPayoutDetails,
 } from "./writeSupabase";
 import type { SellerProfileUpdates } from "./writeSupabase";
+
+// Re-exposed so the console can speak the same action/payload vocabulary
+// as the transport layer (admin page imports only from client.ts).
+export type {
+  SellerApplicationAction,
+  SellerPayoutDetails,
+} from "./writeSupabase";
 import {
   isValidOrderTransition,
   getInvalidTransitionMessage,
@@ -347,6 +358,64 @@ export async function updateSellerVerification(
     return sellers[index];
   }
   return null;
+}
+
+// Phase 5 Step 2 — admin moderation of a maker application. One action =
+// one consistent state; see updateSellerApplicationSupabase for the
+// field mapping it sends over /api/sellers PATCH.
+export async function updateSellerApplication(
+  id: string,
+  action: SellerApplicationAction
+): Promise<Seller | null> {
+  if (isSupabaseEnabled()) return updateSellerApplicationSupabase(id, action);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const sellers = getStoredSellers();
+  const index = sellers.findIndex((s) => s.id === id);
+  if (index === -1) return null;
+
+  const application_status: NonNullable<Seller["application_status"]> =
+    action === "approve"
+      ? "approved"
+      : action === "reject"
+        ? "rejected"
+        : "pending";
+  sellers[index] = {
+    ...sellers[index],
+    is_verified: action === "approve",
+    kyc_status: action === "approve" ? "verified" : "pending",
+    application_status,
+  };
+  saveStoredSellers(sellers);
+  return sellers[index];
+}
+
+// Payout display fields for the console's KYC card. Mock mode keeps them
+// inline on the stored seller; Supabase mode reads the private
+// seller_payout_kyc table through the admin-only /api/sellers/[id]/payout
+// route ({} when the maker hasn't submitted payout details yet).
+export async function getPayoutDetailsForSeller(
+  id: string
+): Promise<SellerPayoutDetails> {
+  if (isSupabaseEnabled()) return fetchSellerPayoutSupabase(id);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const seller = getStoredSellers().find((s) => s.id === id);
+  if (!seller) return {};
+  return {
+    pan: seller.pan,
+    bank_account_number: seller.bank_account_number,
+    bank_ifsc: seller.bank_ifsc,
+    bank_account_holder: seller.bank_account_holder,
+  };
+}
+
+// The honest application status of a seller row for the console. Rows
+// seeded before Phase 5 Step 2 carry no application_status; their
+// marketplace-visible outcome maps to approved whenever verification was
+// granted, pending otherwise.
+export function getApplicationStatus(
+  seller: Pick<Seller, "application_status" | "is_verified">
+): NonNullable<Seller["application_status"]> {
+  return seller.application_status ?? (seller.is_verified ? "approved" : "pending");
 }
 
 // Store settings: a maker updates their own store profile fields (Step 6).

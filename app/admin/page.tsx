@@ -7,11 +7,14 @@ import {
   getSellers, 
   getAllProductsAdmin, 
   updateProductStatus, 
-  updateSellerVerification, 
+  updateSellerApplication,
+  getPayoutDetailsForSeller,
+  getApplicationStatus,
   getOrdersAdmin, 
   updateOrderStatus, 
   updateOrderWhatsappStatus 
 } from "@/lib/supabase/client";
+import type { SellerApplicationAction, SellerPayoutDetails } from "@/lib/supabase/client";
 import { Order, Product, Seller } from "@/types";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { 
@@ -102,8 +105,14 @@ export default function AdminPage() {
 
   // Sub-tabs filters
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
-  const [sellerFilter, setSellerFilter] = useState<"all" | "pending" | "verified">("all");
+  const [sellerFilter, setSellerFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [orderFilter, setOrderFilter] = useState<"all" | "pending" | "accepted" | "completed" | "cancelled">("all");
+
+  // Payout display fields per maker store, hydrated from the private
+  // seller_payout_kyc table (mock: inline on the seller row) by the
+  // admin-only /api/sellers/[id]/payout route. `{}` → the card loses
+  // nothing to blades: it simply renders its "—" placeholders.
+  const [payoutsMap, setPayoutsMap] = useState<{ [sellerId: string]: SellerPayoutDetails }>({});
 
   // Expanded product detail
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
@@ -135,9 +144,23 @@ export default function AdminPage() {
         return acc;
       }, {} as { [key: string]: Seller });
 
+      // Payout cards: one admin-only fetch per maker, all in parallel.
+      // allSettled keeps one failing lookup (or a 403 from an expired
+      // session) from blanking the whole table — a failed slot just
+      // renders "—".
+      const payoutResults = await Promise.allSettled(
+        allSellers.map((s) => getPayoutDetailsForSeller(s.id))
+      );
+      const payoutMap: { [sellerId: string]: SellerPayoutDetails } = {};
+      allSellers.forEach((seller, i) => {
+        const result = payoutResults[i];
+        if (result.status === "fulfilled") payoutMap[seller.id] = result.value;
+      });
+
       setProducts(allProducts);
       setSellersList(allSellers);
       setSellersMap(sellerMap);
+      setPayoutsMap(payoutMap);
       setOrders(allOrders);
     } catch {
       showToast("Failed to fetch admin dashboard data", "error");
@@ -222,18 +245,30 @@ export default function AdminPage() {
     }
   };
 
-  const handleToggleVerification = async (sellerId: string, currentStatus: boolean) => {
+  const handleSellerApplication = async (sellerId: string, action: SellerApplicationAction) => {
+    const seller = sellersList.find((s) => s.id === sellerId);
+    const name = seller?.business_name ?? "That maker";
+
+    // Revoking an approved maker hides their whole store — require the
+    // deliberate click a confirm dialog asks for. Other transitions are
+    // reversible queue moves and stay one-click (like product review).
+    if (action === "revoke" && !window.confirm(`Revoke ${name}'s approval? Their store and products are removed from the marketplace until the application is approved again.`)) {
+      return;
+    }
+
     try {
-      const updated = await updateSellerVerification(sellerId, !currentStatus);
+      const updated = await updateSellerApplication(sellerId, action);
       if (updated) {
+        const st = getApplicationStatus(updated);
+        const stLabel = st === "approved" ? "approved" : st === "rejected" ? "rejected" : "back in the pending queue";
         showToast(
-          `Seller "${updated.business_name}" verification status is now ${updated.is_verified ? "Verified" : "Unverified"}.`,
+          `Application of "${updated.business_name}" is now ${stLabel}.`,
           "success"
         );
         loadModerationData();
       }
     } catch {
-      showToast("Failed to update seller verification.", "error");
+      showToast("Could not update the application. Try again.", "error");
     }
   };
 
@@ -283,9 +318,8 @@ export default function AdminPage() {
         : rejectedProducts;
 
   const filteredSellersList = sellersList.filter((s) => {
-    if (sellerFilter === "pending") return !s.is_verified;
-    if (sellerFilter === "verified") return s.is_verified;
-    return true;
+    if (sellerFilter === "all") return true;
+    return getApplicationStatus(s) === sellerFilter;
   });
 
   const filteredOrdersList = orders.filter((o) => {
@@ -300,11 +334,9 @@ export default function AdminPage() {
     return 0;
   };
 
-  const getSellerCount = (tab: "all" | "pending" | "verified") => {
+  const getSellerCount = (tab: "all" | "pending" | "approved" | "rejected") => {
     if (tab === "all") return sellersList.length;
-    if (tab === "pending") return sellersList.filter(s => !s.is_verified).length;
-    if (tab === "verified") return sellersList.filter(s => s.is_verified).length;
-    return 0;
+    return sellersList.filter((s) => getApplicationStatus(s) === tab).length;
   };
 
   const getOrderCount = (tab: "all" | "pending" | "accepted" | "completed" | "cancelled") => {
@@ -743,8 +775,8 @@ export default function AdminPage() {
         {currentSection === "sellers" && (
           <div className="space-y-6">
             {/* Sub Tabs */}
-            <div className="flex border-b border-warm-brown/10">
-              {(["all", "pending", "verified"] as const).map((tab) => (
+            <div className="flex border-b border-warm-brown/10 overflow-x-auto whitespace-nowrap scrollbar-none">
+              {(["all", "pending", "approved", "rejected"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setSellerFilter(tab)}
@@ -754,7 +786,7 @@ export default function AdminPage() {
                       : "border-transparent text-text-dark/50 hover:text-text-dark"
                   }`}
                 >
-                  {tab === "all" ? "All Makers" : tab === "pending" ? "Pending Verification" : "Verified Makers"} ({getSellerCount(tab)})
+                  {tab === "all" ? "All Makers" : tab === "pending" ? "Pending Review" : `${tab} Makers`} ({getSellerCount(tab)})
                 </button>
               ))}
             </div>
@@ -768,6 +800,8 @@ export default function AdminPage() {
                 {filteredSellersList.map((seller) => {
                   const makerProducts = products.filter((p) => p.seller_id === seller.id);
                   const inErnakulam = isCoordinatesInErnakulam(seller.lat, seller.lng);
+                  const applicationStatus = getApplicationStatus(seller);
+                  const payout = payoutsMap[seller.id] ?? {};
                   return (
                     <div key={seller.id} className="bg-[#FAF7F2] rounded-3xl border border-warm-brown/10 p-6 space-y-5 shadow-sm hover:border-primary-green/20 transition">
                       <div className="flex items-center space-x-4">
@@ -781,14 +815,20 @@ export default function AdminPage() {
                         <div className="min-w-0 flex-grow">
                           <h3 className="font-serif text-lg font-bold text-text-dark truncate flex items-center gap-1.5">
                             {seller.business_name}
-                            {seller.is_verified && <Award className="h-4.5 w-4.5 text-primary-green fill-primary-green/10" />}
+                            {applicationStatus === "approved" && seller.is_verified && <Award className="h-4.5 w-4.5 text-primary-green fill-primary-green/10" />}
                           </h3>
                           <span className={`inline-flex items-center text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full font-sans ${
-                            seller.is_verified 
-                              ? "bg-primary-green/15 text-primary-green" 
-                              : "bg-amber-100 text-amber-800"
+                            applicationStatus === "approved"
+                              ? "bg-primary-green/15 text-primary-green"
+                              : applicationStatus === "rejected"
+                                ? "bg-red-100 text-red-700"
+                                : "bg-amber-100 text-amber-800"
                           }`}>
-                            {seller.is_verified ? "Verified Maker" : "Pending Verification"}
+                            {applicationStatus === "approved"
+                              ? "Approved Maker"
+                              : applicationStatus === "rejected"
+                                ? "Application Rejected"
+                                : "Pending Review"}
                           </span>
                         </div>
                       </div>
@@ -840,59 +880,79 @@ export default function AdminPage() {
                         </a>
                       </div>
 
-                      {/* Payout KYC Details (Cashfree Easy Split) */}
+                      {/* Payout KYC Details (Cashfree Easy Split) — hydrated
+                          from the private seller_payout_kyc table */}
                       <div className="bg-cream-bg p-3.5 rounded-2xl border border-warm-brown/5 space-y-1.5 font-sans">
                         <div className="flex items-center justify-between">
                           <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider flex items-center">
                             <CreditCard className="h-3 w-3 mr-1 text-primary-green" /> Payout KYC Details
                           </span>
                           <span className={`text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                            seller.kyc_status === "verified" || seller.is_verified
+                            seller.kyc_status === "verified"
                               ? "bg-primary-green/15 text-primary-green"
-                              : "bg-amber-100 text-amber-800"
+                              : seller.kyc_status === "failed"
+                                ? "bg-red-100 text-red-700"
+                                : "bg-amber-100 text-amber-800"
                           }`}>
-                            KYC: {seller.kyc_status || (seller.is_verified ? "verified" : "pending")}
+                            KYC: {seller.kyc_status || (applicationStatus === "approved" ? "verified" : "pending")}
                           </span>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
                           <div>
                             <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">PAN</span>
-                            <span className="font-mono font-bold text-text-dark">{seller.pan || "—"}</span>
+                            <span className="font-mono font-bold text-text-dark">{payout.pan || "—"}</span>
                           </div>
                           <div>
                             <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">Bank Account</span>
                             <span className="font-mono font-bold text-text-dark">
-                              {seller.bank_account_number ? `••••${seller.bank_account_number.slice(-4)}` : "—"}
+                              {payout.bank_account_number ? `••••${payout.bank_account_number.slice(-4)}` : "—"}
                             </span>
                           </div>
                           <div>
                             <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">IFSC</span>
-                            <span className="font-mono font-bold text-text-dark">{seller.bank_ifsc || "—"}</span>
+                            <span className="font-mono font-bold text-text-dark">{payout.bank_ifsc || "—"}</span>
                           </div>
                           <div>
                             <span className="text-[8px] font-bold text-warm-brown/60 uppercase block">Holder</span>
-                            <span className="font-medium text-text-dark truncate block" title={seller.bank_account_holder}>
-                              {seller.bank_account_holder || seller.business_name}
+                            <span className="font-medium text-text-dark truncate block" title={payout.bank_account_holder}>
+                              {payout.bank_account_holder || seller.business_name}
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex justify-end gap-2 pt-2.5">
-                        {seller.is_verified ? (
+                      <div className="flex flex-wrap justify-end gap-2 pt-2.5">
+                        {applicationStatus === "approved" && (
                           <button
-                            onClick={() => handleToggleVerification(seller.id, true)}
+                            onClick={() => handleSellerApplication(seller.id, "revoke")}
                             className="px-4 py-2 border border-red-200 hover:bg-red-50 text-red-600 text-xs font-bold rounded-xl transition cursor-pointer font-sans"
                           >
-                            Revoke Verification Status
+                            Revoke Approval
                           </button>
-                        ) : (
+                        )}
+                        {applicationStatus === "rejected" && (
                           <button
-                            onClick={() => handleToggleVerification(seller.id, false)}
-                            className="px-4 py-2 bg-primary-green hover:bg-[#224f3b] text-cream-bg text-xs font-bold rounded-xl transition cursor-pointer font-sans"
+                            onClick={() => handleSellerApplication(seller.id, "reopen")}
+                            className="px-4 py-2 border border-warm-brown/20 hover:bg-warm-brown/5 text-warm-brown text-xs font-bold rounded-xl transition cursor-pointer font-sans"
                           >
-                            Verify & Approve Maker
+                            Reopen (Back to Pending)
                           </button>
+                        )}
+                        {applicationStatus === "pending" && (
+                          <>
+                            <button
+                              onClick={() => handleSellerApplication(seller.id, "reject")}
+                              className="px-4 py-2 border border-red-200 hover:bg-red-50 text-red-600 text-xs font-bold rounded-xl transition cursor-pointer font-sans"
+                            >
+                              Reject Application
+                            </button>
+                            <button
+                              onClick={() => handleSellerApplication(seller.id, "approve")}
+                              className="px-4 py-2 bg-primary-green hover:bg-[#224f3b] text-cream-bg text-xs font-bold rounded-xl transition cursor-pointer font-sans"
+                            >
+                              Approve Maker
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
