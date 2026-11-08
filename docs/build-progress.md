@@ -11,8 +11,8 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 4 · Step 6/7 — Store settings — ⬜ pending
-**Last completed:** Phase 4 · Step 5/7 — Dashboard stats — commit "feat(phase4): wire dashboard stats" — 2026-11-08
+**Current position:** Phase 4 · Step 7/7 — Isolation test — ⬜ pending
+**Last completed:** Phase 4 · Step 6/7 — Store settings — commit "feat(phase4): store settings and payout status" — 2026-11-08
 **Baseline gates (this step):** tsc ✅ · eslint ✅ (0 errors / 34 warnings) · build ✅ (21 routes) · smoke 11/11 on :4010
 
 ---
@@ -68,7 +68,7 @@
 | 3 | Order inbox | seller sees own orders only; tabs by status | ✅ done | feat(phase4): seller order inbox and status tabs | 2026-11-08 |
 | 4 | Status actions | accept→ready→delivered persists; invalid rejected | ✅ done | feat(phase4): order status actions and transition enforcement | 2026-11-08 |
 | 5 | Dashboard stats | today/total orders, revenue, pending — accurate | ✅ done | feat(phase4): wire dashboard stats | 2026-11-08 |
-| 6 | Store settings | story/WhatsApp/location editable; payout status visible | ⬜ pending | — | — |
+| 6 | Store settings | story/WhatsApp/location editable; payout status visible | ✅ done | feat(phase4): store settings and payout status | 2026-11-08 |
 | 7 | Isolation test | seller A cannot read/modify seller B; proof documented | ⬜ pending | — | — |
 
 **Phase done when:** a seller creates an image product, an order moves through real statuses, and two-seller isolation is proven with a query test.
@@ -151,6 +151,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-08 | Phase 4 Step 6 ✔ | Store settings: dashboard gains a fourth tab — store name, WhatsApp, address, maker story and coordinates editable in place, with paste-a-Maps-link parsing (`parseGoogleMapsUrl`), honest geolocation detection, Reset Changes guard, and friendly error surfacing through `updateSellerProfile`'s thrown messages; payout state surfaced as a dedicated card (verified+`kyc_status=verified` → "Payouts Active" green, `failed` → red blocked, otherwise amber "Under Review"). Data layer: `updateSellerProfile` added to client.ts (mock path mirrors route validation — trims strings, requires name/WhatsApp, lat/lng finite + range-guarded) + `updateSellerProfileSupabase` in writeSupabase.ts (structured `{id, updates}` PATCH); `PATCH /api/sellers` rewritten around `getServerUser()` cookie session (new `lib/supabase/server-auth.ts`) — owner-or-admin only, `OWNER_EDITABLE_FIELDS` allow-list (business_name/story/whatsapp_number/address/lat/lng), verification fields admin-only, legacy admin console `{id, is_verified, kyc_status}` shape preserved. tsc ✅ · eslint 0 errors / 34 warnings (no new) · worktree build ✅ (21 routes) · smoke 11/11 on :4010. Owner commit pending. |
 | 2026-11-08 | Phase 4 Step 5 ✔ | Dashboard stats: lib/utils/dashboardStats rewritten as pure computeDashboardStats (revenue = price × quantity + delivery_fee, cancelled excluded; "today" in the viewer's local day); dashboard derives the numbers with useMemo from the same myOrders the inbox shows and renders four palette StatsCards above the tabs (hidden while loading); StatsCard restyled to MADETRUE palette (was default slate); dead getDashboardStats/stats/setStats state removed; tsc ✅ · eslint 0 errors / 34 warnings (−4 unused) · worktree build ✅ (21 routes) · smoke 11/11 on :4010. Owner commit pending. |
 | 2026-11-08 | Phase 4 hotfix ✔ | Security: `GET`/`PATCH /api/sellers` now select an explicit public column list (mirrors `SELLER_COLUMNS` in readSupabase.ts) — `pan`, `bank_account_number`, `bank_ifsc`, `bank_account_holder` no longer leave the service role via these routes. Verified consumers: Supabase-mode `getSellers()` reads directly with the same tight columns; the API GET had no in-app caller; admin PATCH response is only used for `business_name`/`is_verified`. Residual (queued for Step 7 migration): the anon key can still query the raw `sellers` table since RLS grants `anon` select (`0002_rls.sql:282`) — payout columns need a private path (dedicated table or barrier view + grant changes). Also recorded: Step 4's 4-state machine accepted as final for Phase 4; `ready`/`delivered` deferred to Phase 7 Step 1. |
 | 2026-11-08 | Phase 4 Step 4 ✔ | Status actions: lib/utils/orderStatus defines state machine (pending → accepted → completed, plus cancelled; terminal states guarded); PATCH /api/orders validates seller ownership, enforces transition matrix with 400 errors, and restores product stock upon cancellation; writeSupabase & client.ts updated with updateOrderStatus; dashboard Order Inbox equipped with action controls (Accept Order, Mark Delivered / Ready & Picked Up, Cancel Order with confirmation) and feedback banners; in-place state and product stock updates; tsc ✅ · eslint 0 errors / 33 warnings · build ✅ (20/20 routes) · smoke 11/11 on :4010. Owner commit pending. |

@@ -20,8 +20,10 @@ import {
   uploadProductImageSupabase,
   submitSellerSupabase,
   updateSellerVerificationSupabase,
+  updateSellerProfileSupabase,
   updateOrderStatusSupabase,
 } from "./writeSupabase";
+import type { SellerProfileUpdates } from "./writeSupabase";
 import {
   isValidOrderTransition,
   getInvalidTransitionMessage,
@@ -345,6 +347,64 @@ export async function updateSellerVerification(
     return sellers[index];
   }
   return null;
+}
+
+// Store settings: a maker updates their own store profile fields (Step 6).
+// Validation mirrors the PATCH /api/sellers route so both data sources give
+// the same friendly messages: name and WhatsApp are required, coordinates
+// must be finite and in range, and every string is trimmed.
+export async function updateSellerProfile(
+  id: string,
+  updates: SellerProfileUpdates
+): Promise<Seller | null> {
+  if (isSupabaseEnabled()) {
+    return updateSellerProfileSupabase(id, updates);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const cleaned: SellerProfileUpdates = {};
+  const businessName = updates.business_name?.trim();
+  if (businessName !== undefined) {
+    if (businessName === "") {
+      throw new Error("Give your store a name — buyers know you by it.");
+    }
+    cleaned.business_name = businessName;
+  }
+  const whatsapp = updates.whatsapp_number?.trim();
+  if (whatsapp !== undefined) {
+    if (whatsapp === "") {
+      throw new Error("Add a WhatsApp number so buyers can reach you.");
+    }
+    cleaned.whatsapp_number = whatsapp;
+  }
+  if (updates.story !== undefined) cleaned.story = updates.story.trim();
+  if (updates.address !== undefined) cleaned.address = updates.address.trim();
+
+  const bounds = { lat: [-90, 90] as const, lng: [-180, 180] as const };
+  for (const key of ["lat", "lng"] as const) {
+    const value = updates[key];
+    if (value === undefined) continue;
+    const [min, max] = bounds[key];
+    if (
+      !Number.isFinite(value) ||
+      value < min ||
+      value > max
+    ) {
+      throw new Error(
+        key === "lat"
+          ? "Latitude must be a number between -90 and 90."
+          : "Longitude must be a number between -180 and 180."
+      );
+    }
+    cleaned[key] = value;
+  }
+
+  const sellers = getStoredSellers();
+  const index = sellers.findIndex((s) => s.id === id);
+  if (index === -1) return null;
+  sellers[index] = { ...sellers[index], ...cleaned };
+  saveStoredSellers(sellers);
+  return sellers[index];
 }
 
 // Helper to get orders list
