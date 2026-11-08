@@ -11,7 +11,7 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 4 · Step 5/7 — Dashboard stats — ⬜ pending
+**Current position:** Phase 4 · Step 5/7 — Dashboard stats — 🟡 in progress
 **Last completed:** Phase 4 · Step 4/7 — Status actions — commit "feat(phase4): order status actions and transition enforcement" — 2026-11-08
 **Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 33 warnings) · build ✅ (20 routes)
 

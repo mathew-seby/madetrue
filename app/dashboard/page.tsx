@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import StatsCard from '@/components/dashboard/StatsCard';
+import { getDashboardStats } from '@/lib/utils/dashboardStats';
+import type { DashboardStats } from '@/lib/utils/dashboardStats';
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus } from "@/lib/supabase/client";
@@ -21,6 +24,7 @@ export default function DashboardPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [myProducts, setMyProducts] = useState<Product[]>([]);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [orderFilter, setOrderFilter] = useState<"all" | "pending" | "accepted" | "completed" | "cancelled">("all");
   const [loading, setLoading] = useState(true);
 
