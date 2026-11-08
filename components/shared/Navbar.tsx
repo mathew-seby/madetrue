@@ -14,19 +14,9 @@ export default function Navbar() {
   const [language, setLanguage] = useState<"EN" | "ML">("EN");
   const { currentUser, logout } = useAuth();
   const { count: cartCount } = useCart();
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-
-  // Re-read the admin console session after each navigation ("adjusting state
-  // during render" pattern). sessionStorage is external to React and can change
-  // without a re-render (e.g. after the console login), so compare against the
-  // last path we synced for, which re-reads it exactly once per navigation.
-  const [lastSyncedPath, setLastSyncedPath] = useState<string | null>(null);
-  if (pathname !== lastSyncedPath) {
-    setLastSyncedPath(pathname);
-    if (typeof window !== "undefined") {
-      setIsAdminLoggedIn(sessionStorage.getItem("admin_logged_in") === "true");
-    }
-  }
+  // The admin-console badge follows the REAL session role — no separate
+  // console flag exists anymore (Phase 5 Step 1).
+  const isAdminAuthenticated = currentUser?.role === "admin";
 
   const toggleLanguage = () => {
     setLanguage((prev) => (prev === "EN" ? "ML" : "EN"));
@@ -82,19 +72,17 @@ export default function Navbar() {
           {/* Right Action Icons */}
           <div className="hidden md:flex items-center space-x-6">
             {isAdminRoute ? (
-              isAdminLoggedIn && (
+              isAdminAuthenticated && (
                 <div className="flex items-center space-x-3">
                   <div className="flex items-center space-x-2 text-sm font-semibold text-text-dark">
                     <div className="w-7 h-7 rounded-full bg-amber-800/10 text-amber-800 flex items-center justify-center font-bold text-xs">
-                      A
+                      {(currentUser?.name ?? "A").charAt(0).toUpperCase()}
                     </div>
                     <span>Admin</span>
                   </div>
                   <button
-                    onClick={() => {
-                      if (typeof window !== "undefined") {
-                        sessionStorage.removeItem("admin_logged_in");
-                      }
+                    onClick={async () => {
+                      await logout();
                       window.location.href = "/admin/login";
                     }}
                     className="p-1.5 text-text-dark/60 hover:text-red-600 transition border-l border-warm-brown/20 pl-3.5"
@@ -164,19 +152,17 @@ export default function Navbar() {
           {/* Mobile menu button / admin info */}
           <div className="flex items-center space-x-4 md:hidden">
             {isAdminRoute ? (
-              isAdminLoggedIn && (
+              isAdminAuthenticated && (
                 <div className="flex items-center space-x-3">
                   <div className="flex items-center space-x-1.5 text-xs font-semibold text-text-dark">
                     <div className="w-6.5 h-6.5 rounded-full bg-amber-800/10 text-amber-800 flex items-center justify-center font-bold text-[10px]">
-                      A
+                      {(currentUser?.name ?? "A").charAt(0).toUpperCase()}
                     </div>
                     <span>Admin</span>
                   </div>
                   <button
-                    onClick={() => {
-                      if (typeof window !== "undefined") {
-                        sessionStorage.removeItem("admin_logged_in");
-                      }
+                    onClick={async () => {
+                      await logout();
                       window.location.href = "/admin/login";
                     }}
                     className="p-1 text-text-dark/60 hover:text-red-600 transition border-l border-warm-brown/20 pl-2.5"

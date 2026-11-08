@@ -37,6 +37,15 @@ const DEFAULT_USERS = [
     phone: "9876543213",
     role: "seller" as const,
   },
+  {
+    // Phase 5 Step 1: the console login verifies this real account's role —
+    // the old demo passcode stored in sessionStorage is gone.
+    id: "user-admin-1",
+    name: "MadeTrue Moderator",
+    email: "admin@madetrue.local",
+    phone: "9000000001",
+    role: "admin" as const,
+  },
 ];
 
 export interface StoredUser extends User {
@@ -49,7 +58,9 @@ export function getStoredUsers(): StoredUser[] {
   if (!usersStr) {
     const seeded: StoredUser[] = DEFAULT_USERS.map((u) => ({
       ...u,
-      passwordHash: "password123", // default password for testing seeded users
+      // Default password for testing seeded users; the moderator keeps the
+      // console passcode the demo box advertises.
+      passwordHash: u.role === "admin" ? "kerala_trust_2026" : "password123",
     }));
     localStorage.setItem(USERS_KEY, JSON.stringify(seeded));
     return seeded;

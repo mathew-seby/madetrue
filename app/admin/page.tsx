@@ -86,7 +86,7 @@ const MOCK_SEEDED_ORDERS = [
 
 export default function AdminPage() {
   const router = useRouter();
-  const { currentUser, loading: authLoading } = useAuth();
+  const { currentUser, loading: authLoading, logout } = useAuth();
   const [authorized, setAuthorized] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
@@ -146,43 +146,36 @@ export default function AdminPage() {
     }
   }, [showToast]);
 
-  // Authentication check on mount (user role or sessionStorage-backed console session).
+  // Authentication check on mount: the console is admin-only and the
+  // decision is derived from the REAL session (AuthProvider), never from a
+  // stored console flag. Guests are sent to the console login; signed-in
+  // non-admins are blocked with the landing below.
   useEffect(() => {
     if (authLoading) return;
 
     /* eslint-disable react-hooks/set-state-in-effect -- mount sync of external/auth store */
-    if (currentUser) {
-      if (currentUser.role === "admin") {
-        setAuthorized(true);
-        setCheckingAuth(false);
-        loadModerationData();
-      } else {
-        // Block signed-in non-admin accounts
-        setAuthorized(false);
-        setCheckingAuth(false);
-      }
+    if (currentUser && currentUser.role === "admin") {
+      setAuthorized(true);
+      setCheckingAuth(false);
+      loadModerationData();
       return;
     }
 
-    if (typeof window !== "undefined") {
-      const isLoggedIn = sessionStorage.getItem("admin_logged_in") === "true";
-      if (!isLoggedIn) {
-        setAuthorized(false);
-        setCheckingAuth(false);
-        router.push("/admin/login");
-      } else {
-        setAuthorized(true);
-        setCheckingAuth(false);
-        loadModerationData();
-      }
+    if (currentUser) {
+      // Block signed-in non-admin accounts
+      setAuthorized(false);
+      setCheckingAuth(false);
+      return;
     }
+
+    // Guest: the console login is the front door. The spinner stays on
+    // until the navigation lands, so the blocked screen never flashes.
+    router.replace("/admin/login");
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [router, loadModerationData, currentUser, authLoading]);
 
-  const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      sessionStorage.removeItem("admin_logged_in");
-    }
+  const handleLogout = async () => {
+    await logout();
     router.push("/admin/login");
   };
 
