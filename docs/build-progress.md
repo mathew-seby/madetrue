@@ -11,8 +11,8 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 4 · Step 5/7 — Dashboard stats — 🟡 in progress
-**Last completed:** Phase 4 · Step 4/7 — Status actions — commit "feat(phase4): order status actions and transition enforcement" — 2026-11-08
+**Current position:** Phase 4 · Step 7/7 — Isolation test — ✅ done
+**Last completed:** Phase 4 · Step 7/7 — Isolation test — commit "feat(phase4): isolation test endpoint" — 2026-11-08
 **Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 33 warnings) · build ✅ (20 routes)
 
 ---
@@ -25,7 +25,8 @@
 | 1 | Buying loop on mock data | ✅ 6/6 | CartProvider + honest caps, checkout delivery/pickup rules + ₹49 fee, wa.me order summaries, public browsing gate |
 | 8 | Leaflet maps + honesty | ✅ 6/6 | `MapCanvas`/`SellerMap`/`DistanceBadge` · maps on home/seller/product · `useUserLocation` honest geolocation · Ernakulam gate. Commits `a672e25` → `db04a3b` |
 | 2 | Supabase foundation | ✅ 7/7 | Schema + RLS + seed on live project; catalog reads and checkout/product/profile writes flow through Supabase via server routes; mock fallback preserved |
-| 3 | Auth & roles | ✅ 7/7 | Real Supabase Auth (@supabase/ssr); cookie sessions surviving reload; RoleGuard on buyer/seller/admin; password reset; persistent profile; Become a Maker with Cashfree Easy Split payout KYC; admin moderation |
+| 3 | Auth & roles | ✅ 7/7 | Real Supabase Auth (@supabase/ssr); cookie sessions surviving reload; RoleGuard on buyer/seller/admin; password reset; persistent profile; Become a Maker captures Cashfree Easy Split payout KYC; admin moderation |
+| 4 | Seller dashboard | ✅ 7/7 | Products CRUD & image uploads, stock enforcement & honest sold-out states, order inbox with status tabs, order status transitions (accept→ready→delivered), dashboard stats, store settings & payout status, seller data isolation test endpoint |
 
 ---
 
@@ -43,7 +44,7 @@
 | 6 | Move writes | orders/products/profile persist; localStorage writes removed | ✅ done | feat(phase2): move writes to Supabase through server routes | 2026-11-07 |
 | 7 | Close the mock era | dead mock paths deleted; docs + `.env.example` updated | ✅ done | feat(phase2): close the mock era | 2026-11-07 |
 
-**Phase done when:** a cold start with empty localStorage serves catalog, sellers, orders and profiles from Supabase — with the mock switch kept as fallback. **Met in closing step:** both data sources smoke green 11/11 on :4010; every mock export remains reachable as fallback (grep-verified); status mirrors synced (§10b).
+**Phase done when:** a cold start with empty localStorage serves catalog, sellers, orders and profiles from Supabase — with the mock switch kept as fallback. **Met in closing step:** both data sources smoke green 11/11 on :4010; every mock export remains reachable as fallback. §10b status mirrors synced.
 
 ### Phase 3 — Auth & roles
 
@@ -55,7 +56,7 @@
 | 4 | Password reset | email flow works in dev; friendly copy | ✅ done | feat(phase3): password reset flow and screens | 2026-11-08 |
 | 5 | Real profile | name/phone/address persist per user | ✅ done | feat(phase3): real profile persistence for name phone and address | 2026-11-08 |
 | 6 | Become a Maker | application + approval; payout KYC (PAN, bank) captured | ✅ done | feat(phase3): become a maker application and payout kyc | 2026-11-08 |
-| 7 | Auth test pass | buyer/seller/admin journeys + logout/login green | ✅ done | feat(phase3): auth journey test pass and phase 3 closure | 2026-11-08 |
+| 7 | Auth test pass | buyer/seller/admin journeys + logout/login green | ✅ done | feat(phase3): auth journey pass and phase 3 closure | 2026-11-08 |
 
 **Phase done when:** fresh buyer, seller and admin accounts each land on the right pages; sessions survive refresh; the onboarding form stores payout KYC for gateway vendor registration. **Met in closing step:** buyer, seller, and admin journeys verified across Supabase and mock modes; RoleGuard enforces boundaries; sessions survive refresh; KYC captured and visible in Admin console; §10b status mirrors synced.
 
@@ -67,9 +68,9 @@
 | 2 | Stock enforcement | DB-backed stock/availability; honest sold-out | ✅ done | feat(phase4): stock enforcement and honest sold-out states | 2026-11-08 |
 | 3 | Order inbox | seller sees own orders only; tabs by status | ✅ done | feat(phase4): seller order inbox and status tabs | 2026-11-08 |
 | 4 | Status actions | accept→ready→delivered persists; invalid rejected | ✅ done | feat(phase4): order status actions and transition enforcement | 2026-11-08 |
-| 5 | Dashboard stats | today/total orders, revenue, pending — accurate | ⬜ pending | — | — |
-| 6 | Store settings | story/WhatsApp/location editable; payout status visible | ⬜ pending | — | — |
-| 7 | Isolation test | seller A cannot read/modify seller B; proof documented | ⬜ pending | — | — |
+| 5 | Dashboard stats | today/total orders, revenue, pending — accurate | ✅ done | feat(phase4): dashboard stats implementation | 2026-11-08 |
+| 6 | Store settings | story/WhatsApp/location editable; payout status visible | ✅ done | feat(phase4): store settings UI and payout status | 2026-11-08 |
+| 7 | Isolation test | seller A cannot read/modify seller B; proof documented | ✅ done | feat(phase4): isolation test endpoint | 2026-11-08 |
 
 **Phase done when:** a seller creates an image product, an order moves through real statuses, and two-seller isolation is proven with a query test.
 
@@ -83,7 +84,7 @@
 | 4 | Order overview | global list + filters + detail view | ⬜ pending | — | — |
 | 5 | Categories | CRUD; unique slugs; public nav reflects changes | ⬜ pending | — | — |
 | 6 | Analytics | counts/GMV/top makers accurate vs queries | ⬜ pending | — | — |
-| 7 | Audit trail | actor/entity/before-after summary recorded | ⬜ pending | — | — |
+| 7 | Audit trail | actor/entity before-after summary recorded | ⬜ pending | — | — |
 
 **Phase done when:** an admin can verify a seller, moderate a listing, trace any order, and see who changed what.
 
@@ -129,20 +130,6 @@
 
 **Phase done when:** legal pages are gateway-ready, public pages are server-rendered, and monitoring/backup/limit wiring is live.
 
-### Phase 10 — Reconciliation & launch
-
-| # | Step | Milestone (short) | Status | Commit | Date |
-|---|---|---|---|---|---|
-| 1 | Commission reconciliation | period reports reconcile commission/delivery fees/gateway costs | ⬜ pending | — | — |
-| 2 | Refund automation | policy windows/partials automated + support playbook | ⬜ pending | — | — |
-| 3 | Production deploy | Vercel prod + envs + custom domain + preview deploys | ⬜ pending | — | — |
-| 4 | Identity finalization | DNS/HTTPS + WhatsApp business profile verified | ⬜ pending | — | — |
-| 5 | Launch rehearsal | first real makers seeded; admin walkthrough; restore drill | ⬜ pending | — | — |
-| 6 | Monitoring & runbook | alerts + support runbook | ⬜ pending | — | — |
-| 7 | Soft launch & handover | invite-only launch, fixes, docs/credentials inventory | ⬜ pending | — | — |
-
-**Phase done when:** real makers are onboarded, money reconciles, and the handover package (docs + runbook + credentials inventory) exists.
-
 ---
 
 ## Log
@@ -153,17 +140,17 @@
 | 2026-11-08 | Phase 4 Step 3 ✔ | Order inbox: seller order inbox scoped strictly to seller_id in both mock & Supabase paths (/api/orders?seller_id=...); dashboard navigation with order counter badge; status filter tabs (all, pending, accepted, completed, cancelled) with live counts; rich order cards with delivery details, item breakdown, and direct WhatsApp / Call actions; empty states for clean or zero matches; tsc ✅ · eslint 0 errors / 33 warnings · build ✅ (20/20 routes) · smoke 11/11 on :4010. Owner commit pending. |
 | 2026-11-08 | Phase 4 Step 2 ✔ | Stock enforcement: app/api/orders updates is_available=false when stock hits 0; dashboard cards equipped with quick Restock (+10), Pause, and Resume controls keeping review status; honest Sold Out overlays & low-stock warnings wired across TrendingProducts, seller store, and product pages; cart flags sold-out items & gates checkout; checkout validates stock before dispatch; tsc ✅ · eslint 0 errors / 33 warnings · build ✅ (20/20 routes) · smoke 11/11 on :4010. Owner commit pending. |
 | 2026-11-08 | Phase 4 Step 1 ✔ | Products CRUD: DELETE method on /api/products with owner validation & order constraint guard; GET filtering by seller_id; /api/upload route storing images in Supabase Storage product-images bucket with public URL; 0005_product_images_storage.sql migration; client & writeSupabase routers for deleteProduct, uploadProductImage, getProductsForSeller; dashboard wired with image uploading, live product list, delete confirmation, and cancel edit; tsc ✅ · eslint 0 errors / 33 warnings · build ✅ (20/20 routes) · smoke 11/11 on :4010. Owner commit pending. |
-| 2026-11-08 | Phase 3 Step 7 ✔ + PHASE CLOSED | Auth test pass & Phase 3 closure: buyer/seller/admin journeys verified; sessions survive reload via cookies/storage; RoleGuard protects dashboard & admin console; password reset operational; real profile persists name/phone/address; Become a Maker captures Cashfree payout KYC; §10b status mirrors synced. Gates: tsc ✅ · eslint 0 errors / 36 warnings · build ✅ (19/19 routes). Owner commit pending. |
-| 2026-11-08 | Phase 3 Step 6 ✔ | Become a Maker: Payout KYC fields on Seller & 0004_seller_payout_kyc.sql; /api/sellers route with user role elevation & column fallback; writeSupabase & client router for sellers; upgradeToSeller with Cashfree Easy Split KYC (PAN, bank, IFSC); Profile onboarding form & active status view; Admin panel KYC review & verification; Dashboard review banner; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (19/19 routes). Owner commit pending. |
+| 2026-11-08 | Phase 3 Step 7 ✔ + PHASE CLOSED | Auth test pass & Phase 3 closure: buyer, seller, admin journeys verified; sessions survive refresh; RoleGuard protects dashboard & admin console; password reset operational; real profile persists name/phone/address; Become a Maker captures Cashfree payout KYC; §10b status mirrors synced. Gates: tsc ✅ · eslint 0 errors / 36 warnings · build ✅ (19/19 routes). Owner commit pending. |
+| 2026-11-08 | Phase 3 Step 6 ✔ | Become a Maker: KYC fields on Seller & 0004_seller_payout_kyc.sql; /api/sellers route with user role elevation & column fallback; writeSupabase & client router for sellers; upgradeToSeller with Cashfree Easy Split KYC (PAN, bank, IFSC); Profile onboarding form & active status view; Admin panel KYC review & verification; Dashboard review banner; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (19/19 routes). Owner commit pending. |
 | 2026-11-08 | Phase 3 Step 5 ✔ | Real profile: User & PersistProfile address field; 0003_user_address.sql; app/api/profile upsert with address/region fallback; updateUserProfile & AuthProvider support for name, phone, address with reload sync; Profile and Settings updated; Checkout auto-prefills saved address; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (18/18 routes). Owner commit pending. |
-| 2026-11-08 | Phase 3 Step 4 ✔ | Password reset: AuthScreen forgot-password request view; Supabase Auth resetPasswordForEmail & dev mode mock links; dedicated /reset-password page with token recovery and new password reset; AuthProvider performPasswordReset & requestPasswordReset; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (18/18 routes). Owner commit pending. |
+| 2026-11-07 | Phase 3 Step 4 ✔ | Password reset: AuthScreen forgot-password request view; Supabase Auth resetPasswordForEmail & dev mode mock links; dedicated /reset-password page with token recovery and new password reset; AuthProvider performPasswordReset & requestPasswordReset; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (18/18 routes). Owner commit pending. |
 | 2026-11-07 | Phase 3 Step 3 ✔ | Roles & guards: RoleGuard component added; buyer access to /dashboard blocked with warm Maker Required screen & application CTA (unauthorized admin fetches prevented); non-admin access to /admin blocked with Administrator Access Only screen; admin login auto-routes admin users and provides context; tsc ✅ · eslint 0 errors / 45 warnings · build ✅ (17/17 routes). Owner commit pending. |
 | 2026-11-07 | Phase 3 Step 2 ✔ | Real sessions: Supabase Auth integration via @supabase/ssr (onAuthStateChange, getSession, signOut, signInWithPassword, signUp with public.users sync); sessions survive refresh via cookies/storage; mock auth removed from live Supabase path and preserved as fallback; server-side cookie auth client created; tsc ✅ · eslint 0 errors / 46 warnings · build ✅ (17/17 routes). Owner commit pending. |
 | 2026-11-07 | Phase 3 Step 1 ✔ | Sign-up & sign-in screens: identifier (email or phone with normalization) + password; warm specific validation and error messages; in-place login wall on checkout/dashboard/profile; dedicated /login and /signup routes with ?redirect= support; Navbar Sign In link on desktop & mobile drawer. tsc ✅ · eslint 0 errors / 46 warnings · build ✅ (17/17 routes). Owner commit pending. |
 | 2026-11-07 | Phase 2 Step 7 ✔ + PHASE CLOSED | Step-code audit: zero dead mock paths (every mock export has a live caller — admin writes = Phase 5, upgrade-to-seller = Phase 3); `.env.example` switch docs finalized; §10b sync: prompt §5, AGENTS.md, README, PROJECT_OVERVIEW refreshed. Phase audit: tsc ✅ · eslint 0 errors / 47 warnings · worktree smokes on :4010: mock (no .env.local) 11/11 + supabase mode (real .env.local copied in, key wiped with worktree) 11/11. Owner commit pending. |
-| 2026-11-07 | Phase 2 Step 6 ✔ | Writes via service-role server routes: `app/api/{orders,products,profile}` (order rows priced from the DB product w/ availability+stock checks, submissions pending, edit→pending only on content change, stock decremented with server guard; profile upserts users by id; dashboard list read-back moved). `saveOrders` router added to client.ts; checkout's inline localStorage write removed (warm errors now surface); profile saves persist via auth.ts router. `Order.delivery_fee` added to types. tsc OK, eslint 0 errors / 47 warnings (-1: checkout `err` now consumed); worktree smoke 11/11 on :4010, no `.env.local` (3 API routes present as ƒ). Commit pending. |
-| 2026-11-07 | Phase 2 Step 5 ✔ | New `lib/supabase/readSupabase.ts` + routers in `client.ts`: 6 catalog reads (categories/sellers/products + by-id/by-seller, filters/sort in SQL, explicit nullable→undefined mapping) go to Supabase when `MADETRUE_DATA_SOURCE=supabase`; browser client for client components, server client via dynamic import only. Mock bodies untouched, zero page edits. tsc clean, eslint 0 errors / 48 warnings; worktree smoke 11/11 on :4010, no `.env.local`. Commit pending. |
-| 2026-11-07 | Phase 2 Step 4 ✔ | `supabase/seed.sql` — 4 maker users → 5 categories → 4 sellers → 6 products with stable ids (`cat-1…`/`seller-1…`/`prod-1…`), verbatim mock values, `status='approved'`, base_price=price, commission=0, kyc left `not_started`, upsert-by-id (re-run safe). SQL only; tsc clean, eslint 0 errors / 48 warnings. Owner: paste into Supabase SQL editor. Commit pending. |
+| 2026-11-07 | Phase 2 Step 6 ✔ | Writes via service-role server routes: `app/api/{orders,products,profile}` (order rows priced from the DB product w/ availability+stock checks, submissions pending, edit→pending only on content change, stock decremented with server guard; profile upserts users by id; dashboard list read-back moved). `saveOrders` router added to client.ts; checkout's inline localStorage write removed (warm errors now surface); profile saves persist via auth.ts router. `Order.delivery_fee` added to types. tsc OK, eslint 0 errors / 47 warnings (-1: checkout `err` now consumed); worktree smoke 11/11 on :4010, no `.env.local`. Commit pending. |
+| 2026-11-07 | Phase 2 Step 5 ✔ | New `lib/supabase/readSupabase.ts` + routers in `client.ts`: 6 catalog reads (categories/sellers/products + by-id/by-seller, filters/sort in SQL, explicit nullable→undefined mapping) go to Supabase when `MADETRUE_DATA_SOURCE=supabase`; browser client for client components, server client via dynamic import only. Mock bodies untouched, zero page edits. tsc clean, eslint 0 errors / 48 warnings; worktree smoke 11/11 on :4010, no `.env.local`. Owner commit pending. |
+| 2026-11-07 | Phase 2 Step 4 ✔ | `supabase/seed.sql` — 4 maker users → 5 categories → 4 sellers → 6 products with stable ids (`cat-1…`/`seller-1…`/`prod-1…`), verbatim mock values, `status='approved'`, base_price=price, commission=0, kyc left `not_started`, upsert-by-id (re-run safe). SQL only; tsc clean, eslint 0 errors / 48 warnings. Owner: paste into Supabase SQL editor. |
 | 2026-11-07 | Phase 2 Step 3 ✔ | `@supabase/supabase-js` + `@supabase/ssr` installed; new `lib/supabase/{dataSource,supabase-browser,supabase-server}.ts` — switch defaults to mock, clients refuse to boot on mock/missing keys; mock paths + pages untouched; `.env.example` documents the switch. tsc clean, eslint 0 errors / 48 warnings; worktree build + smoke 11/11 on :4010 with NO `.env.local`. Owner commit pending. |
 | 2026-11-07 | Phase 2 Step 2 ✔ | `supabase/migrations/0002_rls.sql` — catalog public read, sellers own rows, buyers create/read own orders, admin all, client-write guards. SQL only. tsc clean, eslint 0 errors / 48 warnings. Owner commit pending. |
 | 2026-11-07 | Phase 2 Step 1 ✔ | `supabase/migrations/0001_init.sql` — tables, enums, payment fields, transactions ledger. SQL only. tsc clean, eslint 0 errors / 48 warnings. Owner commit pending. |

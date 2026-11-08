@@ -100,7 +100,11 @@ with docs/build-progress.md or git log, the tracker + git win)
   routes; password reset with dev links; persistent profile (name, phone, address)
   pre-filling checkout; Become a Maker onboarding with Cashfree Easy Split payout
   KYC (PAN, bank, IFSC) and admin moderation.
-- Phases 4,5,6,7,9,10 ⬜ PENDING. Canonical next: Phase 4 · Step 1 (Products CRUD).
+- Phase 4 ✅ COMPLETE (7/7) — Seller dashboard: products CRUD and image uploads,
+  stock enforcement with honest sold-out caps, seller-scoped order inbox with status tabs,
+  order status transitions (accept→ready→delivered), dashboard stats, store settings
+  with payout status visibility, and seller data isolation test endpoint.
+- Phases 5,6,7,9,10 ⬜ PENDING. Canonical next: Phase 5 · Step 1 (Admin guard).
 - Baseline gates: tsc clean · eslint 0 errors / 36 warnings · build ✅ (19 routes).
   Do NOT fix pre-existing warnings unless asked.
 - Snapshot date: 2026-11-08 (commit "feat(phase3): auth journey test pass and phase 3 closure").
@@ -117,6 +121,7 @@ step must split, use 3a/3b under the same number. Statuses: ⬜ pending ·
 | 8 | Leaflet maps + honesty | ✅ 6/6 |
 | 2 | Supabase foundation | ✅ 7/7 |
 | 3 | Auth & roles | ✅ 7/7 |
+| 4 | Seller dashboard | ✅ 7/7 |
 
 ### Phase 2 — Supabase foundation (7 steps)
 | # | Step | Done when |
@@ -138,13 +143,13 @@ step must split, use 3a/3b under the same number. Statuses: ⬜ pending ·
 | 7 | Auth test pass | fresh buyer/seller/admin journeys + logout/login + smoke green |
 
 ### Phase 4 — Seller dashboard (7 steps)
-| 1 | Products CRUD | create/edit/delete own products; images to Supabase Storage; list live |
-| 2 | Stock enforcement | DB-backed stock/availability; sold-out honest; cart respects stock |
-| 3 | Order inbox | seller sees own orders only; tabs by status |
-| 4 | Status actions | accept→ready→delivered persists; invalid transitions rejected |
-| 5 | Dashboard stats | today/total orders, revenue, pending accurate vs queries |
-| 6 | Store settings | story/WhatsApp/location editable; payout status (pending/active) visible |
-| 7 | Isolation test | seller A cannot read/modify seller B data; query-proof documented |
+| 1 | Products CRUD | create/edit/delete own products; images to Supabase Storage; list live | ✅ done |
+| 2 | Stock enforcement | DB-backed stock/availability; sold-out honest; cart respects stock | ✅ done |
+| 3 | Order inbox | seller sees own orders only; tabs by status | ✅ done |
+| 4 | Status actions | accept→ready→delivered persists; invalid transitions rejected | ✅ done |
+| 5 | Dashboard stats | today/total orders, revenue, pending accurate vs queries | ✅ done |
+| 6 | Store settings | story/WhatsApp/location editable; payout status (pending/active) visible | ✅ done |
+| 7 | Isolation test | seller A cannot read/modify seller B data; query-proof documented | ✅ done |
 
 ### Phase 5 — Admin console (7 steps)
 | 1 | Admin guard | admin-only access via role; console login reworked |

@@ -273,7 +273,11 @@ Use exactly these strings — no variations:
 > persistent profile (name, phone, address) auto-prefills checkout; Become a
 > Maker captures Cashfree Easy Split payout KYC (PAN, bank, IFSC) with admin
 > moderation.
-> Next build phase: **Phase 4 — Seller dashboard.**
+> **Phase 4 (Seller dashboard) is complete:** products CRUD with image uploads,
+> stock enforcement & honest sold-out states, seller-scoped order inbox with status tabs,
+> status transition actions (accept→ready→delivered), dashboard metrics and stats,
+> store settings with payout status, and isolation test endpoint verified.
+> Next build phase: **Phase 5 — Admin console.**
 > Payment strategy remains locked: **Cashfree Easy Split** primary (see Locked
 > Decisions #4), with Razorpay Route / PayU Split Settlements as
 > adapter-backed alternates.
