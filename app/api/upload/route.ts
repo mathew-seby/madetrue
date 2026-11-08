@@ -1,9 +1,11 @@
 // Server-side image uploads for Supabase Storage (product-images bucket).
 // Used by the seller dashboard when MADETRUE_DATA_SOURCE=supabase.
+// Step 7: only makers (and admins) may upload — storage belongs to stores.
 
 import { NextResponse } from "next/server";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
+import { getServerUser } from "@/lib/supabase/server-auth";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 const ALLOWED_MIME_TYPES = [
@@ -19,6 +21,20 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "MADETRUE_DATA_SOURCE is 'mock' — cloud storage is off." },
       { status: 400 }
+    );
+  }
+
+  const user = await getServerUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: "Sign in before uploading product images." },
+      { status: 401 }
+    );
+  }
+  if (user.role !== "seller" && user.role !== "admin") {
+    return NextResponse.json(
+      { error: "Product photos are uploaded from maker accounts." },
+      { status: 403 }
     );
   }
 

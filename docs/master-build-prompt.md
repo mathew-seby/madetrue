@@ -100,10 +100,19 @@ with docs/build-progress.md or git log, the tracker + git win)
   routes; password reset with dev links; persistent profile (name, phone, address)
   pre-filling checkout; Become a Maker onboarding with Cashfree Easy Split payout
   KYC (PAN, bank, IFSC) and admin moderation.
-- Phases 4,5,6,7,9,10 ⬜ PENDING. Canonical next: Phase 4 · Step 1 (Products CRUD).
-- Baseline gates: tsc clean · eslint 0 errors / 36 warnings · build ✅ (19 routes).
+- Phase 4 ✅ COMPLETE (7/7) — Seller dashboard: products CRUD + Storage
+  uploads; DB-backed stock with honest sold-out states; session-scoped maker
+  order inbox; 4-state status machine (ready/delivered deferred to Phase 7);
+  accurate dashboard stats; store settings tab (story/WhatsApp/location +
+  payout status); Step 7 close-out — identity derived from the session on
+  every write route (getServerUser/getOwnSellerId), payout KYC moved to a
+  private seller_payout_kyc table (migration 0006, applied live), atomic
+  stock RPC decrement_product_stock, public debug route deleted, and a
+  17/17 live isolation proof (docs/phase4-isolation-proof.md).
+- Phases 5,6,7,9,10 ⬜ PENDING. Canonical next: Phase 5 · Step 1 (Admin guard).
+- Baseline gates: tsc clean · eslint 0 errors / 33 warnings · build ✅ (20 routes).
   Do NOT fix pre-existing warnings unless asked.
-- Snapshot date: 2026-11-08 (commit "feat(phase3): auth journey test pass and phase 3 closure").
+- Snapshot date: 2026-11-08 (commit "feat(phase4): isolation proof and payout privacy").
 
 ## 6. CANONICAL ROADMAP — EXACTLY 7 STEPS PER PHASE (fixed numbering)
 Rules: one step = one session turn = one owner commit. Never renumber; if a
@@ -117,6 +126,7 @@ step must split, use 3a/3b under the same number. Statuses: ⬜ pending ·
 | 8 | Leaflet maps + honesty | ✅ 6/6 |
 | 2 | Supabase foundation | ✅ 7/7 |
 | 3 | Auth & roles | ✅ 7/7 |
+| 4 | Seller dashboard | ✅ 7/7 |
 
 ### Phase 2 — Supabase foundation (7 steps)
 | # | Step | Done when |

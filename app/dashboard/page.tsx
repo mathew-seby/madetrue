@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import StatsCard from '@/components/dashboard/StatsCard';
-import { getDashboardStats } from '@/lib/utils/dashboardStats';
-import type { DashboardStats } from '@/lib/utils/dashboardStats';
+import { computeDashboardStats } from '@/lib/utils/dashboardStats';
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus } from "@/lib/supabase/client";
+import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus, updateSellerProfile } from "@/lib/supabase/client";
 import { Seller, Category, Product, ProductBadgeTag, Order } from "@/types";
 import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package, Truck } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
@@ -18,13 +17,13 @@ const FALLBACK_PRODUCT_IMAGE = "https://images.unsplash.com/photo-1541832676-9b7
 export default function DashboardPage() {
   const { currentUser } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"list" | "orders" | "add">("list");
+  const [activeTab, setActiveTab] = useState<"list" | "orders" | "store" | "add">("list");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [myProducts, setMyProducts] = useState<Product[]>([]);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const stats = useMemo(() => computeDashboardStats(myOrders), [myOrders]);
   const [orderFilter, setOrderFilter] = useState<"all" | "pending" | "accepted" | "completed" | "cancelled">("all");
   const [loading, setLoading] = useState(true);
 
@@ -52,6 +51,17 @@ export default function DashboardPage() {
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [orderActionError, setOrderActionError] = useState<string | null>(null);
   const [orderActionSuccess, setOrderActionSuccess] = useState<string | null>(null);
+
+  // Store Settings state (Step 6) — the storefront fields and their save flow
+  const [storeBusinessName, setStoreBusinessName] = useState("");
+  const [storeStory, setStoreStory] = useState("");
+  const [storeWhatsapp, setStoreWhatsapp] = useState("");
+  const [storeAddress, setStoreAddress] = useState("");
+  const [storeLat, setStoreLat] = useState("");
+  const [storeLng, setStoreLng] = useState("");
+  const [storeGmapsInput, setStoreGmapsInput] = useState("");
+  const [storeSaving, setStoreSaving] = useState(false);
+  const [storeStatus, setStoreStatus] = useState<{ kind: "error" | "success"; text: string } | null>(null);
 
   const handleOrderStatusChange = async (
     orderId: string,
@@ -120,6 +130,118 @@ export default function DashboardPage() {
       setProductLat(coords.lat.toString());
       setProductLng(coords.lng.toString());
       setSubmitError("");
+    }
+  };
+
+  // ----- Store Settings (Step 6) --------------------------------------------
+  // The store this dashboard is acting on: the signed-in maker's own store,
+  // or the store the admin is "acting as" via the selector above.
+  const actingSeller = sellers.find((s) => s.id === selectedSellerId) ?? null;
+
+  const storeFieldClass =
+    "w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:ring-0 focus:outline-none transition";
+
+  const loadStoreForm = (seller: Seller | null) => {
+    setStoreBusinessName(seller?.business_name ?? "");
+    setStoreStory(seller?.story ?? "");
+    setStoreWhatsapp(seller?.whatsapp_number ?? "");
+    setStoreAddress(seller?.address ?? "");
+    setStoreLat(seller ? String(seller.lat) : "");
+    setStoreLng(seller ? String(seller.lng) : "");
+    setStoreGmapsInput("");
+  };
+
+  const openStoreTab = () => {
+    setActiveTab("store");
+    setEditingProduct(null);
+    setStoreStatus(null);
+    loadStoreForm(actingSeller);
+  };
+
+  const detectStoreLocation = () => {
+    setStoreStatus(null);
+    if (!navigator.geolocation) {
+      setStoreStatus({ kind: "error", text: "Geolocation is not supported by your browser." });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setStoreLat(position.coords.latitude.toFixed(6));
+        setStoreLng(position.coords.longitude.toFixed(6));
+        setStoreStatus({ kind: "success", text: "Coordinates captured from your current location." });
+        setTimeout(() => setStoreStatus(null), 4000);
+      },
+      () => {
+        setStoreStatus({ kind: "error", text: "Could not access your location. Please paste coordinates manually or try again." });
+      }
+    );
+  };
+
+  const handleStoreGmapsParse = (val: string) => {
+    setStoreGmapsInput(val);
+    const coords = parseGoogleMapsUrl(val);
+    if (coords) {
+      setStoreLat(coords.lat.toString());
+      setStoreLng(coords.lng.toString());
+      setStoreStatus(null);
+    }
+  };
+
+  const handleStoreSave = async () => {
+    if (!actingSeller) {
+      setStoreStatus({
+        kind: "error",
+        text: "No maker store is linked to this dashboard yet. Complete the Become a Maker application first.",
+      });
+      return;
+    }
+    const latText = storeLat.trim();
+    const lngText = storeLng.trim();
+    if (latText !== "" && !Number.isFinite(Number(latText))) {
+      setStoreStatus({ kind: "error", text: "Latitude must be a number between -90 and 90." });
+      return;
+    }
+    if (lngText !== "" && !Number.isFinite(Number(lngText))) {
+      setStoreStatus({ kind: "error", text: "Longitude must be a number between -180 and 180." });
+      return;
+    }
+
+    setStoreSaving(true);
+    setStoreStatus(null);
+    try {
+      const updated = await updateSellerProfile(actingSeller.id, {
+        business_name: storeBusinessName,
+        story: storeStory,
+        whatsapp_number: storeWhatsapp,
+        address: storeAddress,
+        ...(latText === "" ? {} : { lat: Number(latText) }),
+        ...(lngText === "" ? {} : { lng: Number(lngText) }),
+      });
+      if (updated) {
+        // Merge — Supabase replies only carry public columns, so keep any
+        // fields the response trimmed (payout details are never displayed here).
+        setSellers((prev) =>
+          prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s))
+        );
+        loadStoreForm(updated);
+        setStoreStatus({
+          kind: "success",
+          text: "Store settings saved. Buyers see the change right away.",
+        });
+        setTimeout(() => setStoreStatus(null), 4000);
+      } else {
+        setStoreStatus({
+          kind: "error",
+          text: "We could not find that maker store. Refresh the dashboard and try again.",
+        });
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error
+        ? err.message.replace("[madetrue] ", "")
+        : "Could not save store settings. Please try again.";
+      setStoreStatus({ kind: "error", text: message });
+    } finally {
+      setStoreSaving(false);
     }
   };
 
@@ -564,6 +686,39 @@ export default function DashboardPage() {
           return null;
         })()}
 
+        {/* Store Stats — derived from the same list the Order Inbox shows */}
+        {!loading && (
+          <section
+            aria-label="Store statistics"
+            className="grid grid-cols-2 md:grid-cols-4 gap-4"
+          >
+            <StatsCard
+              title="Orders Today"
+              value={stats.todayOrders}
+              icon={<ShoppingBag className="h-4 w-4" />}
+              description="Placed by buyers today"
+            />
+            <StatsCard
+              title="Total Orders"
+              value={stats.totalOrders}
+              icon={<Package className="h-4 w-4" />}
+              description="Everything in your inbox"
+            />
+            <StatsCard
+              title="Revenue"
+              value={`₹${stats.totalRevenue.toLocaleString("en-IN")}`}
+              icon={<CheckCircle className="h-4 w-4" />}
+              description="Order value, cancelled excluded"
+            />
+            <StatsCard
+              title="Pending"
+              value={stats.pendingOrders}
+              icon={<Clock className="h-4 w-4" />}
+              description="Awaiting your acceptance"
+            />
+          </section>
+        )}
+
         {/* Navigation Tabs */}
         <div className="flex border-b border-warm-brown/10 overflow-x-auto whitespace-nowrap scrollbar-none">
           <button
@@ -598,6 +753,17 @@ export default function DashboardPage() {
                 {myOrders.filter((o) => o.status === "pending").length} new
               </span>
             )}
+          </button>
+          <button
+            type="button"
+            onClick={openStoreTab}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center cursor-pointer ${
+              activeTab === "store"
+                ? "border-primary-green text-primary-green"
+                : "border-transparent text-text-dark/50 hover:text-text-dark"
+            }`}
+          >
+            <Store className="h-4 w-4 mr-1.5" /> Store Settings
           </button>
           <button
             type="button"
@@ -1133,6 +1299,242 @@ export default function DashboardPage() {
                 </p>
               </div>
             )}
+          </div>
+        ) : activeTab === "store" ? (
+          /* STORE SETTINGS TAB */
+          <div className="space-y-6">
+            {/* Payout status — mirrors the maker application's KYC state */}
+            {actingSeller ? (
+              <div
+                className={`p-6 rounded-2xl border flex items-start gap-4 ${
+                  actingSeller.kyc_status === "failed"
+                    ? "bg-red-50 border-red-200"
+                    : actingSeller.is_verified &&
+                      actingSeller.kyc_status === "verified"
+                      ? "bg-primary-green/5 border-primary-green/25"
+                      : "bg-amber-50 border-amber-200"
+                }`}
+              >
+                {actingSeller.kyc_status === "failed" ? (
+                  <XCircle className="h-6 w-6 text-red-700 shrink-0 mt-0.5" />
+                ) : actingSeller.is_verified &&
+                  actingSeller.kyc_status === "verified" ? (
+                  <CheckCircle className="h-6 w-6 text-primary-green shrink-0 mt-0.5" />
+                ) : (
+                  <Clock className="h-6 w-6 text-amber-700 shrink-0 mt-0.5" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <h3 className="font-serif text-lg font-bold text-text-dark">
+                      Payout Status
+                    </h3>
+                    <span
+                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full border ${
+                        actingSeller.kyc_status === "failed"
+                          ? "bg-red-100 text-red-900 border-red-200"
+                          : actingSeller.is_verified &&
+                            actingSeller.kyc_status === "verified"
+                            ? "bg-primary-green/10 text-primary-green border-primary-green/25"
+                            : "bg-amber-100 text-amber-900 border-amber-200"
+                      }`}
+                    >
+                      {actingSeller.kyc_status === "failed"
+                        ? "Payouts Blocked"
+                        : actingSeller.is_verified &&
+                          actingSeller.kyc_status === "verified"
+                          ? "Payouts Active"
+                          : "Under Review"}
+                    </span>
+                  </div>
+                  <p className="text-sm text-text-dark/70 leading-relaxed mt-2">
+                    {actingSeller.kyc_status === "failed"
+                      ? "Your payout verification did not go through this time. Reach out to us and we will check the bank details together — your store stays live while we sort it out."
+                      : actingSeller.is_verified &&
+                        actingSeller.kyc_status === "verified"
+                        ? "Verified and set: when buyers pay, your share settles straight into your bank account — no chasing, no paperwork."
+                        : "Your application and bank details are being verified by MADETRUE moderators. Your storefront is already live; payouts switch on the moment verification passes."}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-6 rounded-2xl border border-warm-brown/10 bg-[#FAF7F2] text-sm text-warm-brown leading-relaxed">
+                No maker store is linked to this dashboard yet. Complete the
+                Become a Maker application from your profile, and this page
+                becomes yours to shape.
+              </div>
+            )}
+
+            {/* Store settings form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleStoreSave();
+              }}
+              className="bg-[#FAF7F2] p-6 sm:p-8 rounded-2xl border border-warm-brown/10 shadow-sm space-y-6"
+            >
+              <div>
+                <h2 className="font-serif text-xl font-bold text-text-dark flex items-center">
+                  <Store className="h-5 w-5 mr-2 text-accent-gold" />
+                  Store Settings
+                </h2>
+                <p className="text-sm text-text-dark/60 mt-1 leading-relaxed">
+                  This is what buyers see on your storefront — a real name, a
+                  working WhatsApp, your story in your own words, and the spot
+                  where you make.
+                </p>
+              </div>
+
+              {/* Business Name */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                  Store / Business Name *
+                </label>
+                <input
+                  required
+                  type="text"
+                  value={storeBusinessName}
+                  onChange={(e) => setStoreBusinessName(e.target.value)}
+                  placeholder="e.g., Amma's Spice Junction"
+                  className={storeFieldClass}
+                />
+              </div>
+
+              {/* WhatsApp Number */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                  WhatsApp Number *
+                </label>
+                <input
+                  required
+                  type="tel"
+                  value={storeWhatsapp}
+                  onChange={(e) => setStoreWhatsapp(e.target.value)}
+                  placeholder="e.g., +91 98470 12345"
+                  className={storeFieldClass}
+                />
+                <p className="text-[11px] text-text-dark/50">
+                  Order updates and buyer questions reach you here.
+                </p>
+              </div>
+
+              {/* Address */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                  Shop / Home Address
+                </label>
+                <input
+                  type="text"
+                  value={storeAddress}
+                  onChange={(e) => setStoreAddress(e.target.value)}
+                  placeholder="e.g., 12/4 Kalathiparambil Road, Thrippunithura, Ernakulam"
+                  className={storeFieldClass}
+                />
+                <p className="text-[11px] text-text-dark/50">
+                  Pickup orders meet buyers here, so keep it easy to find.
+                </p>
+              </div>
+
+              {/* Maker Story */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                  Your Maker Story
+                </label>
+                <textarea
+                  rows={4}
+                  value={storeStory}
+                  onChange={(e) => setStoreStory(e.target.value)}
+                  placeholder="How did you start? What goes into your craft that buyers cannot find anywhere else?"
+                  className={`${storeFieldClass} resize-y`}
+                />
+              </div>
+
+              {/* Store Location */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                  Store Location
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-warm-brown uppercase tracking-wider">
+                      Latitude
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={storeLat}
+                      onChange={(e) => setStoreLat(e.target.value)}
+                      placeholder="9.9312"
+                      className={storeFieldClass}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-warm-brown uppercase tracking-wider">
+                      Longitude
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={storeLng}
+                      onChange={(e) => setStoreLng(e.target.value)}
+                      placeholder="76.2673"
+                      className={storeFieldClass}
+                    />
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  value={storeGmapsInput}
+                  onChange={(e) => handleStoreGmapsParse(e.target.value)}
+                  placeholder="Paste a Google Maps link or coordinates, e.g., 9.9312, 76.2673"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-warm-brown/20 bg-white text-xs text-text-dark focus:border-primary-green focus:outline-none transition font-sans"
+                />
+                <button
+                  type="button"
+                  onClick={detectStoreLocation}
+                  className="w-full px-4 py-3 rounded-xl bg-white border border-warm-brown/20 text-xs font-semibold text-warm-brown hover:bg-warm-brown/5 transition font-sans cursor-pointer flex items-center justify-center gap-2"
+                >
+                  📍 Use My Current Location
+                </button>
+                <p className="text-[11px] text-text-dark/50 leading-relaxed">
+                  Left blank, your location stays as it is. These coordinates
+                  power the map on your storefront and the distance badges
+                  nearby buyers see.
+                </p>
+              </div>
+
+              {storeStatus && (
+                <p
+                  role="status"
+                  className={`text-sm rounded-xl px-4 py-3 leading-relaxed ${
+                    storeStatus.kind === "success"
+                      ? "bg-primary-green/10 text-primary-green"
+                      : "bg-red-50 text-red-700"
+                  }`}
+                >
+                  {storeStatus.text}
+                </p>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={storeSaving}
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {storeSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Save Store Settings
+                </button>
+                {actingSeller && (
+                  <button
+                    type="button"
+                    onClick={() => loadStoreForm(actingSeller)}
+                    className="w-full sm:w-auto px-5 py-3 rounded-xl border border-warm-brown/20 text-warm-brown font-semibold text-sm hover:bg-warm-brown/5 transition duration-200 cursor-pointer"
+                  >
+                    Reset Changes
+                  </button>
+                )}
+              </div>
+            </form>
           </div>
         ) : (
           /* ADD / SUBMIT PRODUCT TAB */

@@ -187,3 +187,26 @@ export async function updateSellerVerificationSupabase(
     body: JSON.stringify({ id, is_verified, kyc_status }),
   });
 }
+
+// Step 6 — a maker edits their own storefront (name, story, WhatsApp,
+// address, coordinates). Sends the structured { id, updates } shape the
+// PATCH route expects; the route re-derives ownership from the cookie
+// session and accepts only its owner-editable fields, and never
+// verification fields. The route returns the updated row trimmed to
+// public columns, or throws with a friendly message on 4xx.
+export type SellerProfileUpdates = Partial<
+  Pick<
+    Seller,
+    "business_name" | "story" | "whatsapp_number" | "address" | "lat" | "lng"
+  >
+>;
+
+export async function updateSellerProfileSupabase(
+  id: string,
+  updates: SellerProfileUpdates
+): Promise<Seller | null> {
+  return requestJson<Seller | null>("/api/sellers", {
+    method: "PATCH",
+    body: JSON.stringify({ id, updates }),
+  });
+}
