@@ -20,7 +20,12 @@ import {
   uploadProductImageSupabase,
   submitSellerSupabase,
   updateSellerVerificationSupabase,
+  updateOrderStatusSupabase,
 } from "./writeSupabase";
+import {
+  isValidOrderTransition,
+  getInvalidTransitionMessage,
+} from "@/lib/utils/orderStatus";
 
 // This is our data layer client. It serves mock data by default
 // and uses local storage to simulate write operations (approvals, product additions) on the client side.
@@ -383,18 +388,47 @@ export async function getOrdersForSeller(sellerId: string): Promise<Order[]> {
 // Update the status of an order
 export async function updateOrderStatus(
   id: string,
-  status: 'pending' | 'accepted' | 'completed' | 'cancelled'
+  status: 'pending' | 'accepted' | 'completed' | 'cancelled',
+  sellerId?: string
 ): Promise<Order | null> {
+  if (isSupabaseEnabled()) {
+    return updateOrderStatusSupabase(id, status, sellerId);
+  }
+
   await new Promise((resolve) => setTimeout(resolve, 100));
   const orders = getStoredOrders();
   const index = orders.findIndex((o) => o.id === id);
 
-  if (index !== -1) {
-    orders[index] = { ...orders[index], status };
-    saveStoredOrders(orders);
-    return orders[index];
+  if (index === -1) {
+    return null;
   }
-  return null;
+
+  const existingOrder = orders[index];
+
+  // Enforce seller isolation
+  if (sellerId && existingOrder.seller_id !== sellerId) {
+    throw new Error("You do not have permission to modify orders belonging to another maker.");
+  }
+
+  // Enforce valid status transition machine
+  if (!isValidOrderTransition(existingOrder.status, status)) {
+    throw new Error(getInvalidTransitionMessage(existingOrder.status, status));
+  }
+
+  // Restore inventory if cancelled
+  if (status === "cancelled" && existingOrder.status !== "cancelled") {
+    const products = getStoredProducts();
+    const prodIdx = products.findIndex((p) => p.id === existingOrder.product_id);
+    if (prodIdx !== -1) {
+      products[prodIdx].stock += existingOrder.quantity;
+      products[prodIdx].is_available = true;
+      saveStoredProducts(products);
+    }
+  }
+
+  orders[index] = { ...existingOrder, status };
+  saveStoredOrders(orders);
+  return orders[index];
 }
 
 // Update the WhatsApp notification status of an order

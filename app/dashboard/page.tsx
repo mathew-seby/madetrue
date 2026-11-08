@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller } from "@/lib/supabase/client";
+import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus } from "@/lib/supabase/client";
 import { Seller, Category, Product, ProductBadgeTag, Order } from "@/types";
-import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package } from "lucide-react";
+import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package, Truck } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { RoleGuard } from "@/components/shared/RoleGuard";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
@@ -44,6 +44,52 @@ export default function DashboardPage() {
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
+  const [orderActionError, setOrderActionError] = useState<string | null>(null);
+  const [orderActionSuccess, setOrderActionSuccess] = useState<string | null>(null);
+
+  const handleOrderStatusChange = async (
+    orderId: string,
+    targetStatus: Order["status"]
+  ) => {
+    setOrderActionError(null);
+    setOrderActionSuccess(null);
+    setUpdatingOrderId(orderId);
+    try {
+      const updated = await updateOrderStatus(orderId, targetStatus, selectedSellerId);
+      if (updated) {
+        setMyOrders((prev) =>
+          prev.map((o) => (o.id === orderId ? updated : o))
+        );
+        const friendlyMessages: Record<string, string> = {
+          accepted: "Order accepted! Customer knows you are preparing their authentic items.",
+          completed: "Order marked completed! Fulfillment finished.",
+          cancelled: "Order cancelled and stock restored to inventory.",
+        };
+        setOrderActionSuccess(
+          friendlyMessages[targetStatus] || `Order status updated to ${targetStatus}.`
+        );
+        setTimeout(() => setOrderActionSuccess(null), 4000);
+        setCancelConfirmId(null);
+
+        // If cancelled, inventory was restored, so refresh products list
+        if (targetStatus === "cancelled" && selectedSellerId) {
+          getProductsForSeller(selectedSellerId)
+            .then(setMyProducts)
+            .catch(() => {});
+        }
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to update order status. Please try again.";
+      setOrderActionError(message);
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
 
   const detectProductLocation = () => {
     setSubmitError("");
@@ -755,6 +801,39 @@ export default function DashboardPage() {
               })}
             </div>
 
+            {/* Action Feedback Messages */}
+            {orderActionSuccess && (
+              <div className="p-3 bg-primary-green/10 border border-primary-green/30 text-primary-green text-xs font-bold rounded-xl flex items-center justify-between font-sans">
+                <div className="flex items-center">
+                  <CheckCircle className="h-4 w-4 mr-2 shrink-0" />
+                  <span>{orderActionSuccess}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOrderActionSuccess(null)}
+                  className="text-primary-green/60 hover:text-primary-green cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {orderActionError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-xl flex items-center justify-between font-sans">
+                <div className="flex items-center">
+                  <XCircle className="h-4 w-4 mr-2 shrink-0" />
+                  <span>{orderActionError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOrderActionError(null)}
+                  className="text-red-600/60 hover:text-red-700 cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
             {/* Orders List */}
             {filteredOrdersList.length > 0 ? (
               <div className="space-y-4">
@@ -879,6 +958,157 @@ export default function DashboardPage() {
                                 Call
                               </a>
                             </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Order Status Action Bar */}
+                      <div className="pt-3 border-t border-warm-brown/10 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-text-dark/70 font-sans">
+                          <span className="text-[10px] uppercase font-bold text-warm-brown tracking-wider">
+                            Status Flow:
+                          </span>
+                          {order.status === "pending" && (
+                            <span className="text-amber-800">
+                              New Order — Awaiting maker acceptance
+                            </span>
+                          )}
+                          {order.status === "accepted" && (
+                            <span className="text-blue-800">
+                              Accepted — In preparation for{" "}
+                              {order.delivery_type === "pickup"
+                                ? "pickup"
+                                : "local delivery"}
+                            </span>
+                          )}
+                          {order.status === "completed" && (
+                            <span className="text-primary-green flex items-center gap-1">
+                              <CheckCircle className="h-3.5 w-3.5" /> Fulfilled & Completed
+                            </span>
+                          )}
+                          {order.status === "cancelled" && (
+                            <span className="text-red-700 flex items-center gap-1">
+                              <XCircle className="h-3.5 w-3.5" /> Order Cancelled
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {updatingOrderId === order.id ? (
+                            <span className="inline-flex items-center text-xs text-warm-brown font-semibold py-1.5 px-3 bg-warm-brown/5 rounded-xl border border-warm-brown/10 font-sans">
+                              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Updating...
+                            </span>
+                          ) : (
+                            <>
+                              {order.status === "pending" && (
+                                <>
+                                  {cancelConfirmId === order.id ? (
+                                    <div className="flex items-center gap-1.5 bg-red-50 p-1 rounded-xl border border-red-200">
+                                      <span className="text-[11px] font-bold text-red-700 px-2 font-sans">
+                                        Cancel?
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleOrderStatusChange(order.id, "cancelled")
+                                        }
+                                        className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold font-sans transition cursor-pointer"
+                                      >
+                                        Yes, Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCancelConfirmId(null)}
+                                        className="px-2.5 py-1 bg-white hover:bg-cream-bg text-text-dark border border-warm-brown/20 rounded-lg text-xs font-semibold font-sans transition cursor-pointer"
+                                      >
+                                        No
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCancelConfirmId(order.id)}
+                                        className="px-3 py-1.5 border border-red-200 hover:bg-red-50 text-red-700 rounded-xl text-xs font-bold font-sans transition cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleOrderStatusChange(order.id, "accepted")
+                                        }
+                                        className="inline-flex items-center px-4 py-1.5 bg-primary-green hover:bg-[#224f3b] text-cream-bg rounded-xl text-xs font-bold font-sans transition cursor-pointer shadow-sm"
+                                      >
+                                        <CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Accept Order
+                                      </button>
+                                    </>
+                                  )}
+                                </>
+                              )}
+
+                              {order.status === "accepted" && (
+                                <>
+                                  {cancelConfirmId === order.id ? (
+                                    <div className="flex items-center gap-1.5 bg-red-50 p-1 rounded-xl border border-red-200">
+                                      <span className="text-[11px] font-bold text-red-700 px-2 font-sans">
+                                        Cancel?
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleOrderStatusChange(order.id, "cancelled")
+                                        }
+                                        className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold font-sans transition cursor-pointer"
+                                      >
+                                        Yes, Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCancelConfirmId(null)}
+                                        className="px-2.5 py-1 bg-white hover:bg-cream-bg text-text-dark border border-warm-brown/20 rounded-lg text-xs font-semibold font-sans transition cursor-pointer"
+                                      >
+                                        No
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCancelConfirmId(order.id)}
+                                        className="px-3 py-1.5 border border-red-200 hover:bg-red-50 text-red-700 rounded-xl text-xs font-bold font-sans transition cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleOrderStatusChange(order.id, "completed")
+                                        }
+                                        className="inline-flex items-center px-4 py-1.5 bg-primary-green hover:bg-[#224f3b] text-cream-bg rounded-xl text-xs font-bold font-sans transition cursor-pointer shadow-sm"
+                                      >
+                                        {order.delivery_type === "pickup" ? (
+                                          <>
+                                            <CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Ready & Picked Up
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Truck className="h-3.5 w-3.5 mr-1.5" /> Mark Delivered
+                                          </>
+                                        )}
+                                      </button>
+                                    </>
+                                  )}
+                                </>
+                              )}
+
+                              {(order.status === "completed" ||
+                                order.status === "cancelled") && (
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-warm-brown/60 bg-warm-brown/5 px-3 py-1.5 rounded-lg border border-warm-brown/10 font-sans">
+                                  Fulfillment Finished
+                                </span>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>

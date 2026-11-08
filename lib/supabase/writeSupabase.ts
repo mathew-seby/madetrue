@@ -54,6 +54,17 @@ export async function fetchOrdersForSellerSupabase(sellerId: string): Promise<Or
   });
 }
 
+export async function updateOrderStatusSupabase(
+  id: string,
+  status: Order["status"],
+  sellerId?: string
+): Promise<Order | null> {
+  return requestJson<Order>("/api/orders", {
+    method: "PATCH",
+    body: JSON.stringify({ id, status, seller_id: sellerId }),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Products — dashboard submissions and edits.
 // ---------------------------------------------------------------------------

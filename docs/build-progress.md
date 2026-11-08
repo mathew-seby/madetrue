@@ -11,8 +11,8 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 4 · Step 4/7 — Status actions — ⬜ pending
-**Last completed:** Phase 4 · Step 3/7 — Order inbox — commit "feat(phase4): seller order inbox and status tabs" — 2026-11-08
+**Current position:** Phase 4 · Step 5/7 — Dashboard stats — ⬜ pending
+**Last completed:** Phase 4 · Step 4/7 — Status actions — commit "feat(phase4): order status actions and transition enforcement" — 2026-11-08
 **Baseline gates (last session):** tsc ✅ · eslint ✅ (0 errors / 33 warnings) · build ✅ (20 routes)
 
 ---
@@ -66,7 +66,7 @@
 | 1 | Products CRUD | create/edit/delete own products; images to Storage | ✅ done | feat(phase4): products crud and storage uploads | 2026-11-08 |
 | 2 | Stock enforcement | DB-backed stock/availability; honest sold-out | ✅ done | feat(phase4): stock enforcement and honest sold-out states | 2026-11-08 |
 | 3 | Order inbox | seller sees own orders only; tabs by status | ✅ done | feat(phase4): seller order inbox and status tabs | 2026-11-08 |
-| 4 | Status actions | accept→ready→delivered persists; invalid rejected | ⬜ pending | — | — |
+| 4 | Status actions | accept→ready→delivered persists; invalid rejected | ✅ done | feat(phase4): order status actions and transition enforcement | 2026-11-08 |
 | 5 | Dashboard stats | today/total orders, revenue, pending — accurate | ⬜ pending | — | — |
 | 6 | Store settings | story/WhatsApp/location editable; payout status visible | ⬜ pending | — | — |
 | 7 | Isolation test | seller A cannot read/modify seller B; proof documented | ⬜ pending | — | — |
@@ -149,6 +149,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-08 | Phase 4 Step 4 ✔ | Status actions: lib/utils/orderStatus defines state machine (pending → accepted → completed, plus cancelled; terminal states guarded); PATCH /api/orders validates seller ownership, enforces transition matrix with 400 errors, and restores product stock upon cancellation; writeSupabase & client.ts updated with updateOrderStatus; dashboard Order Inbox equipped with action controls (Accept Order, Mark Delivered / Ready & Picked Up, Cancel Order with confirmation) and feedback banners; in-place state and product stock updates; tsc ✅ · eslint 0 errors / 33 warnings · build ✅ (20/20 routes) · smoke 11/11 on :4010. Owner commit pending. |
 | 2026-11-08 | Phase 4 Step 3 ✔ | Order inbox: seller order inbox scoped strictly to seller_id in both mock & Supabase paths (/api/orders?seller_id=...); dashboard navigation with order counter badge; status filter tabs (all, pending, accepted, completed, cancelled) with live counts; rich order cards with delivery details, item breakdown, and direct WhatsApp / Call actions; empty states for clean or zero matches; tsc ✅ · eslint 0 errors / 33 warnings · build ✅ (20/20 routes) · smoke 11/11 on :4010. Owner commit pending. |
 | 2026-11-08 | Phase 4 Step 2 ✔ | Stock enforcement: app/api/orders updates is_available=false when stock hits 0; dashboard cards equipped with quick Restock (+10), Pause, and Resume controls keeping review status; honest Sold Out overlays & low-stock warnings wired across TrendingProducts, seller store, and product pages; cart flags sold-out items & gates checkout; checkout validates stock before dispatch; tsc ✅ · eslint 0 errors / 33 warnings · build ✅ (20/20 routes) · smoke 11/11 on :4010. Owner commit pending. |
 | 2026-11-08 | Phase 4 Step 1 ✔ | Products CRUD: DELETE method on /api/products with owner validation & order constraint guard; GET filtering by seller_id; /api/upload route storing images in Supabase Storage product-images bucket with public URL; 0005_product_images_storage.sql migration; client & writeSupabase routers for deleteProduct, uploadProductImage, getProductsForSeller; dashboard wired with image uploading, live product list, delete confirmation, and cancel edit; tsc ✅ · eslint 0 errors / 33 warnings · build ✅ (20/20 routes) · smoke 11/11 on :4010. Owner commit pending. |
