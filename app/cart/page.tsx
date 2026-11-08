@@ -7,6 +7,7 @@ import { DELIVERY_FEE } from "@/lib/utils/constants";
 
 export default function CartPage() {
   const { items: cart, subtotal, updateQuantity, removeItem } = useCart();
+  const hasSoldOutItems = cart.some((item) => item.product.stock <= 0 || !item.product.is_available);
 
   return (
     <div className="bg-cream-bg min-h-screen py-10 px-4 sm:px-6 lg:px-8">
@@ -41,6 +42,11 @@ export default function CartPage() {
                         <span className="font-semibold text-primary-green shrink-0">₹{item.product.price}</span>
                       </div>
                       <p className="text-[10px] text-warm-brown font-semibold uppercase tracking-wider mt-0.5">{item.product.category}</p>
+                      {(item.product.stock <= 0 || !item.product.is_available) && (
+                        <p className="text-[11px] text-red-600 font-bold mt-1">
+                          ⚠️ Sold Out — This item is no longer available from the maker.
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t border-warm-brown/5">
@@ -60,8 +66,8 @@ export default function CartPage() {
                         <button
                           type="button"
                           onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                          className="px-2 py-1 hover:bg-warm-brown/5 text-text-dark font-bold text-xs"
-                          disabled={item.quantity >= item.product.stock}
+                          className="px-2 py-1 hover:bg-warm-brown/5 text-text-dark font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                          disabled={item.quantity >= item.product.stock || item.product.stock <= 0 || !item.product.is_available}
                         >
                           <Plus className="h-3 w-3" />
                         </button>
@@ -106,13 +112,28 @@ export default function CartPage() {
               </div>
 
               <div className="space-y-3 pt-2">
-                <Link
-                  href="/checkout"
-                  className="w-full inline-flex items-center justify-center px-5 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200 shadow-sm uppercase tracking-wider font-sans text-center"
-                >
-                  <CreditCard className="mr-2 h-4 w-4" />
-                  Proceed to Checkout
-                </Link>
+                {hasSoldOutItems ? (
+                  <div className="space-y-2">
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold leading-relaxed">
+                      ⚠️ Some items in your basket are sold out. Please remove them before proceeding to checkout.
+                    </div>
+                    <button
+                      disabled
+                      className="w-full inline-flex items-center justify-center px-5 py-3 rounded-xl bg-gray-200 text-gray-400 font-semibold text-sm cursor-not-allowed uppercase tracking-wider font-sans text-center"
+                    >
+                      <CreditCard className="mr-2 h-4 w-4" />
+                      Proceed to Checkout
+                    </button>
+                  </div>
+                ) : (
+                  <Link
+                    href="/checkout"
+                    className="w-full inline-flex items-center justify-center px-5 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200 shadow-sm uppercase tracking-wider font-sans text-center"
+                  >
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Proceed to Checkout
+                  </Link>
+                )}
                 <p className="text-[10px] text-text-dark/50 text-center font-sans">
                   Estimated with the flat delivery fee — you can switch to free pickup at checkout. Deliveries are restricted to Ernakulam district.
                 </p>

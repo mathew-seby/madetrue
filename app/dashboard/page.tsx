@@ -258,6 +258,30 @@ export default function DashboardPage() {
     }
   };
 
+  const handleQuickRestock = async (product: Product, amount = 10) => {
+    setSubmitError("");
+    try {
+      const newStock = (product.stock > 0 ? product.stock : 0) + amount;
+      await updateProduct(product.id, { stock: newStock, is_available: true });
+      const updatedProds = await getProductsForSeller(selectedSellerId);
+      setMyProducts(updatedProds);
+    } catch {
+      setSubmitError("Failed to update stock quantity.");
+    }
+  };
+
+  const handleToggleAvailability = async (product: Product) => {
+    setSubmitError("");
+    try {
+      const nextAvailability = !product.is_available;
+      await updateProduct(product.id, { is_available: nextAvailability });
+      const updatedProds = await getProductsForSeller(selectedSellerId);
+      setMyProducts(updatedProds);
+    } catch {
+      setSubmitError("Failed to toggle listing availability.");
+    }
+  };
+
   const handleDeleteProduct = async (productId: string) => {
     setSubmitError("");
     setDeletingProductId(productId);
@@ -554,9 +578,21 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t border-warm-brown/5 gap-2 flex-wrap font-sans">
-                      <span className="text-[10px] text-warm-brown font-bold uppercase tracking-wider">
-                        Stock: {product.stock > 0 && product.is_available ? `${product.stock} units` : "Finished (Out of Stock)"}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {product.stock <= 0 ? (
+                          <span className="text-[10px] text-red-700 font-bold uppercase tracking-wider bg-red-100 px-2 py-0.5 rounded-full">
+                            Sold Out (0 units)
+                          </span>
+                        ) : !product.is_available ? (
+                          <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider bg-amber-100 px-2 py-0.5 rounded-full">
+                            Paused ({product.stock} in reserve)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-primary-green font-bold uppercase tracking-wider bg-primary-green/10 px-2 py-0.5 rounded-full">
+                            Stock: {product.stock} units
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <button
                           type="button"
@@ -565,13 +601,42 @@ export default function DashboardPage() {
                         >
                           Edit
                         </button>
-                        {product.stock > 0 && product.is_available && (
+                        {product.stock <= 0 ? (
                           <button
                             type="button"
-                            onClick={() => handleMarkSoldOut(product.id)}
-                            className="text-[10px] font-bold text-warm-brown hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                            onClick={() => handleQuickRestock(product, 10)}
+                            className="text-[10px] font-bold text-primary-green hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                            title="Add 10 units to available stock"
                           >
-                            Finish Stock
+                            Restock (+10)
+                          </button>
+                        ) : product.is_available ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleMarkSoldOut(product.id)}
+                              className="text-[10px] font-bold text-red-600 hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                              title="Mark this product as out of stock"
+                            >
+                              Finish Stock
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAvailability(product)}
+                              className="text-[10px] font-bold text-warm-brown hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                              title="Temporarily pause selling this item"
+                            >
+                              Pause
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAvailability(product)}
+                            className="text-[10px] font-bold text-primary-green hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                            title="Resume selling this item"
+                          >
+                            Resume
                           </button>
                         )}
                         {deleteConfirmId === product.id ? (

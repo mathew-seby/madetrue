@@ -5,7 +5,7 @@ import Link from "next/link";
 import { getProducts, getSellers } from "@/lib/supabase/client";
 import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Product, Seller } from "@/types";
-import { ShoppingCart, Heart, Store, Check } from "lucide-react";
+import { ShoppingCart, Heart, Store, Check, X } from "lucide-react";
 
 export default function TrendingProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -113,6 +113,22 @@ export default function TrendingProducts() {
                   </button>
 
                   {/* Badges Container */}
+                  <div className="absolute top-3 left-3 flex flex-col gap-1.5 items-start">
+                    {product.stock > 0 && product.stock <= 2 && product.is_available && (
+                      <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-600 text-white text-[8px] font-bold uppercase tracking-wider animate-pulse shadow-sm font-sans">
+                        ⚠️ Only {product.stock} Left!
+                      </div>
+                    )}
+                  </div>
+                  {/* Sold out overlay */}
+                  {(product.stock === 0 || !product.is_available) && (
+                    <div className="absolute inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-10">
+                      <span className="text-white text-xs font-bold uppercase tracking-widest border border-white/30 px-3 py-1 rounded-lg font-sans">
+                        Sold Out
+                      </span>
+                    </div>
+                  )}
+                  {/* Tags Container */}
                   <div className="absolute bottom-3 left-3 flex flex-wrap gap-1">
                     {product.tags.slice(0, 2).map((tag) => (
                       <span
@@ -168,29 +184,39 @@ export default function TrendingProducts() {
                     >
                       Meet the Maker
                     </Link>
-                    <button
-                      onClick={() => handleAddToCart(product)}
-                      title={
-                        cappedProductId === product.id
-                          ? "Basket already holds every unit in stock"
-                          : "Add to Basket"
-                      }
-                      className={`flex items-center justify-center p-2 rounded-xl transition duration-200 ${
-                        addedProductId === product.id
-                          ? "bg-emerald-600 text-white scale-105"
-                          : cappedProductId === product.id
-                            ? "bg-warm-brown text-cream-bg scale-105"
-                            : "bg-primary-green text-cream-bg hover:bg-[#224f3b]"
-                      }`}
-                    >
-                      {addedProductId === product.id ? (
-                        <Check className="h-4 w-4" />
-                      ) : cappedProductId === product.id ? (
-                        <span className="text-[9px] font-bold uppercase tracking-wider">Max</span>
-                      ) : (
-                        <ShoppingCart className="h-4 w-4" />
-                      )}
-                    </button>
+                    {product.stock === 0 || !product.is_available ? (
+                      <button
+                        disabled
+                        className="flex items-center justify-center p-2 rounded-xl bg-gray-200 text-gray-400 cursor-not-allowed"
+                        title="Sold Out"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleAddToCart(product)}
+                        title={
+                          cappedProductId === product.id
+                            ? "Basket already holds every unit in stock"
+                            : "Add to Basket"
+                        }
+                        className={`flex items-center justify-center p-2 rounded-xl transition duration-200 ${
+                          addedProductId === product.id
+                            ? "bg-emerald-600 text-white scale-105"
+                            : cappedProductId === product.id
+                              ? "bg-warm-brown text-cream-bg scale-105"
+                              : "bg-primary-green text-cream-bg hover:bg-[#224f3b]"
+                        }`}
+                      >
+                        {addedProductId === product.id ? (
+                          <Check className="h-4 w-4" />
+                        ) : cappedProductId === product.id ? (
+                          <span className="text-[9px] font-bold uppercase tracking-wider">Max</span>
+                        ) : (
+                          <ShoppingCart className="h-4 w-4" />
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

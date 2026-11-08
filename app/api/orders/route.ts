@@ -180,9 +180,13 @@ export async function POST(request: Request) {
 
   // 3) Decrement stock with a server-side guard.
   for (const { incoming, product } of validated) {
+    const newStock = Math.max(0, Number(product.stock) - Number(incoming.quantity));
     const { data: decremented, error: updateError } = await supabase
       .from("products")
-      .update({ stock: Number(product.stock) - Number(incoming.quantity) })
+      .update({
+        stock: newStock,
+        is_available: newStock > 0,
+      })
       .eq("id", String(product.id))
       .gte("stock", Number(incoming.quantity))
       .select("id");
