@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import StatsCard from '@/components/dashboard/StatsCard';
+import { getDashboardStats } from '@/lib/utils/dashboardStats';
+import type { DashboardStats } from '@/lib/utils/dashboardStats';
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSellers, getCategories, addProduct, getSellers as fetchSellers, getAllProductsAdmin, updateProduct } from "@/lib/supabase/client";
-import { Seller, Category, Product, ProductBadgeTag } from "@/types";
-import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText } from "lucide-react";
+import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus } from "@/lib/supabase/client";
+import { Seller, Category, Product, ProductBadgeTag, Order } from "@/types";
+import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package, Truck } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { RoleGuard } from "@/components/shared/RoleGuard";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
@@ -15,11 +18,14 @@ const FALLBACK_PRODUCT_IMAGE = "https://images.unsplash.com/photo-1541832676-9b7
 export default function DashboardPage() {
   const { currentUser } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"list" | "add">("list");
+  const [activeTab, setActiveTab] = useState<"list" | "orders" | "add">("list");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [myProducts, setMyProducts] = useState<Product[]>([]);
+  const [myOrders, setMyOrders] = useState<Order[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [orderFilter, setOrderFilter] = useState<"all" | "pending" | "accepted" | "completed" | "cancelled">("all");
   const [loading, setLoading] = useState(true);
 
   // Form State
@@ -39,6 +45,55 @@ export default function DashboardPage() {
   const [productLng, setProductLng] = useState("");
   const [productGmapsInput, setProductGmapsInput] = useState("");
   const [productLocationOption, setProductLocationOption] = useState<"paste" | "select">("select");
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
+  const [orderActionError, setOrderActionError] = useState<string | null>(null);
+  const [orderActionSuccess, setOrderActionSuccess] = useState<string | null>(null);
+
+  const handleOrderStatusChange = async (
+    orderId: string,
+    targetStatus: Order["status"]
+  ) => {
+    setOrderActionError(null);
+    setOrderActionSuccess(null);
+    setUpdatingOrderId(orderId);
+    try {
+      const updated = await updateOrderStatus(orderId, targetStatus, selectedSellerId);
+      if (updated) {
+        setMyOrders((prev) =>
+          prev.map((o) => (o.id === orderId ? updated : o))
+        );
+        const friendlyMessages: Record<string, string> = {
+          accepted: "Order accepted! Customer knows you are preparing their authentic items.",
+          completed: "Order marked completed! Fulfillment finished.",
+          cancelled: "Order cancelled and stock restored to inventory.",
+        };
+        setOrderActionSuccess(
+          friendlyMessages[targetStatus] || `Order status updated to ${targetStatus}.`
+        );
+        setTimeout(() => setOrderActionSuccess(null), 4000);
+        setCancelConfirmId(null);
+
+        // If cancelled, inventory was restored, so refresh products list
+        if (targetStatus === "cancelled" && selectedSellerId) {
+          getProductsForSeller(selectedSellerId)
+            .then(setMyProducts)
+            .catch(() => {});
+        }
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to update order status. Please try again.";
+      setOrderActionError(message);
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
 
   const detectProductLocation = () => {
     setSubmitError("");
@@ -98,7 +153,7 @@ export default function DashboardPage() {
     });
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -110,24 +165,30 @@ export default function DashboardPage() {
 
     const filesToProcess = Array.from(files).slice(0, availableSlots);
 
-    filesToProcess.forEach((file) => {
+    for (const file of filesToProcess) {
       if (!file.type.startsWith("image/")) {
-        setSubmitError("Please upload image files only (PNG, JPG, etc.).");
+        setSubmitError("Please upload image files only (PNG, JPG, WebP, etc.).");
         return;
       }
+    }
 
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === "string") {
-          setImagesList((prev) => [...prev, reader.result as string].slice(0, 5));
-          setSubmitError("");
-        }
-      };
-      reader.onerror = () => {
-        setSubmitError("Failed to read the image file.");
-      };
-      reader.readAsDataURL(file);
-    });
+    setIsUploadingImages(true);
+    setSubmitError("");
+
+    try {
+      const uploadedUrls: string[] = [];
+      for (const file of filesToProcess) {
+        const url = await uploadProductImage(file);
+        uploadedUrls.push(url);
+      }
+      setImagesList((prev) => [...prev, ...uploadedUrls].slice(0, 5));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to upload image.";
+      setSubmitError(msg);
+    } finally {
+      setIsUploadingImages(false);
+      e.target.value = "";
+    }
   };
 
   const handleAddCustomUrl = () => {
@@ -156,7 +217,6 @@ export default function DashboardPage() {
       setLoading(true);
       const fetchedSellers = await getSellers();
       const fetchedCategories = await getCategories();
-      const fetchedProducts = await getAllProductsAdmin();
 
       setSellers(fetchedSellers);
       setCategories(fetchedCategories);
@@ -166,12 +226,24 @@ export default function DashboardPage() {
 
       if (matchingSeller) {
         setSelectedSellerId(matchingSeller.id);
-        setMyProducts(fetchedProducts.filter(p => p.seller_id === matchingSeller.id));
+        const [sellerProds, sellerOrders] = await Promise.all([
+          getProductsForSeller(matchingSeller.id),
+          getOrdersForSeller(matchingSeller.id),
+        ]);
+        setMyProducts(sellerProds);
+        setMyOrders(sellerOrders);
       } else if (currentUser?.role === "admin" && fetchedSellers.length > 0) {
-        setSelectedSellerId(fetchedSellers[0].id);
-        setMyProducts(fetchedProducts.filter(p => p.seller_id === fetchedSellers[0].id));
+        const defaultSellerId = fetchedSellers[0].id;
+        setSelectedSellerId(defaultSellerId);
+        const [sellerProds, sellerOrders] = await Promise.all([
+          getProductsForSeller(defaultSellerId),
+          getOrdersForSeller(defaultSellerId),
+        ]);
+        setMyProducts(sellerProds);
+        setMyOrders(sellerOrders);
       } else {
         setMyProducts([]);
+        setMyOrders([]);
       }
 
       if (fetchedCategories.length > 0) {
@@ -183,16 +255,21 @@ export default function DashboardPage() {
     loadDashboardData();
   }, [currentUser, router]);
 
-  // Update product list when active seller changes
-  const handleSellerChange = (sellerId: string) => {
+  // Update product list and orders when active seller changes
+  const handleSellerChange = async (sellerId: string) => {
     setSelectedSellerId(sellerId);
     setLoading(true);
-    getAllProductsAdmin().then((allProds) => {
-      setMyProducts(allProds.filter((p) => p.seller_id === sellerId));
+    try {
+      const [sellerProds, sellerOrders] = await Promise.all([
+        getProductsForSeller(sellerId),
+        getOrdersForSeller(sellerId),
+      ]);
+      setMyProducts(sellerProds);
+      setMyOrders(sellerOrders);
+    } finally {
       setLoading(false);
-    });
+    }
   };
-
 
   const handleTagToggle = (tag: ProductBadgeTag) => {
     setSelectedTags((prev) =>
@@ -217,14 +294,72 @@ export default function DashboardPage() {
     setActiveTab("add");
   };
 
+  const handleCancelEdit = () => {
+    setEditingProduct(null);
+    setName("");
+    setDescription("");
+    setPrice("");
+    setStock("10");
+    setOriginDetails("");
+    setSelectedTags([]);
+    setImagesList([]);
+    setDocumentsList([]);
+    setCustomImageUrl("");
+    setProductAddress("");
+    setProductLat("");
+    setProductLng("");
+    setProductGmapsInput("");
+    setActiveTab("list");
+  };
+
   const handleMarkSoldOut = async (productId: string) => {
     setSubmitError("");
     try {
       await updateProduct(productId, { stock: 0, is_available: false });
-      const updatedProds = await getAllProductsAdmin();
-      setMyProducts(updatedProds.filter((p) => p.seller_id === selectedSellerId));
-    } catch (err) {
+      const updatedProds = await getProductsForSeller(selectedSellerId);
+      setMyProducts(updatedProds);
+    } catch {
       setSubmitError("Failed to update stock status.");
+    }
+  };
+
+  const handleQuickRestock = async (product: Product, amount = 10) => {
+    setSubmitError("");
+    try {
+      const newStock = (product.stock > 0 ? product.stock : 0) + amount;
+      await updateProduct(product.id, { stock: newStock, is_available: true });
+      const updatedProds = await getProductsForSeller(selectedSellerId);
+      setMyProducts(updatedProds);
+    } catch {
+      setSubmitError("Failed to update stock quantity.");
+    }
+  };
+
+  const handleToggleAvailability = async (product: Product) => {
+    setSubmitError("");
+    try {
+      const nextAvailability = !product.is_available;
+      await updateProduct(product.id, { is_available: nextAvailability });
+      const updatedProds = await getProductsForSeller(selectedSellerId);
+      setMyProducts(updatedProds);
+    } catch {
+      setSubmitError("Failed to toggle listing availability.");
+    }
+  };
+
+  const handleDeleteProduct = async (productId: string) => {
+    setSubmitError("");
+    setDeletingProductId(productId);
+    try {
+      await deleteProduct(productId, selectedSellerId);
+      const updatedProds = await getProductsForSeller(selectedSellerId);
+      setMyProducts(updatedProds);
+      setDeleteConfirmId(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to delete product.";
+      setSubmitError(msg);
+    } finally {
+      setDeletingProductId(null);
     }
   };
 
@@ -323,16 +458,17 @@ export default function DashboardPage() {
       setEditingProduct(null);
 
       // Refresh list
-      const updatedProds = await getAllProductsAdmin();
-      setMyProducts(updatedProds.filter((p) => p.seller_id === selectedSellerId));
+      const updatedProds = await getProductsForSeller(selectedSellerId);
+      setMyProducts(updatedProds);
 
       // Redirect back to list after delay
       setTimeout(() => {
         setActiveTab("list");
         setSubmitSuccess(false);
       }, 2000);
-    } catch (err) {
-      setSubmitError("Failed to save product details. Please try again.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to save product details. Please try again.";
+      setSubmitError(msg);
     }
   };
 
@@ -359,6 +495,11 @@ export default function DashboardPage() {
         );
     }
   };
+
+  const filteredOrdersList = myOrders.filter((order) => {
+    if (orderFilter === "all") return true;
+    return order.status === orderFilter;
+  });
 
   return (
     <RoleGuard allowedRoles={["seller", "admin"]}>
@@ -424,20 +565,42 @@ export default function DashboardPage() {
         })()}
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-warm-brown/10">
+        <div className="flex border-b border-warm-brown/10 overflow-x-auto whitespace-nowrap scrollbar-none">
           <button
+            type="button"
             onClick={() => {
               setActiveTab("list");
               setEditingProduct(null);
             }}
-            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 ${activeTab === "list"
-              ? "border-primary-green text-primary-green"
-              : "border-transparent text-text-dark/50 hover:text-text-dark"
-              }`}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 cursor-pointer ${
+              activeTab === "list"
+                ? "border-primary-green text-primary-green"
+                : "border-transparent text-text-dark/50 hover:text-text-dark"
+            }`}
           >
             My Products ({myProducts.length})
           </button>
           <button
+            type="button"
+            onClick={() => {
+              setActiveTab("orders");
+              setEditingProduct(null);
+            }}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center cursor-pointer ${
+              activeTab === "orders"
+                ? "border-primary-green text-primary-green"
+                : "border-transparent text-text-dark/50 hover:text-text-dark"
+            }`}
+          >
+            <Inbox className="h-4 w-4 mr-1.5" /> Order Inbox ({myOrders.length})
+            {myOrders.filter((o) => o.status === "pending").length > 0 && (
+              <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                {myOrders.filter((o) => o.status === "pending").length} new
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
             onClick={() => {
               setActiveTab("add");
               setEditingProduct(null);
@@ -456,15 +619,17 @@ export default function DashboardPage() {
               setProductLng("");
               setProductGmapsInput("");
             }}
-            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center ${activeTab === "add" && !editingProduct
-              ? "border-primary-green text-primary-green"
-              : "border-transparent text-text-dark/50 hover:text-text-dark"
-              }`}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center cursor-pointer ${
+              activeTab === "add" && !editingProduct
+                ? "border-primary-green text-primary-green"
+                : "border-transparent text-text-dark/50 hover:text-text-dark"
+            }`}
           >
             <PlusCircle className="h-4 w-4 mr-1.5" /> Submit New Product
           </button>
           {editingProduct && (
             <button
+              type="button"
               className="px-5 py-3 text-sm font-bold border-b-2 border-primary-green text-primary-green transition duration-200 flex items-center font-sans"
             >
               Edit Product: {editingProduct.name}
@@ -507,10 +672,22 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t border-warm-brown/5 gap-2 flex-wrap font-sans">
-                      <span className="text-[10px] text-warm-brown font-bold uppercase tracking-wider">
-                        Stock: {product.stock > 0 && product.is_available ? `${product.stock} units` : "Finished (Out of Stock)"}
-                      </span>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {product.stock <= 0 ? (
+                          <span className="text-[10px] text-red-700 font-bold uppercase tracking-wider bg-red-100 px-2 py-0.5 rounded-full">
+                            Sold Out (0 units)
+                          </span>
+                        ) : !product.is_available ? (
+                          <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider bg-amber-100 px-2 py-0.5 rounded-full">
+                            Paused ({product.stock} in reserve)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-primary-green font-bold uppercase tracking-wider bg-primary-green/10 px-2 py-0.5 rounded-full">
+                            Stock: {product.stock} units
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
                         <button
                           type="button"
                           onClick={() => handleStartEdit(product)}
@@ -518,13 +695,71 @@ export default function DashboardPage() {
                         >
                           Edit
                         </button>
-                        {product.stock > 0 && product.is_available && (
+                        {product.stock <= 0 ? (
                           <button
                             type="button"
-                            onClick={() => handleMarkSoldOut(product.id)}
-                            className="text-[10px] font-bold text-red-600 hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                            onClick={() => handleQuickRestock(product, 10)}
+                            className="text-[10px] font-bold text-primary-green hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                            title="Add 10 units to available stock"
                           >
-                            Finish Stock
+                            Restock (+10)
+                          </button>
+                        ) : product.is_available ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleMarkSoldOut(product.id)}
+                              className="text-[10px] font-bold text-red-600 hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                              title="Mark this product as out of stock"
+                            >
+                              Finish Stock
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAvailability(product)}
+                              className="text-[10px] font-bold text-warm-brown hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                              title="Temporarily pause selling this item"
+                            >
+                              Pause
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAvailability(product)}
+                            className="text-[10px] font-bold text-primary-green hover:underline uppercase tracking-wider font-sans cursor-pointer"
+                            title="Resume selling this item"
+                          >
+                            Resume
+                          </button>
+                        )}
+                        {deleteConfirmId === product.id ? (
+                          <div className="flex items-center gap-1 bg-red-50 px-2 py-0.5 rounded-lg border border-red-200">
+                            <span className="text-[9px] font-bold text-red-700">Delete?</span>
+                            <button
+                              type="button"
+                              disabled={deletingProductId === product.id}
+                              onClick={() => handleDeleteProduct(product.id)}
+                              className="text-[9px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded hover:bg-red-700 transition cursor-pointer disabled:opacity-50"
+                            >
+                              {deletingProductId === product.id ? "..." : "Yes"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmId(null)}
+                              className="text-[9px] font-bold text-text-dark/60 hover:text-text-dark px-1 cursor-pointer"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmId(product.id)}
+                            className="text-[10px] font-bold text-red-600 hover:underline uppercase tracking-wider font-sans cursor-pointer flex items-center"
+                            title="Delete this listing"
+                          >
+                            <Trash2 className="h-3 w-3 mr-0.5" /> Delete
                           </button>
                         )}
                         {getStatusBadge(product.status)}
@@ -543,6 +778,362 @@ export default function DashboardPage() {
               </p>
             </div>
           )
+        ) : activeTab === "orders" ? (
+          /* ORDERS INBOX TAB */
+          <div className="space-y-6">
+            {/* Status Filter Sub-Tabs */}
+            <div className="flex border-b border-warm-brown/10 overflow-x-auto whitespace-nowrap scrollbar-none">
+              {(["all", "pending", "accepted", "completed", "cancelled"] as const).map((tab) => {
+                const count =
+                  tab === "all"
+                    ? myOrders.length
+                    : myOrders.filter((o) => o.status === tab).length;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setOrderFilter(tab)}
+                    className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 capitalize font-sans cursor-pointer ${
+                      orderFilter === tab
+                        ? "border-primary-green text-primary-green"
+                        : "border-transparent text-text-dark/50 hover:text-text-dark"
+                    }`}
+                  >
+                    {tab === "all" ? "All Orders" : `${tab}`} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Action Feedback Messages */}
+            {orderActionSuccess && (
+              <div className="p-3 bg-primary-green/10 border border-primary-green/30 text-primary-green text-xs font-bold rounded-xl flex items-center justify-between font-sans">
+                <div className="flex items-center">
+                  <CheckCircle className="h-4 w-4 mr-2 shrink-0" />
+                  <span>{orderActionSuccess}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOrderActionSuccess(null)}
+                  className="text-primary-green/60 hover:text-primary-green cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {orderActionError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-xl flex items-center justify-between font-sans">
+                <div className="flex items-center">
+                  <XCircle className="h-4 w-4 mr-2 shrink-0" />
+                  <span>{orderActionError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOrderActionError(null)}
+                  className="text-red-600/60 hover:text-red-700 cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Orders List */}
+            {filteredOrdersList.length > 0 ? (
+              <div className="space-y-4">
+                {filteredOrdersList.map((order) => {
+                  const cleanPhone = (order.buyer_phone ?? "").replace(/\D/g, "");
+                  const lineTotal =
+                    (order.price ?? 0) * order.quantity + (order.delivery_fee ?? 0);
+                  const statusColors: Record<string, string> = {
+                    pending: "bg-amber-100 text-amber-800 border-amber-200",
+                    accepted: "bg-blue-100 text-blue-800 border-blue-200",
+                    completed: "bg-primary-green/15 text-primary-green border-primary-green/20",
+                    cancelled: "bg-red-50 text-red-700 border-red-200",
+                  };
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="bg-[#FAF7F2] rounded-2xl border border-warm-brown/10 p-5 sm:p-6 shadow-sm hover:border-primary-green/20 transition space-y-4"
+                    >
+                      {/* Top banner info */}
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3.5 border-b border-warm-brown/5">
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] text-warm-brown/70 uppercase font-bold tracking-wider font-sans block">
+                            Order Entry
+                          </span>
+                          <span className="font-mono text-xs font-bold text-text-dark block">
+                            {order.id}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] text-text-dark/60 font-semibold font-sans flex items-center">
+                            <Calendar className="h-3.5 w-3.5 mr-1 text-warm-brown" />
+                            {new Date(order.created_at).toLocaleString("en-IN", {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            })}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full border font-sans ${
+                              statusColors[order.status] || "bg-warm-brown/5 text-warm-brown"
+                            }`}
+                          >
+                            {order.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Main Order Details Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-sans">
+                        {/* Product & Fulfillment */}
+                        <div className="space-y-2 bg-white/70 p-3.5 rounded-xl border border-warm-brown/10">
+                          <div className="flex items-center justify-between">
+                            <span className="font-serif font-bold text-sm text-text-dark">
+                              {order.product_name ?? "Handcrafted item"}
+                            </span>
+                            <span className="font-bold text-primary-green text-sm">
+                              ₹{order.price ?? 0} × {order.quantity}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 text-text-dark/70 pt-1 border-t border-warm-brown/5">
+                            <Package className="h-3.5 w-3.5 text-primary-green shrink-0" />
+                            <span className="capitalize font-semibold">
+                              {order.delivery_type === "pickup"
+                                ? "Direct Maker Pickup (Free)"
+                                : "Local Delivery (Ernakulam)"}
+                            </span>
+                          </div>
+
+                          {order.address && (
+                            <div className="flex items-start gap-1.5 text-text-dark/70">
+                              <MapPin className="h-3.5 w-3.5 text-warm-brown shrink-0 mt-0.5" />
+                              <span className="line-clamp-2">{order.address}</span>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between pt-1 border-t border-warm-brown/5 text-[11px]">
+                            <span className="text-text-dark/60">
+                              Payment: {order.payment_method === "upi" ? "UPI Payment" : "Cash on Delivery"}
+                            </span>
+                            <span className="font-bold text-text-dark">
+                              Total: ₹{lineTotal}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Customer & Direct Contact line */}
+                        <div className="space-y-2 bg-white/70 p-3.5 rounded-xl border border-warm-brown/10 flex flex-col justify-between">
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-warm-brown font-bold uppercase tracking-wider block">
+                              Customer Details
+                            </span>
+                            <p className="font-bold text-text-dark">
+                              {order.buyer_name || "Community Customer"}
+                            </p>
+                            {order.buyer_phone ? (
+                              <p className="text-text-dark/70">{order.buyer_phone}</p>
+                            ) : (
+                              <p className="text-text-dark/40 italic">No phone provided</p>
+                            )}
+                          </div>
+
+                          {/* Quick WhatsApp / Call Lines */}
+                          {cleanPhone && (
+                            <div className="flex items-center gap-2 pt-2 border-t border-warm-brown/5">
+                              <a
+                                href={`https://wa.me/91${cleanPhone}?text=${encodeURIComponent(
+                                  `Hello ${order.buyer_name || "Customer"}, this is your MADETRUE maker regarding your order #${order.id} (${order.product_name ?? "item"} × ${order.quantity}).`
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center px-3 py-1.5 bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#128C7E] rounded-lg font-bold text-[11px] transition"
+                              >
+                                <MessageCircle className="h-3.5 w-3.5 mr-1" />
+                                WhatsApp
+                              </a>
+                              <a
+                                href={`tel:${order.buyer_phone}`}
+                                className="inline-flex items-center px-3 py-1.5 bg-primary-green/10 hover:bg-primary-green/20 text-primary-green rounded-lg font-bold text-[11px] transition"
+                              >
+                                <Phone className="h-3.5 w-3.5 mr-1" />
+                                Call
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Order Status Action Bar */}
+                      <div className="pt-3 border-t border-warm-brown/10 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-text-dark/70 font-sans">
+                          <span className="text-[10px] uppercase font-bold text-warm-brown tracking-wider">
+                            Status Flow:
+                          </span>
+                          {order.status === "pending" && (
+                            <span className="text-amber-800">
+                              New Order — Awaiting maker acceptance
+                            </span>
+                          )}
+                          {order.status === "accepted" && (
+                            <span className="text-blue-800">
+                              Accepted — In preparation for{" "}
+                              {order.delivery_type === "pickup"
+                                ? "pickup"
+                                : "local delivery"}
+                            </span>
+                          )}
+                          {order.status === "completed" && (
+                            <span className="text-primary-green flex items-center gap-1">
+                              <CheckCircle className="h-3.5 w-3.5" /> Fulfilled & Completed
+                            </span>
+                          )}
+                          {order.status === "cancelled" && (
+                            <span className="text-red-700 flex items-center gap-1">
+                              <XCircle className="h-3.5 w-3.5" /> Order Cancelled
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {updatingOrderId === order.id ? (
+                            <span className="inline-flex items-center text-xs text-warm-brown font-semibold py-1.5 px-3 bg-warm-brown/5 rounded-xl border border-warm-brown/10 font-sans">
+                              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Updating...
+                            </span>
+                          ) : (
+                            <>
+                              {order.status === "pending" && (
+                                <>
+                                  {cancelConfirmId === order.id ? (
+                                    <div className="flex items-center gap-1.5 bg-red-50 p-1 rounded-xl border border-red-200">
+                                      <span className="text-[11px] font-bold text-red-700 px-2 font-sans">
+                                        Cancel?
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleOrderStatusChange(order.id, "cancelled")
+                                        }
+                                        className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold font-sans transition cursor-pointer"
+                                      >
+                                        Yes, Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCancelConfirmId(null)}
+                                        className="px-2.5 py-1 bg-white hover:bg-cream-bg text-text-dark border border-warm-brown/20 rounded-lg text-xs font-semibold font-sans transition cursor-pointer"
+                                      >
+                                        No
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCancelConfirmId(order.id)}
+                                        className="px-3 py-1.5 border border-red-200 hover:bg-red-50 text-red-700 rounded-xl text-xs font-bold font-sans transition cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleOrderStatusChange(order.id, "accepted")
+                                        }
+                                        className="inline-flex items-center px-4 py-1.5 bg-primary-green hover:bg-[#224f3b] text-cream-bg rounded-xl text-xs font-bold font-sans transition cursor-pointer shadow-sm"
+                                      >
+                                        <CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Accept Order
+                                      </button>
+                                    </>
+                                  )}
+                                </>
+                              )}
+
+                              {order.status === "accepted" && (
+                                <>
+                                  {cancelConfirmId === order.id ? (
+                                    <div className="flex items-center gap-1.5 bg-red-50 p-1 rounded-xl border border-red-200">
+                                      <span className="text-[11px] font-bold text-red-700 px-2 font-sans">
+                                        Cancel?
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleOrderStatusChange(order.id, "cancelled")
+                                        }
+                                        className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold font-sans transition cursor-pointer"
+                                      >
+                                        Yes, Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCancelConfirmId(null)}
+                                        className="px-2.5 py-1 bg-white hover:bg-cream-bg text-text-dark border border-warm-brown/20 rounded-lg text-xs font-semibold font-sans transition cursor-pointer"
+                                      >
+                                        No
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCancelConfirmId(order.id)}
+                                        className="px-3 py-1.5 border border-red-200 hover:bg-red-50 text-red-700 rounded-xl text-xs font-bold font-sans transition cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleOrderStatusChange(order.id, "completed")
+                                        }
+                                        className="inline-flex items-center px-4 py-1.5 bg-primary-green hover:bg-[#224f3b] text-cream-bg rounded-xl text-xs font-bold font-sans transition cursor-pointer shadow-sm"
+                                      >
+                                        {order.delivery_type === "pickup" ? (
+                                          <>
+                                            <CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Ready & Picked Up
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Truck className="h-3.5 w-3.5 mr-1.5" /> Mark Delivered
+                                          </>
+                                        )}
+                                      </button>
+                                    </>
+                                  )}
+                                </>
+                              )}
+
+                              {(order.status === "completed" ||
+                                order.status === "cancelled") && (
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-warm-brown/60 bg-warm-brown/5 px-3 py-1.5 rounded-lg border border-warm-brown/10 font-sans">
+                                  Fulfillment Finished
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-16 bg-[#FAF7F2] border border-warm-brown/10 rounded-2xl space-y-4">
+                <Inbox className="h-10 w-10 text-warm-brown/40 mx-auto" />
+                <h3 className="font-serif text-lg font-bold text-text-dark">
+                  {orderFilter === "all" ? "No Customer Orders Yet" : `No ${orderFilter} orders`}
+                </h3>
+                <p className="text-xs text-text-dark/60 max-w-sm mx-auto leading-relaxed">
+                  {orderFilter === "all"
+                    ? "When nearby consumers discover your authentic goods and place orders, they will appear here in your live order inbox."
+                    : `There are currently no orders in the ${orderFilter} state.`}
+                </p>
+              </div>
+            )}
+          </div>
         ) : (
           /* ADD / SUBMIT PRODUCT TAB */
           <div className="bg-[#FAF7F2] p-6 sm:p-8 rounded-2xl border border-warm-brown/10 shadow-sm">
@@ -683,12 +1274,22 @@ export default function DashboardPage() {
                           type="file"
                           accept="image/*"
                           multiple
+                          disabled={isUploadingImages}
                           onChange={handleFileChange}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed"
                         />
-                        <Upload className="h-6 w-6 text-warm-brown/60 mb-2" />
-                        <span className="text-xs font-semibold text-text-dark/80 font-sans">Click or drag images here</span>
-                        <span className="text-[10px] text-text-dark/50 mt-1 font-sans">Supports multiple files, up to {5 - imagesList.length} more</span>
+                        {isUploadingImages ? (
+                          <>
+                            <Loader2 className="h-6 w-6 text-primary-green animate-spin mb-2" />
+                            <span className="text-xs font-semibold text-primary-green font-sans">Uploading photo to storage...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-6 w-6 text-warm-brown/60 mb-2" />
+                            <span className="text-xs font-semibold text-text-dark/80 font-sans">Click or drag images here</span>
+                            <span className="text-[10px] text-text-dark/50 mt-1 font-sans">Supports multiple files, up to {5 - imagesList.length} more</span>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -980,13 +1581,24 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Submit Button */}
-              <div className="pt-4 flex items-center justify-end">
+              {/* Submit & Cancel Buttons */}
+              <div className="pt-4 flex items-center justify-end gap-3 flex-wrap">
+                {editingProduct && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="w-full sm:w-auto px-5 py-3 rounded-xl border border-warm-brown/20 text-warm-brown font-semibold text-sm hover:bg-warm-brown/5 transition duration-200 cursor-pointer"
+                  >
+                    Cancel / Discard Changes
+                  </button>
+                )}
                 <button
                   type="submit"
-                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200"
+                  disabled={isUploadingImages}
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  Submit for Review
+                  {isUploadingImages && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {editingProduct ? "Save Changes" : "Submit for Review"}
                 </button>
               </div>
 

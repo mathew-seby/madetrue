@@ -15,12 +15,49 @@ import { NextResponse } from "next/server";
 import type { Order } from "@/types";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
+import {
+  isValidOrderTransition,
+  getInvalidTransitionMessage,
+} from "@/lib/utils/orderStatus";
 
 const PRODUCT_COLUMNS =
   "id, seller_id, name, price, base_price, commission, status, is_available, stock";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export async function GET(request: Request) {
+  if (!isSupabaseEnabled()) {
+    return NextResponse.json(
+      { error: "MADETRUE_DATA_SOURCE is 'mock' — order persistence is off." },
+      { status: 400 }
+    );
+  }
+
+  const { searchParams } = new URL(request.url);
+  const sellerId = searchParams.get("seller_id");
+  const buyerId = searchParams.get("buyer_id");
+
+  const supabase = createSupabaseServerClient();
+  let query = supabase.from("orders").select("*");
+
+  if (sellerId) {
+    query = query.eq("seller_id", sellerId);
+  } else if (buyerId) {
+    query = query.eq("buyer_id", buyerId);
+  }
+
+  const { data, error } = await query.order("created_at", { ascending: false });
+
+  if (error) {
+    return NextResponse.json(
+      { error: `Database read failed: ${error.message}` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json((data ?? []).map((row) => mapOrderRow(row)));
 }
 
 export async function POST(request: Request) {
@@ -180,9 +217,13 @@ export async function POST(request: Request) {
 
   // 3) Decrement stock with a server-side guard.
   for (const { incoming, product } of validated) {
+    const newStock = Math.max(0, Number(product.stock) - Number(incoming.quantity));
     const { data: decremented, error: updateError } = await supabase
       .from("products")
-      .update({ stock: Number(product.stock) - Number(incoming.quantity) })
+      .update({
+        stock: newStock,
+        is_available: newStock > 0,
+      })
       .eq("id", String(product.id))
       .gte("stock", Number(incoming.quantity))
       .select("id");
@@ -199,6 +240,142 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json(inserted);
+}
+
+export async function PATCH(request: Request) {
+  if (!isSupabaseEnabled()) {
+    return NextResponse.json(
+      { error: "MADETRUE_DATA_SOURCE is 'mock' — order persistence is off." },
+      { status: 400 }
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "The status update request could not be read." },
+      { status: 400 }
+    );
+  }
+
+  const body = isRecord(payload) ? payload : null;
+  const orderId = typeof body?.id === "string" ? body.id.trim() : null;
+  const newStatus =
+    typeof body?.status === "string"
+      ? (body.status.trim() as Order["status"])
+      : null;
+  const sellerId =
+    typeof body?.seller_id === "string" ? body.seller_id.trim() : null;
+
+  if (!orderId || !newStatus) {
+    return NextResponse.json(
+      { error: "Order ID and target status are required." },
+      { status: 400 }
+    );
+  }
+
+  const validStatuses: Order["status"][] = [
+    "pending",
+    "accepted",
+    "completed",
+    "cancelled",
+  ];
+  if (!validStatuses.includes(newStatus)) {
+    return NextResponse.json(
+      {
+        error: `Invalid status "${newStatus}". Must be one of: ${validStatuses.join(
+          ", "
+        )}`,
+      },
+      { status: 400 }
+    );
+  }
+
+  const supabase = createSupabaseServerClient();
+
+  // 1) Read the existing order
+  const { data: order, error: readError } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (readError) {
+    return NextResponse.json(
+      { error: `Database read failed: ${readError.message}` },
+      { status: 500 }
+    );
+  }
+
+  if (!order) {
+    return NextResponse.json(
+      { error: `Order with ID "${orderId}" not found.` },
+      { status: 404 }
+    );
+  }
+
+  // 2) Enforce seller isolation if seller_id was provided
+  if (sellerId && order.seller_id !== sellerId) {
+    return NextResponse.json(
+      {
+        error:
+          "You do not have permission to modify orders belonging to another maker.",
+      },
+      { status: 403 }
+    );
+  }
+
+  // 3) Enforce valid status transition machine
+  const currentStatus = order.status as Order["status"];
+  if (!isValidOrderTransition(currentStatus, newStatus)) {
+    return NextResponse.json(
+      { error: getInvalidTransitionMessage(currentStatus, newStatus) },
+      { status: 400 }
+    );
+  }
+
+  // 4) Update status
+  const { data: updated, error: updateError } = await supabase
+    .from("orders")
+    .update({ status: newStatus })
+    .eq("id", orderId)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    return NextResponse.json(
+      {
+        error: `Updating order status failed: ${
+          updateError?.message || "Unknown error"
+        }`,
+      },
+      { status: 500 }
+    );
+  }
+
+  // 5) If order is cancelled, restore product stock
+  if (newStatus === "cancelled" && currentStatus !== "cancelled") {
+    const { data: product } = await supabase
+      .from("products")
+      .select("stock")
+      .eq("id", order.product_id)
+      .maybeSingle();
+
+    if (product) {
+      const restored = Math.max(
+        0,
+        Number(product.stock) + Number(order.quantity)
+      );
+      await supabase
+        .from("products")
+        .update({ stock: restored, is_available: true })
+        .eq("id", order.product_id);
+    }
+  }
+
+  return NextResponse.json(mapOrderRow(updated));
 }
 
 function mapOrderRow(row: Record<string, unknown>): Order {

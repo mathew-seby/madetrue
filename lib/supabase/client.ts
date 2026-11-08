@@ -11,12 +11,21 @@ import {
 } from "./readSupabase";
 import {
   saveOrdersSupabase,
+  fetchOrdersForSellerSupabase,
   submitProductSupabase,
   editProductSupabase,
   fetchAllProductsSupabase,
+  fetchProductsForSellerSupabase,
+  deleteProductSupabase,
+  uploadProductImageSupabase,
   submitSellerSupabase,
   updateSellerVerificationSupabase,
+  updateOrderStatusSupabase,
 } from "./writeSupabase";
+import {
+  isValidOrderTransition,
+  getInvalidTransitionMessage,
+} from "@/lib/utils/orderStatus";
 
 // This is our data layer client. It serves mock data by default
 // and uses local storage to simulate write operations (approvals, product additions) on the client side.
@@ -163,6 +172,49 @@ export async function getAllProductsAdmin(): Promise<Product[]> {
   if (isSupabaseEnabled()) return fetchAllProductsSupabase();
   await new Promise((resolve) => setTimeout(resolve, 100));
   return getStoredProducts();
+}
+
+// Get all products belonging to a seller (including pending and rejected) for seller dashboard
+export async function getProductsForSeller(sellerId: string): Promise<Product[]> {
+  if (isSupabaseEnabled()) return fetchProductsForSellerSupabase(sellerId);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const products = getStoredProducts();
+  return products.filter((p) => p.seller_id === sellerId);
+}
+
+// Delete a product listing (used by seller dashboard and admin console)
+export async function deleteProduct(id: string, sellerId?: string): Promise<boolean> {
+  if (isSupabaseEnabled()) return deleteProductSupabase(id, sellerId);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const products = getStoredProducts();
+  const index = products.findIndex((p) => p.id === id);
+  if (index === -1) return false;
+  if (sellerId && products[index].seller_id !== sellerId) {
+    throw new Error("[madetrue] You can only delete your own products.");
+  }
+  const remaining = products.filter((p) => p.id !== id);
+  saveStoredProducts(remaining);
+  return true;
+}
+
+// Upload product image to Supabase Storage, with offline DataURL fallback for mock mode
+export async function uploadProductImage(file: File): Promise<string> {
+  if (isSupabaseEnabled()) {
+    return uploadProductImageSupabase(file);
+  }
+  // Mock mode: encode as base64 DataURL for local persistence
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("[madetrue] Failed to read image file."));
+      }
+    };
+    reader.onerror = () => reject(new Error("[madetrue] Error reading image file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 // Submit a new product (defaults to 'pending' review)
@@ -323,21 +375,60 @@ export async function getOrdersAdmin(): Promise<Order[]> {
   return getStoredOrders();
 }
 
+// Get orders belonging to a specific maker (seller dashboard inbox)
+export async function getOrdersForSeller(sellerId: string): Promise<Order[]> {
+  if (isSupabaseEnabled()) return fetchOrdersForSellerSupabase(sellerId);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const orders = getStoredOrders();
+  return orders
+    .filter((o) => o.seller_id === sellerId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
 // Update the status of an order
 export async function updateOrderStatus(
   id: string,
-  status: 'pending' | 'accepted' | 'completed' | 'cancelled'
+  status: 'pending' | 'accepted' | 'completed' | 'cancelled',
+  sellerId?: string
 ): Promise<Order | null> {
+  if (isSupabaseEnabled()) {
+    return updateOrderStatusSupabase(id, status, sellerId);
+  }
+
   await new Promise((resolve) => setTimeout(resolve, 100));
   const orders = getStoredOrders();
   const index = orders.findIndex((o) => o.id === id);
 
-  if (index !== -1) {
-    orders[index] = { ...orders[index], status };
-    saveStoredOrders(orders);
-    return orders[index];
+  if (index === -1) {
+    return null;
   }
-  return null;
+
+  const existingOrder = orders[index];
+
+  // Enforce seller isolation
+  if (sellerId && existingOrder.seller_id !== sellerId) {
+    throw new Error("You do not have permission to modify orders belonging to another maker.");
+  }
+
+  // Enforce valid status transition machine
+  if (!isValidOrderTransition(existingOrder.status, status)) {
+    throw new Error(getInvalidTransitionMessage(existingOrder.status, status));
+  }
+
+  // Restore inventory if cancelled
+  if (status === "cancelled" && existingOrder.status !== "cancelled") {
+    const products = getStoredProducts();
+    const prodIdx = products.findIndex((p) => p.id === existingOrder.product_id);
+    if (prodIdx !== -1) {
+      products[prodIdx].stock += existingOrder.quantity;
+      products[prodIdx].is_available = true;
+      saveStoredProducts(products);
+    }
+  }
+
+  orders[index] = { ...existingOrder, status };
+  saveStoredOrders(orders);
+  return orders[index];
 }
 
 // Update the WhatsApp notification status of an order

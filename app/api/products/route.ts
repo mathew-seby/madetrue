@@ -51,7 +51,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!isSupabaseEnabled()) {
     return NextResponse.json(
       { error: "MADETRUE_DATA_SOURCE is 'mock' — product persistence is off." },
@@ -59,13 +59,21 @@ export async function GET() {
     );
   }
 
+  const { searchParams } = new URL(request.url);
+  const sellerId = searchParams.get("seller_id");
+
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("products")
     .select(
       "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission"
-    )
-    .order("id", { ascending: true });
+    );
+
+  if (sellerId) {
+    query = query.eq("seller_id", sellerId);
+  }
+
+  const { data, error } = await query.order("id", { ascending: true });
 
   if (error) {
     return NextResponse.json(
@@ -286,4 +294,96 @@ export async function PATCH(request: Request) {
   }
 
   return NextResponse.json(mapProduct(updated));
+}
+
+export async function DELETE(request: Request) {
+  if (!isSupabaseEnabled()) {
+    return NextResponse.json(
+      { error: "MADETRUE_DATA_SOURCE is 'mock' — product persistence is off." },
+      { status: 400 }
+    );
+  }
+
+  let id: string | null = null;
+  let sellerId: string | null = null;
+
+  const url = new URL(request.url);
+  id = url.searchParams.get("id");
+  sellerId = url.searchParams.get("seller_id");
+
+  if (!id) {
+    try {
+      const payload = (await request.json()) as Record<string, unknown>;
+      if (typeof payload?.id === "string") id = payload.id;
+      if (typeof payload?.seller_id === "string") sellerId = payload.seller_id;
+    } catch {
+      // payload wasn't JSON, rely on query params
+    }
+  }
+
+  if (!id) {
+    return NextResponse.json(
+      { error: "Please provide the product ID to delete." },
+      { status: 400 }
+    );
+  }
+
+  const supabase = createSupabaseServerClient();
+
+  if (sellerId) {
+    const { data: existing, error: checkError } = await supabase
+      .from("products")
+      .select("seller_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (checkError) {
+      return NextResponse.json(
+        { error: `Database check failed: ${checkError.message}` },
+        { status: 500 }
+      );
+    }
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "That product could not be found." },
+        { status: 404 }
+      );
+    }
+
+    if (existing.seller_id !== sellerId) {
+      return NextResponse.json(
+        { error: "You can only delete your own products." },
+        { status: 403 }
+      );
+    }
+  }
+
+  const { error: deleteError } = await supabase
+    .from("products")
+    .delete()
+    .eq("id", id);
+
+  if (deleteError) {
+    // Foreign key violation if existing orders reference this product
+    if (
+      deleteError.code === "23503" ||
+      deleteError.message.includes("foreign key") ||
+      deleteError.message.includes("violates foreign key constraint")
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "This product cannot be deleted because it has past orders. Mark it as 'Finished / Sold Out' instead to prevent new orders.",
+        },
+        { status: 400 }
+      );
+    }
+    return NextResponse.json(
+      { error: `Deleting product failed: ${deleteError.message}` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ success: true, id });
 }

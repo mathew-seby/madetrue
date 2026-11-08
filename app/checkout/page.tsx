@@ -224,6 +224,20 @@ export default function CheckoutPage() {
       }
     }
 
+    // Ensure all basket items have stock and are available
+    for (const item of cart) {
+      if (item.product.stock <= 0 || !item.product.is_available) {
+        setErrorMsg(`"${item.product.name}" is currently sold out. Please return to your basket and remove it.`);
+        setSubmitting(false);
+        return;
+      }
+      if (item.quantity > item.product.stock) {
+        setErrorMsg(`Only ${item.product.stock} unit(s) of "${item.product.name}" are in stock. Please adjust your quantity in the basket.`);
+        setSubmitting(false);
+        return;
+      }
+    }
+
     try {
       // Simulate slight delay
       await new Promise((resolve) => setTimeout(resolve, 800));

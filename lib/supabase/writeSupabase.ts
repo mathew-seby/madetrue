@@ -48,6 +48,23 @@ export async function saveOrdersSupabase(orders: Order[]): Promise<Order[]> {
   });
 }
 
+export async function fetchOrdersForSellerSupabase(sellerId: string): Promise<Order[]> {
+  return requestJson<Order[]>(`/api/orders?seller_id=${encodeURIComponent(sellerId)}`, {
+    method: "GET",
+  });
+}
+
+export async function updateOrderStatusSupabase(
+  id: string,
+  status: Order["status"],
+  sellerId?: string
+): Promise<Order | null> {
+  return requestJson<Order>("/api/orders", {
+    method: "PATCH",
+    body: JSON.stringify({ id, status, seller_id: sellerId }),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Products — dashboard submissions and edits.
 // ---------------------------------------------------------------------------
@@ -73,6 +90,52 @@ export async function editProductSupabase(
 
 export async function fetchAllProductsSupabase(): Promise<Product[]> {
   return requestJson<Product[]>("/api/products", { method: "GET" });
+}
+
+export async function fetchProductsForSellerSupabase(sellerId: string): Promise<Product[]> {
+  return requestJson<Product[]>(`/api/products?seller_id=${encodeURIComponent(sellerId)}`, {
+    method: "GET",
+  });
+}
+
+export async function deleteProductSupabase(id: string, sellerId?: string): Promise<boolean> {
+  const query = sellerId
+    ? `?id=${encodeURIComponent(id)}&seller_id=${encodeURIComponent(sellerId)}`
+    : `?id=${encodeURIComponent(id)}`;
+  const res = await requestJson<{ success: boolean }>(`/api/products${query}`, {
+    method: "DELETE",
+  });
+  return Boolean(res.success);
+}
+
+export async function uploadProductImageSupabase(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch("/api/upload", {
+    method: "POST",
+    body: formData,
+  });
+
+  let data: unknown = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok) {
+    const message =
+      data !== null &&
+      typeof data === "object" &&
+      "error" in data &&
+      typeof (data as { error: unknown }).error === "string"
+        ? (data as { error: string }).error
+        : "Failed to upload image.";
+    throw new Error(`[madetrue] ${message}`);
+  }
+
+  return (data as { url: string }).url;
 }
 
 // ---------------------------------------------------------------------------
