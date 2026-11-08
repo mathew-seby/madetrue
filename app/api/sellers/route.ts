@@ -7,6 +7,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// Public catalog shape — mirrors SELLER_COLUMNS in readSupabase.ts.
+// Payout secrets (pan, bank_account_number, bank_ifsc, bank_account_holder)
+// are written by POST (the seller's own submission) and must never be returned
+// by the public GET or verification PATCH of any seller row.
+const PUBLIC_SELLER_COLUMNS =
+  "id, user_id, business_name, story, profile_photo_url, video_url, address, lat, lng, whatsapp_number, is_verified, payment_vendor_ref, kyc_status";
+
 export async function GET() {
   if (!isSupabaseEnabled()) {
     return NextResponse.json(
@@ -18,7 +25,7 @@ export async function GET() {
   const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
     .from("sellers")
-    .select("*")
+    .select(PUBLIC_SELLER_COLUMNS)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -196,7 +203,7 @@ export async function PATCH(request: Request) {
     .from("sellers")
     .update(updates)
     .eq("id", id)
-    .select("*")
+    .select(PUBLIC_SELLER_COLUMNS)
     .single();
 
   if (error) {
