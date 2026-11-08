@@ -23,6 +23,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export async function GET(request: Request) {
+  if (!isSupabaseEnabled()) {
+    return NextResponse.json(
+      { error: "MADETRUE_DATA_SOURCE is 'mock' — order persistence is off." },
+      { status: 400 }
+    );
+  }
+
+  const { searchParams } = new URL(request.url);
+  const sellerId = searchParams.get("seller_id");
+  const buyerId = searchParams.get("buyer_id");
+
+  const supabase = createSupabaseServerClient();
+  let query = supabase.from("orders").select("*");
+
+  if (sellerId) {
+    query = query.eq("seller_id", sellerId);
+  } else if (buyerId) {
+    query = query.eq("buyer_id", buyerId);
+  }
+
+  const { data, error } = await query.order("created_at", { ascending: false });
+
+  if (error) {
+    return NextResponse.json(
+      { error: `Database read failed: ${error.message}` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json((data ?? []).map((row) => mapOrderRow(row)));
+}
+
 export async function POST(request: Request) {
   if (!isSupabaseEnabled()) {
     return NextResponse.json(

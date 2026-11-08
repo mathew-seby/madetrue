@@ -48,6 +48,12 @@ export async function saveOrdersSupabase(orders: Order[]): Promise<Order[]> {
   });
 }
 
+export async function fetchOrdersForSellerSupabase(sellerId: string): Promise<Order[]> {
+  return requestJson<Order[]>(`/api/orders?seller_id=${encodeURIComponent(sellerId)}`, {
+    method: "GET",
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Products — dashboard submissions and edits.
 // ---------------------------------------------------------------------------

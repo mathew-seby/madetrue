@@ -11,6 +11,7 @@ import {
 } from "./readSupabase";
 import {
   saveOrdersSupabase,
+  fetchOrdersForSellerSupabase,
   submitProductSupabase,
   editProductSupabase,
   fetchAllProductsSupabase,
@@ -367,6 +368,16 @@ function saveStoredOrders(orders: Order[]) {
 export async function getOrdersAdmin(): Promise<Order[]> {
   await new Promise((resolve) => setTimeout(resolve, 100));
   return getStoredOrders();
+}
+
+// Get orders belonging to a specific maker (seller dashboard inbox)
+export async function getOrdersForSeller(sellerId: string): Promise<Order[]> {
+  if (isSupabaseEnabled()) return fetchOrdersForSellerSupabase(sellerId);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const orders = getStoredOrders();
+  return orders
+    .filter((o) => o.seller_id === sellerId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
 // Update the status of an order

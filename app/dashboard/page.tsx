@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage } from "@/lib/supabase/client";
-import { Seller, Category, Product, ProductBadgeTag } from "@/types";
-import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2 } from "lucide-react";
+import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller } from "@/lib/supabase/client";
+import { Seller, Category, Product, ProductBadgeTag, Order } from "@/types";
+import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { RoleGuard } from "@/components/shared/RoleGuard";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
@@ -15,11 +15,13 @@ const FALLBACK_PRODUCT_IMAGE = "https://images.unsplash.com/photo-1541832676-9b7
 export default function DashboardPage() {
   const { currentUser } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"list" | "add">("list");
+  const [activeTab, setActiveTab] = useState<"list" | "orders" | "add">("list");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [myProducts, setMyProducts] = useState<Product[]>([]);
+  const [myOrders, setMyOrders] = useState<Order[]>([]);
+  const [orderFilter, setOrderFilter] = useState<"all" | "pending" | "accepted" | "completed" | "cancelled">("all");
   const [loading, setLoading] = useState(true);
 
   // Form State
@@ -174,15 +176,24 @@ export default function DashboardPage() {
 
       if (matchingSeller) {
         setSelectedSellerId(matchingSeller.id);
-        const sellerProds = await getProductsForSeller(matchingSeller.id);
+        const [sellerProds, sellerOrders] = await Promise.all([
+          getProductsForSeller(matchingSeller.id),
+          getOrdersForSeller(matchingSeller.id),
+        ]);
         setMyProducts(sellerProds);
+        setMyOrders(sellerOrders);
       } else if (currentUser?.role === "admin" && fetchedSellers.length > 0) {
         const defaultSellerId = fetchedSellers[0].id;
         setSelectedSellerId(defaultSellerId);
-        const sellerProds = await getProductsForSeller(defaultSellerId);
+        const [sellerProds, sellerOrders] = await Promise.all([
+          getProductsForSeller(defaultSellerId),
+          getOrdersForSeller(defaultSellerId),
+        ]);
         setMyProducts(sellerProds);
+        setMyOrders(sellerOrders);
       } else {
         setMyProducts([]);
+        setMyOrders([]);
       }
 
       if (fetchedCategories.length > 0) {
@@ -194,13 +205,17 @@ export default function DashboardPage() {
     loadDashboardData();
   }, [currentUser, router]);
 
-  // Update product list when active seller changes
+  // Update product list and orders when active seller changes
   const handleSellerChange = async (sellerId: string) => {
     setSelectedSellerId(sellerId);
     setLoading(true);
     try {
-      const sellerProds = await getProductsForSeller(sellerId);
+      const [sellerProds, sellerOrders] = await Promise.all([
+        getProductsForSeller(sellerId),
+        getOrdersForSeller(sellerId),
+      ]);
       setMyProducts(sellerProds);
+      setMyOrders(sellerOrders);
     } finally {
       setLoading(false);
     }
@@ -431,6 +446,11 @@ export default function DashboardPage() {
     }
   };
 
+  const filteredOrdersList = myOrders.filter((order) => {
+    if (orderFilter === "all") return true;
+    return order.status === orderFilter;
+  });
+
   return (
     <RoleGuard allowedRoles={["seller", "admin"]}>
       <div className="bg-cream-bg min-h-screen py-10 px-4 sm:px-6 lg:px-8">
@@ -495,20 +515,42 @@ export default function DashboardPage() {
         })()}
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-warm-brown/10">
+        <div className="flex border-b border-warm-brown/10 overflow-x-auto whitespace-nowrap scrollbar-none">
           <button
+            type="button"
             onClick={() => {
               setActiveTab("list");
               setEditingProduct(null);
             }}
-            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 ${activeTab === "list"
-              ? "border-primary-green text-primary-green"
-              : "border-transparent text-text-dark/50 hover:text-text-dark"
-              }`}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 cursor-pointer ${
+              activeTab === "list"
+                ? "border-primary-green text-primary-green"
+                : "border-transparent text-text-dark/50 hover:text-text-dark"
+            }`}
           >
             My Products ({myProducts.length})
           </button>
           <button
+            type="button"
+            onClick={() => {
+              setActiveTab("orders");
+              setEditingProduct(null);
+            }}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center cursor-pointer ${
+              activeTab === "orders"
+                ? "border-primary-green text-primary-green"
+                : "border-transparent text-text-dark/50 hover:text-text-dark"
+            }`}
+          >
+            <Inbox className="h-4 w-4 mr-1.5" /> Order Inbox ({myOrders.length})
+            {myOrders.filter((o) => o.status === "pending").length > 0 && (
+              <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                {myOrders.filter((o) => o.status === "pending").length} new
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
             onClick={() => {
               setActiveTab("add");
               setEditingProduct(null);
@@ -527,15 +569,17 @@ export default function DashboardPage() {
               setProductLng("");
               setProductGmapsInput("");
             }}
-            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center ${activeTab === "add" && !editingProduct
-              ? "border-primary-green text-primary-green"
-              : "border-transparent text-text-dark/50 hover:text-text-dark"
-              }`}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center cursor-pointer ${
+              activeTab === "add" && !editingProduct
+                ? "border-primary-green text-primary-green"
+                : "border-transparent text-text-dark/50 hover:text-text-dark"
+            }`}
           >
             <PlusCircle className="h-4 w-4 mr-1.5" /> Submit New Product
           </button>
           {editingProduct && (
             <button
+              type="button"
               className="px-5 py-3 text-sm font-bold border-b-2 border-primary-green text-primary-green transition duration-200 flex items-center font-sans"
             >
               Edit Product: {editingProduct.name}
@@ -684,6 +728,178 @@ export default function DashboardPage() {
               </p>
             </div>
           )
+        ) : activeTab === "orders" ? (
+          /* ORDERS INBOX TAB */
+          <div className="space-y-6">
+            {/* Status Filter Sub-Tabs */}
+            <div className="flex border-b border-warm-brown/10 overflow-x-auto whitespace-nowrap scrollbar-none">
+              {(["all", "pending", "accepted", "completed", "cancelled"] as const).map((tab) => {
+                const count =
+                  tab === "all"
+                    ? myOrders.length
+                    : myOrders.filter((o) => o.status === tab).length;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setOrderFilter(tab)}
+                    className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 capitalize font-sans cursor-pointer ${
+                      orderFilter === tab
+                        ? "border-primary-green text-primary-green"
+                        : "border-transparent text-text-dark/50 hover:text-text-dark"
+                    }`}
+                  >
+                    {tab === "all" ? "All Orders" : `${tab}`} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Orders List */}
+            {filteredOrdersList.length > 0 ? (
+              <div className="space-y-4">
+                {filteredOrdersList.map((order) => {
+                  const cleanPhone = (order.buyer_phone ?? "").replace(/\D/g, "");
+                  const lineTotal =
+                    (order.price ?? 0) * order.quantity + (order.delivery_fee ?? 0);
+                  const statusColors: Record<string, string> = {
+                    pending: "bg-amber-100 text-amber-800 border-amber-200",
+                    accepted: "bg-blue-100 text-blue-800 border-blue-200",
+                    completed: "bg-primary-green/15 text-primary-green border-primary-green/20",
+                    cancelled: "bg-red-50 text-red-700 border-red-200",
+                  };
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="bg-[#FAF7F2] rounded-2xl border border-warm-brown/10 p-5 sm:p-6 shadow-sm hover:border-primary-green/20 transition space-y-4"
+                    >
+                      {/* Top banner info */}
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3.5 border-b border-warm-brown/5">
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] text-warm-brown/70 uppercase font-bold tracking-wider font-sans block">
+                            Order Entry
+                          </span>
+                          <span className="font-mono text-xs font-bold text-text-dark block">
+                            {order.id}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] text-text-dark/60 font-semibold font-sans flex items-center">
+                            <Calendar className="h-3.5 w-3.5 mr-1 text-warm-brown" />
+                            {new Date(order.created_at).toLocaleString("en-IN", {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            })}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full border font-sans ${
+                              statusColors[order.status] || "bg-warm-brown/5 text-warm-brown"
+                            }`}
+                          >
+                            {order.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Main Order Details Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-sans">
+                        {/* Product & Fulfillment */}
+                        <div className="space-y-2 bg-white/70 p-3.5 rounded-xl border border-warm-brown/10">
+                          <div className="flex items-center justify-between">
+                            <span className="font-serif font-bold text-sm text-text-dark">
+                              {order.product_name ?? "Handcrafted item"}
+                            </span>
+                            <span className="font-bold text-primary-green text-sm">
+                              ₹{order.price ?? 0} × {order.quantity}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 text-text-dark/70 pt-1 border-t border-warm-brown/5">
+                            <Package className="h-3.5 w-3.5 text-primary-green shrink-0" />
+                            <span className="capitalize font-semibold">
+                              {order.delivery_type === "pickup"
+                                ? "Direct Maker Pickup (Free)"
+                                : "Local Delivery (Ernakulam)"}
+                            </span>
+                          </div>
+
+                          {order.address && (
+                            <div className="flex items-start gap-1.5 text-text-dark/70">
+                              <MapPin className="h-3.5 w-3.5 text-warm-brown shrink-0 mt-0.5" />
+                              <span className="line-clamp-2">{order.address}</span>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between pt-1 border-t border-warm-brown/5 text-[11px]">
+                            <span className="text-text-dark/60">
+                              Payment: {order.payment_method === "upi" ? "UPI Payment" : "Cash on Delivery"}
+                            </span>
+                            <span className="font-bold text-text-dark">
+                              Total: ₹{lineTotal}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Customer & Direct Contact line */}
+                        <div className="space-y-2 bg-white/70 p-3.5 rounded-xl border border-warm-brown/10 flex flex-col justify-between">
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-warm-brown font-bold uppercase tracking-wider block">
+                              Customer Details
+                            </span>
+                            <p className="font-bold text-text-dark">
+                              {order.buyer_name || "Community Customer"}
+                            </p>
+                            {order.buyer_phone ? (
+                              <p className="text-text-dark/70">{order.buyer_phone}</p>
+                            ) : (
+                              <p className="text-text-dark/40 italic">No phone provided</p>
+                            )}
+                          </div>
+
+                          {/* Quick WhatsApp / Call Lines */}
+                          {cleanPhone && (
+                            <div className="flex items-center gap-2 pt-2 border-t border-warm-brown/5">
+                              <a
+                                href={`https://wa.me/91${cleanPhone}?text=${encodeURIComponent(
+                                  `Hello ${order.buyer_name || "Customer"}, this is your MADETRUE maker regarding your order #${order.id} (${order.product_name ?? "item"} × ${order.quantity}).`
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center px-3 py-1.5 bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#128C7E] rounded-lg font-bold text-[11px] transition"
+                              >
+                                <MessageCircle className="h-3.5 w-3.5 mr-1" />
+                                WhatsApp
+                              </a>
+                              <a
+                                href={`tel:${order.buyer_phone}`}
+                                className="inline-flex items-center px-3 py-1.5 bg-primary-green/10 hover:bg-primary-green/20 text-primary-green rounded-lg font-bold text-[11px] transition"
+                              >
+                                <Phone className="h-3.5 w-3.5 mr-1" />
+                                Call
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-16 bg-[#FAF7F2] border border-warm-brown/10 rounded-2xl space-y-4">
+                <Inbox className="h-10 w-10 text-warm-brown/40 mx-auto" />
+                <h3 className="font-serif text-lg font-bold text-text-dark">
+                  {orderFilter === "all" ? "No Customer Orders Yet" : `No ${orderFilter} orders`}
+                </h3>
+                <p className="text-xs text-text-dark/60 max-w-sm mx-auto leading-relaxed">
+                  {orderFilter === "all"
+                    ? "When nearby consumers discover your authentic goods and place orders, they will appear here in your live order inbox."
+                    : `There are currently no orders in the ${orderFilter} state.`}
+                </p>
+              </div>
+            )}
+          </div>
         ) : (
           /* ADD / SUBMIT PRODUCT TAB */
           <div className="bg-[#FAF7F2] p-6 sm:p-8 rounded-2xl border border-warm-brown/10 shadow-sm">
