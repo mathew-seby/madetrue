@@ -99,3 +99,25 @@ export interface Category {
   icon: string; // React component or lucide icon name
   slug: string;
 }
+
+// Admin console audit trail (Phase 5 Step 7): one row per console
+// moderation action — who did it, on what, and what changed (the
+// before → after summary is written in plain human words so the trail
+// reads like a story, not a diff).
+export type AuditEntityType = "product" | "seller" | "order" | "category";
+
+export interface AuditEntry {
+  id: string;
+  created_at: string;
+  actor_id: string;
+  actor_name: string;
+  actor_email: string;
+  entity_type: AuditEntityType;
+  entity_id: string;
+  /** Human-readable name at action time (product name, store name...). */
+  entity_label: string;
+  /** Machine action, e.g. "approved", "hidden", "removed", "status_changed". */
+  action: string;
+  /** The before → after sentence shown in the console. */
+  summary: string;
+}

@@ -1,8 +1,8 @@
 # MADETRUE — Project Technical Overview & Architecture
 
 > **Status (refreshed by the agent at every phase completion — master prompt
-> §10b):** ✅ Phase 0 · Phase 1 · Phase 8 · Phase 2 · Phase 3 · Phase 4 complete —
-> **now: Phase 5 — Admin console.** Live progress: [`docs/build-progress.md`](./docs/build-progress.md)
+> §10b):** ✅ Phase 0 · Phase 1 · Phase 8 · Phase 2 · Phase 3 · Phase 4 · Phase 5 complete —
+> **now: Phase 6 — Payments: Cashfree Easy Split first.** Live progress: [`docs/build-progress.md`](./docs/build-progress.md)
 > · workflow: [`docs/master-build-prompt.md`](./docs/master-build-prompt.md).
 >
 > What follows describes the architecture as it stands today — live status

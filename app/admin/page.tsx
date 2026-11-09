@@ -18,10 +18,12 @@ import {
   updateOrderWhatsappStatus,
   addCategory,
   updateCategory,
-  deleteCategory
+  deleteCategory,
+  getAuditLog,
+  recordAudit
 } from "@/lib/supabase/client";
 import type { SellerApplicationAction, SellerPayoutDetails } from "@/lib/supabase/client";
-import { Order, Product, Seller, Category } from "@/types";
+import { Order, Product, Seller, Category, AuditEntry, AuditEntityType } from "@/types";
 import { DELIVERY_FEE } from "@/lib/utils/constants";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { CATEGORY_ICONS, DEFAULT_CATEGORY_ICON, slugifyName, isValidSlug, type CategoryIcon } from "@/lib/utils/categories";
@@ -32,7 +34,7 @@ import {
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
   ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
   Users, Send, Award, ShieldAlert, Calendar, CreditCard,
-  Search, Trash2, EyeOff, ArrowDownUp, Layers, PenLine, ChartColumn, RefreshCw,
+  Search, Trash2, EyeOff, ArrowDownUp, Layers, PenLine, ChartColumn, RefreshCw, History,
   Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower
 } from "lucide-react";
 
@@ -137,7 +139,7 @@ export default function AdminPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Main navigation sections: products, sellers, orders
-  const [currentSection, setCurrentSection] = useState<"products" | "sellers" | "categories" | "analytics" | "orders">("products");
+  const [currentSection, setCurrentSection] = useState<"products" | "sellers" | "categories" | "analytics" | "audit" | "orders">("products");
 
   // Data State
   const [products, setProducts] = useState<Product[]>([]);
@@ -158,6 +160,11 @@ export default function AdminPage() {
     icon: string;
   } | null>(null);
   const [categorySlugTouched, setCategorySlugTouched] = useState(false);
+  // Audit trail (Step 7): every moderation action this console records.
+  // A failed read never breaks the console — the tab reads empty and a
+  // warn lands in the browser log.
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
+  const [auditFilter, setAuditFilter] = useState("");
 
   // Sub-tabs filters
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
@@ -238,6 +245,17 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
+
+    // The audit trail loads beside the moderation data but never breaks
+    // it: an unreachable trail (e.g. migration 0009 not applied yet in
+    // Supabase mode) leaves the tab empty with a console warn.
+    try {
+      const trail = await getAuditLog();
+      setAuditLog(trail);
+    } catch (e) {
+      console.warn("[madetrue] audit trail unavailable:", e);
+      setAuditLog([]);
+    }
   }, [showToast]);
 
   // Authentication check on mount: the console is admin-only and the
@@ -273,10 +291,37 @@ export default function AdminPage() {
     router.push("/admin/login");
   };
 
+  // --- Audit trail recording (Step 7) -------------------------------------
+  // One fire-and-forget call per console action: the actor arrives from
+  // the session (AuthProvider), the caller supplies entity + action + the
+  // human before → after summary. Never blocks or breaks the action
+  // itself — a failed append only warns in the console log.
+  const logConsoleAction = (entry: {
+    entity_type: AuditEntityType;
+    entity_id: string;
+    entity_label: string;
+    action: string;
+    summary: string;
+  }) => {
+    if (!currentUser) return;
+    recordAudit({
+      ...entry,
+      actor_name: currentUser.name || currentUser.email,
+      actor_email: currentUser.email,
+      actor_id: currentUser.id,
+    })
+      .then(() => {
+        // Refresh silently so the Audit tab is current after the next visit.
+        getAuditLog()
+          .then(setAuditLog)
+          .catch(() => undefined);
+      })
+      .catch((e) => console.warn("[madetrue] audit append failed:", e));
+  };
+
   const handleApproval = async (productId: string, status: "approved" | "rejected" | "pending") => {
     let reason = "";
     let commissionVal = 0;
-
     if (status === "rejected") {
       const inputReason = window.prompt("Please enter a reason for rejecting this product listing (this will be sent to the seller):");
       if (inputReason === null) return;
@@ -298,9 +343,12 @@ export default function AdminPage() {
     }
 
     try {
+      const beforeStatus = products.find((p) => p.id === productId)?.status ?? "unknown";
       const updated = await updateProductStatus(productId, status, reason, commissionVal);
       if (updated) {
         let msg = "";
+        const statusWord =
+          status === "approved" ? "approved" : status === "rejected" ? "rejected" : "sent back for re-review";
         if (status === "approved") {
           msg = `Product "${updated.name}" has been approved for listing.`;
         } else if (status === "rejected") {
@@ -309,6 +357,19 @@ export default function AdminPage() {
           msg = `Product "${updated.name}" has been sent back for re-review.`;
         }
         showToast(msg, "success");
+        logConsoleAction({
+          entity_type: "product",
+          entity_id: updated.id,
+          entity_label: updated.name,
+          action: `review_${status}`,
+          summary:
+            `Review status: ${beforeStatus} → ${statusWord}` +
+            (status === "approved"
+              ? ` (sourcing price ₹${updated.base_price ?? "—"} + commission ₹${updated.commission ?? commissionVal})`
+              : status === "rejected"
+                ? ` — reason: ${reason}`
+                : ""),
+        });
         loadModerationData();
       }
     } catch {
@@ -336,6 +397,21 @@ export default function AdminPage() {
           `Application of "${updated.business_name}" is now ${stLabel}.`,
           "success"
         );
+        logConsoleAction({
+          entity_type: "seller",
+          entity_id: updated.id,
+          entity_label: updated.business_name,
+          action: `application_${action}`,
+          summary:
+            `Application status: ${seller ? getApplicationStatus(seller) : "unknown"} → ${st}` +
+            (st === "approved"
+              ? " — store is live with verified payout KYC"
+              : st === "rejected"
+                ? " — store not visible to buyers"
+                : action === "revoke"
+                  ? " — approval revoked, store withdrawn from the marketplace"
+                  : " — awaiting moderation"),
+        });
         loadModerationData();
       }
     } catch {
@@ -354,6 +430,7 @@ export default function AdminPage() {
     if (note === null) return;
 
     try {
+      const beforeHidden = product?.is_hidden ?? false;
       const updated = await setProductHidden(productId, hideState, note);
       if (updated) {
         showToast(
@@ -362,6 +439,15 @@ export default function AdminPage() {
             : `Listing "${updated.name}" is visible to buyers again.`,
           "success"
         );
+        logConsoleAction({
+          entity_type: "product",
+          entity_id: updated.id,
+          entity_label: updated.name,
+          action: hideState ? "hidden" : "unhidden",
+          summary:
+            `Visibility: ${beforeHidden ? "hidden" : "visible"} → ${hideState ? "hidden" : "visible"}` +
+            (note && note.trim() ? ` — note: "${note.trim()}"` : ""),
+        });
         loadModerationData();
       }
     } catch {
@@ -371,7 +457,7 @@ export default function AdminPage() {
 
   // Remove — permanent. Confirm first, then record the audit note (the
   // mock email stream carries it to the maker since the row won't exist
-  // after this; the durable audit table arrives in Step 7).
+  // after this; the trail entry below is the durable keeper).
   const handleRemoveProduct = async (productId: string) => {
     const product = products.find((p) => p.id === productId);
     const confirmed = window.confirm(
@@ -389,6 +475,16 @@ export default function AdminPage() {
           `Listing "${product?.name}" was removed from MADETRUE.${note.trim() ? " Audit note recorded and emailed to the maker." : ""}`,
           "success"
         );
+        logConsoleAction({
+          entity_type: "product",
+          entity_id: productId,
+          entity_label: product?.name ?? productId,
+          action: "removed",
+          summary:
+            "Listing permanently removed from MADETRUE" +
+            (note && note.trim() ? ` — audit note: "${note.trim()}"` : "") +
+            " — past orders keep their history",
+        });
         loadModerationData();
       } else {
         showToast("That listing could not be found.", "error");
@@ -400,9 +496,17 @@ export default function AdminPage() {
 
   const handleUpdateOrderStatus = async (orderId: string, newStatus: 'pending' | 'accepted' | 'completed' | 'cancelled') => {
     try {
+      const before = orders.find((o) => o.id === orderId);
       const updated = await updateOrderStatus(orderId, newStatus);
       if (updated) {
         showToast(`Order status updated to "${newStatus}"`, "success");
+        logConsoleAction({
+          entity_type: "order",
+          entity_id: updated.id,
+          entity_label: updated.product_name ?? updated.id,
+          action: `order_${newStatus}`,
+          summary: `Order status: ${before?.status ?? "unknown"} → ${newStatus} — ${updated.buyer_name ?? "buyer"}, qty ${updated.quantity}`,
+        });
         loadModerationData();
       }
     } catch {
@@ -412,6 +516,7 @@ export default function AdminPage() {
 
   const handleToggleWhatsappNotified = async (orderId: string, currentStatus: boolean) => {
     try {
+      const before = orders.find((o) => o.id === orderId);
       const updated = await updateOrderWhatsappStatus(orderId, !currentStatus);
       if (updated) {
         showToast(
@@ -420,6 +525,15 @@ export default function AdminPage() {
             : "Reset WhatsApp notification status.",
           "success"
         );
+        logConsoleAction({
+          entity_type: "order",
+          entity_id: updated.id,
+          entity_label: updated.product_name ?? updated.id,
+          action: "whatsapp_notified",
+          summary:
+            `WhatsApp flag: ${currentStatus ? "notified" : "not notified"} → ${updated.whatsapp_notified ? "notified" : "not notified"}` +
+            (before?.buyer_phone ? ` (${before.buyer_phone})` : ""),
+        });
         loadModerationData();
       }
     } catch {
@@ -492,6 +606,16 @@ export default function AdminPage() {
             : `Category "${saved.name}" updated.`,
           "success"
         );
+        logConsoleAction({
+          entity_type: "category",
+          entity_id: saved.id,
+          entity_label: saved.name,
+          action: categoryDraft.mode === "add" ? "category_created" : "category_updated",
+          summary:
+            categoryDraft.mode === "add"
+              ? `New buyer shelf "${saved.name}" created — address ?category=${saved.slug}, icon ${saved.icon}`
+              : `Category details updated — ${original?.slug && original.slug !== finalSlug ? `address: ?category=${original.slug} → ?category=${finalSlug}; ` : `icon ${original?.icon ?? "?"} → ${saved.icon}`}`,
+        });
         setCategoryDraft(null);
         setCategorySlugTouched(false);
         loadModerationData();
@@ -521,6 +645,13 @@ export default function AdminPage() {
       const removed = await deleteCategory(cat.id);
       if (removed) {
         showToast(`Category "${removed.name}" removed.`, "success");
+        logConsoleAction({
+          entity_type: "category",
+          entity_id: cat.id,
+          entity_label: cat.name,
+          action: "category_removed",
+          summary: `Category "${cat.name}" removed from the marketplace`,
+        });
         loadModerationData();
       } else {
         showToast("That category could not be found.", "error");
@@ -705,7 +836,7 @@ export default function AdminPage() {
         </div>
 
         {/* Primary Dashboard Navigation Tabs */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-[#FAF7F2] p-2.5 rounded-2xl border border-warm-brown/10 shadow-sm max-w-2xl">
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 bg-[#FAF7F2] p-2.5 rounded-2xl border border-warm-brown/10 shadow-sm max-w-3xl">
           <button
             onClick={() => setCurrentSection("products")}
             className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2 cursor-pointer font-sans ${
@@ -755,6 +886,16 @@ export default function AdminPage() {
             }`}
           >
             <ShoppingBag className="h-4 w-4" /> Orders
+          </button>
+          <button
+            onClick={() => setCurrentSection("audit")}
+            className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2 cursor-pointer font-sans ${
+              currentSection === "audit"
+                ? "bg-primary-green text-cream-bg shadow-sm"
+                : "bg-white text-text-dark/70 border border-warm-brown/10 hover:border-warm-brown/30"
+            }`}
+          >
+            <History className="h-4 w-4" /> Audit
           </button>
         </div>
 
@@ -1950,6 +2091,146 @@ export default function AdminPage() {
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* SECTION 6: MODERATION AUDIT TRAIL (Step 7) */}
+        {currentSection === "audit" && (
+          <div className="space-y-6">
+            {/* Header + Search/Filter */}
+            <div className="bg-[#FAF7F2] p-6 rounded-3xl border border-warm-brown/10 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="font-serif text-xl font-bold text-text-dark flex items-center gap-2">
+                    <History className="h-5 w-5 text-primary-green" /> Moderation Audit Trail
+                  </h2>
+                  <p className="text-xs text-text-dark/60 mt-1 max-w-xl">
+                    Every moderation action taken in this console is permanently recorded here — who made the change, which listing, maker, category, or order was modified, and what changed.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 self-start sm:self-center">
+                  <span className="text-xs font-semibold text-text-dark/60 bg-white px-3 py-1.5 rounded-full border border-warm-brown/10 shadow-xs">
+                    {auditLog.length} {auditLog.length === 1 ? "entry" : "entries"} recorded
+                  </span>
+                </div>
+              </div>
+
+              {/* Filter search box */}
+              <div className="relative">
+                <Search className="h-4 w-4 text-warm-brown/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Filter by moderator, entity, action, or summary..."
+                  value={auditFilter}
+                  onChange={(e) => setAuditFilter(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-warm-brown/15 rounded-xl text-xs text-text-dark focus:outline-none focus:border-primary-green transition font-sans shadow-xs"
+                />
+                {auditFilter && (
+                  <button
+                    onClick={() => setAuditFilter("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-dark/40 hover:text-text-dark cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Audit Feed */}
+            {(() => {
+              const auditNeedle = auditFilter.trim().toLowerCase();
+              const filteredLog = auditLog.filter((entry) => {
+                if (!auditNeedle) return true;
+                return (
+                  entry.actor_name.toLowerCase().includes(auditNeedle) ||
+                  entry.actor_email.toLowerCase().includes(auditNeedle) ||
+                  entry.entity_label.toLowerCase().includes(auditNeedle) ||
+                  entry.entity_type.toLowerCase().includes(auditNeedle) ||
+                  entry.action.toLowerCase().includes(auditNeedle) ||
+                  entry.summary.toLowerCase().includes(auditNeedle)
+                );
+              });
+
+              if (filteredLog.length === 0) {
+                return (
+                  <div className="text-center py-20 bg-[#FAF7F2] border border-warm-brown/10 rounded-3xl space-y-4">
+                    <History className="h-12 w-12 text-warm-brown/40 mx-auto" />
+                    <h3 className="font-serif text-lg font-bold text-text-dark">
+                      {auditNeedle ? "No Audit Entries Matched" : "No Moderation Actions Recorded Yet"}
+                    </h3>
+                    <p className="text-xs text-text-dark/60 max-w-sm mx-auto leading-relaxed">
+                      {auditNeedle
+                        ? "Try widening your search terms — no audit records match the current filter."
+                        : "Every product review, maker application decision, visibility toggle, order state transition, or category edit will appear here in chronological order."}
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-3">
+                  {filteredLog.map((entry) => {
+                    const entityColors: Record<string, string> = {
+                      product: "bg-primary-green/10 text-primary-green border-primary-green/20",
+                      seller: "bg-accent-gold/15 text-[#8b5a1b] border-accent-gold/30",
+                      order: "bg-blue-50 text-blue-700 border-blue-200",
+                      category: "bg-purple-50 text-purple-700 border-purple-200",
+                    };
+
+                    const chipStyle = entityColors[entry.entity_type] || "bg-warm-brown/10 text-warm-brown border-warm-brown/20";
+
+                    return (
+                      <div
+                        key={entry.id}
+                        className="bg-[#FAF7F2] p-4 sm:p-5 rounded-2xl border border-warm-brown/10 shadow-xs hover:border-warm-brown/25 transition space-y-3"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-warm-brown/5 pb-2.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${chipStyle}`}>
+                              {entry.entity_type}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-white border border-warm-brown/10 text-text-dark/70">
+                              {entry.action}
+                            </span>
+                            <span className="font-serif font-bold text-sm text-text-dark">
+                              {entry.entity_label || entry.entity_id}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-text-dark/50 flex items-center gap-1 self-start sm:self-center font-sans">
+                            <Calendar className="h-3 w-3 text-warm-brown/40" />
+                            {new Date(entry.created_at).toLocaleString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3.5 rounded-xl border border-warm-brown/10 text-xs text-text-dark leading-relaxed font-sans">
+                          {entry.summary}
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-text-dark/50 pt-0.5">
+                          <div>
+                            <span className="font-semibold text-text-dark/70">Moderator:</span>{" "}
+                            {entry.actor_name || entry.actor_email || "System"}
+                            {entry.actor_email && entry.actor_name && entry.actor_name !== entry.actor_email && (
+                              <span className="text-text-dark/40"> ({entry.actor_email})</span>
+                            )}
+                          </div>
+                          <div className="font-mono text-[10px] text-text-dark/40">
+                            entity id: {entry.entity_id}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
 

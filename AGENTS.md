@@ -283,7 +283,14 @@ Use exactly these strings — no variations:
 > `seller_payout_kyc` table (migration 0006, applied live), checkout stock
 > decremented atomically, and a 17/17 live isolation proof recorded in
 > `docs/phase4-isolation-proof.md`.
-> Next build phase: **Phase 5 — Admin console.**
+> **Phase 5 (Admin console) is complete:** real session guard via role
+> (`admin`); seller management & application approval/rejection with private payout
+> KYC reviews; product moderation (search, hide/unhide, permanent removal, and audit notes);
+> global order overview with status/fulfillment/payment filters and detail view;
+> category CRUD with unique slugs and live public navigation; platform analytics
+> (GMV, platform commissions, fees, top makers leaderboard); durable moderation audit
+> trail (migration 0009_admin_audit.sql, admin-guarded `/api/audit`, and console feed).
+> Next build phase: **Phase 6 — Payments: Cashfree Easy Split first.**
 > Payment strategy remains locked: **Cashfree Easy Split** primary (see Locked
 > Decisions #4), with Razorpay Route / PayU Split Settlements as
 > adapter-backed alternates.

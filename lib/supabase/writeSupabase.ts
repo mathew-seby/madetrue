@@ -8,7 +8,7 @@
 // the DB product row, exactly what 0002_rls.sql trusts to a signed-in
 // client once Phase 3 has real sessions).
 
-import type { Category, Order, Product, Seller } from "../../types";
+import type { AuditEntry, Category, Order, Product, Seller } from "../../types";
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -89,6 +89,34 @@ export async function deleteCategorySupabase(id: string): Promise<Category> {
     method: "DELETE",
     body: JSON.stringify({ id }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Admin audit trail (Phase 5 Step 7). POST appends, GET reads — both go
+// through the admin-guarded /api/audit route; actor_id is stamped
+// server-side from the session, never from the request body.
+// ---------------------------------------------------------------------------
+
+export async function appendAuditSupabase(
+  entry: {
+    actor_name: string;
+    actor_email: string;
+    entity_type: AuditEntry["entity_type"];
+    entity_id: string;
+    entity_label: string;
+    action: string;
+    summary: string;
+  }
+): Promise<boolean> {
+  await requestJson<{ ok: boolean }>("/api/audit", {
+    method: "POST",
+    body: JSON.stringify(entry),
+  });
+  return true;
+}
+
+export async function fetchAuditLogSupabase(): Promise<AuditEntry[]> {
+  return requestJson<AuditEntry[]>("/api/audit", { method: "GET" });
 }
 
 export async function updateOrderStatusSupabase(

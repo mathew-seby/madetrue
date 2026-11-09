@@ -1,5 +1,12 @@
 import { mockCategories, mockSellers, mockProducts } from "./mockData";
-import { Category, Seller, Product, Order } from "../../types";
+import {
+  Category,
+  Seller,
+  Product,
+  Order,
+  AuditEntry,
+  AuditEntityType,
+} from "../../types";
 import { isSupabaseEnabled } from "./dataSource";
 import {
   fetchCategoriesSupabase,
@@ -16,6 +23,8 @@ import {
   submitCategorySupabase,
   updateCategorySupabase,
   deleteCategorySupabase,
+  appendAuditSupabase,
+  fetchAuditLogSupabase,
   submitProductSupabase,
   editProductSupabase,
   fetchAllProductsSupabase,
@@ -808,6 +817,89 @@ export async function saveOrders(newOrders: Order[]): Promise<Order[]> {
   }
 
   return newOrders;
+}
+
+// ---------------------------------------------------------------------------
+// Admin audit trail (Phase 5 Step 7). Every console moderation action
+// records one entry through recordAudit: the actor's identity rides in
+// from the session-signed-in console user; Supabase mode appends via the
+// admin-guarded /api/audit route (actor_id stamped server-side from the
+// session), mock mode persists to a madetrue_audit store capped at the
+// newest 500 entries. getAuditLog flips the same switch for reads.
+// ---------------------------------------------------------------------------
+
+const AUDIT_STORE_KEY = "madetrue_audit";
+const AUDIT_STORE_CAP = 500;
+
+export interface AuditDraft {
+  actor_name: string;
+  actor_email: string;
+  /** Mock mode only — the /api/audit route stamps the real id from the session. */
+  actor_id?: string;
+  entity_type: AuditEntityType;
+  entity_id: string;
+  entity_label: string;
+  action: string;
+  summary: string;
+}
+
+function getStoredAudit(): AuditEntry[] {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem(AUDIT_STORE_KEY);
+    if (stored) {
+      try {
+        return JSON.parse(stored) as AuditEntry[];
+      } catch (e) {
+        console.error("Failed to parse the stored audit trail", e);
+      }
+    }
+  }
+  return [];
+}
+
+function saveStoredAudit(entries: AuditEntry[]) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem(AUDIT_STORE_KEY, JSON.stringify(entries.slice(0, AUDIT_STORE_CAP)));
+  }
+}
+
+export async function getAuditLog(): Promise<AuditEntry[]> {
+  if (isSupabaseEnabled()) return fetchAuditLogSupabase();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  // The store is kept newest-first; guard against hand-edited ordering.
+  return getStoredAudit().sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+export async function recordAudit(draft: AuditDraft): Promise<boolean> {
+  if (isSupabaseEnabled()) {
+    return appendAuditSupabase({
+      actor_name: draft.actor_name,
+      actor_email: draft.actor_email,
+      entity_type: draft.entity_type,
+      entity_id: draft.entity_id,
+      entity_label: draft.entity_label,
+      action: draft.action,
+      summary: draft.summary,
+    });
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const entry: AuditEntry = {
+    id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    created_at: new Date().toISOString(),
+    actor_id: draft.actor_id ?? "local-console",
+    actor_name: draft.actor_name || "Unknown moderator",
+    actor_email: draft.actor_email,
+    entity_type: draft.entity_type,
+    entity_id: draft.entity_id,
+    entity_label: draft.entity_label,
+    action: draft.action,
+    summary: draft.summary,
+  };
+  saveStoredAudit([entry, ...getStoredAudit()]);
+  return true;
 }
 
 // Update a product and reset its status to pending review
