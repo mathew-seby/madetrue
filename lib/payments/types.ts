@@ -129,6 +129,29 @@ export interface SettlementSummary {
   settlements: SettlementItem[];
 }
 
+export interface RegisterVendorInput {
+  vendorId: string;
+  name: string;
+  email: string;
+  phone: string;
+  businessName?: string;
+  bankAccount: {
+    accountNumber: string;
+    ifsc: string;
+    accountHolder: string;
+  };
+  pan?: string;
+}
+
+export interface RegisterVendorResult {
+  success: boolean;
+  gateway: PaymentGatewayName;
+  vendorId: string;
+  status: "ACTIVE" | "PENDING" | "FAILED";
+  message?: string;
+  rawResponse?: Record<string, unknown>;
+}
+
 /**
  * Universal Payment Adapter Interface
  * All payment operations must pass through this contract.
@@ -138,6 +161,16 @@ export interface PaymentAdapter {
 
   /** Whether the gateway has active server-side credentials */
   isConfigured(): boolean;
+
+  /**
+   * Registers a seller as a vendor on the split settlement platform (Easy Split).
+   */
+  registerVendor(input: RegisterVendorInput): Promise<RegisterVendorResult>;
+
+  /**
+   * Retrieves the current vendor status from the gateway.
+   */
+  getVendorStatus(vendorId: string): Promise<RegisterVendorResult>;
 
   /**
    * Creates an order with automated split allocations (Easy Split).

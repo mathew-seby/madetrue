@@ -22,6 +22,8 @@ import type {
   SettlementFilter,
   SettlementSummary,
   SettlementItem,
+  RegisterVendorInput,
+  RegisterVendorResult,
 } from "./types";
 
 const CASHFREE_API_VERSION = "2023-08-01";
@@ -73,6 +75,163 @@ export class CashfreePaymentAdapter implements PaymentAdapter {
       "x-client-secret": config.secretKey,
       Accept: "application/json",
     };
+  }
+
+  /**
+   * Registers a seller as a vendor on Cashfree Easy Split using their bank & KYC details.
+   */
+  async registerVendor(input: RegisterVendorInput): Promise<RegisterVendorResult> {
+    const config = this.getConfig();
+    if (!config) {
+      return {
+        success: false,
+        gateway: this.name,
+        vendorId: input.vendorId,
+        status: "FAILED",
+        message: "Cashfree credentials missing in environment (.env.local)",
+      };
+    }
+
+    try {
+      const baseUrl = this.getBaseUrl(config.environment);
+      const url = `${baseUrl}/easy-split/vendors`;
+
+      const phone = input.phone.replace(/\D/g, "").slice(-10);
+
+      const payload = {
+        vendor_id: input.vendorId,
+        name: input.businessName || input.name,
+        email: input.email,
+        phone: phone.length === 10 ? phone : "9999999999",
+        verify_account: true,
+        dashboard_access: false,
+        schedule_option: 1,
+        bank_details: {
+          account_number: input.bankAccount.accountNumber,
+          ifsc: input.bankAccount.ifsc,
+          account_holder: input.bankAccount.accountHolder || input.name,
+        },
+        ...(input.pan ? { kyc_details: { pan: input.pan } } : {}),
+      };
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: this.getHeaders(config),
+        body: JSON.stringify(payload),
+      });
+
+      const responseData = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+
+      if (!res.ok) {
+        if (res.status === 409 || String(responseData.message).includes("already exists")) {
+          return this.getVendorStatus(input.vendorId);
+        }
+
+        const errorMsg =
+          (responseData.message as string) ||
+          (responseData.error as string) ||
+          `Cashfree vendor onboarding failed with status ${res.status}`;
+        return {
+          success: false,
+          gateway: this.name,
+          vendorId: input.vendorId,
+          status: "FAILED",
+          message: errorMsg,
+          rawResponse: responseData,
+        };
+      }
+
+      const statusRaw = String(responseData.status ?? "ACTIVE").toUpperCase();
+      const status: RegisterVendorResult["status"] =
+        statusRaw === "ACTIVE"
+          ? "ACTIVE"
+          : statusRaw === "PENDING"
+          ? "PENDING"
+          : "FAILED";
+
+      return {
+        success: status !== "FAILED",
+        gateway: this.name,
+        vendorId: input.vendorId,
+        status,
+        message: (responseData.message as string) || "Vendor registered successfully on Cashfree.",
+        rawResponse: responseData,
+      };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Network error during vendor registration";
+      return {
+        success: false,
+        gateway: this.name,
+        vendorId: input.vendorId,
+        status: "FAILED",
+        message,
+      };
+    }
+  }
+
+  /**
+   * Queries existing vendor status on Cashfree Easy Split.
+   */
+  async getVendorStatus(vendorId: string): Promise<RegisterVendorResult> {
+    const config = this.getConfig();
+    if (!config) {
+      return {
+        success: false,
+        gateway: this.name,
+        vendorId,
+        status: "FAILED",
+        message: "Cashfree credentials missing in environment (.env.local)",
+      };
+    }
+
+    try {
+      const baseUrl = this.getBaseUrl(config.environment);
+      const url = `${baseUrl}/easy-split/vendors/${encodeURIComponent(vendorId)}`;
+
+      const res = await fetch(url, {
+        method: "GET",
+        headers: this.getHeaders(config),
+      });
+
+      const responseData = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+
+      if (!res.ok) {
+        return {
+          success: false,
+          gateway: this.name,
+          vendorId,
+          status: "FAILED",
+          message: (responseData.message as string) || `Failed to fetch vendor: ${res.status}`,
+          rawResponse: responseData,
+        };
+      }
+
+      const statusRaw = String(responseData.status ?? "ACTIVE").toUpperCase();
+      const status: RegisterVendorResult["status"] =
+        statusRaw === "ACTIVE"
+          ? "ACTIVE"
+          : statusRaw === "PENDING"
+          ? "PENDING"
+          : "FAILED";
+
+      return {
+        success: status !== "FAILED",
+        gateway: this.name,
+        vendorId,
+        status,
+        message: (responseData.message as string) || "Vendor status retrieved.",
+        rawResponse: responseData,
+      };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Network error during vendor lookup";
+      return {
+        success: false,
+        gateway: this.name,
+        vendorId,
+        status: "FAILED",
+        message,
+      };
+    }
   }
 
   /**

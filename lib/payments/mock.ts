@@ -20,6 +20,8 @@ import type {
   WebhookVerificationResult,
   SettlementFilter,
   SettlementSummary,
+  RegisterVendorInput,
+  RegisterVendorResult,
 } from "./types";
 
 export class MockPaymentAdapter implements PaymentAdapter {
@@ -27,6 +29,47 @@ export class MockPaymentAdapter implements PaymentAdapter {
 
   isConfigured(): boolean {
     return true;
+  }
+
+  async registerVendor(input: RegisterVendorInput): Promise<RegisterVendorResult> {
+    const acct = input.bankAccount.accountNumber?.trim() || "";
+    const ifsc = input.bankAccount.ifsc?.trim() || "";
+
+    if (!acct || acct.length < 6 || !ifsc) {
+      return {
+        success: false,
+        gateway: this.name,
+        vendorId: input.vendorId,
+        status: "FAILED",
+        message: "Bank account number must be at least 6 digits and valid IFSC is required.",
+      };
+    }
+
+    return {
+      success: true,
+      gateway: this.name,
+      vendorId: input.vendorId,
+      status: "ACTIVE",
+      message: "Maker successfully onboarded as Easy Split vendor in mock mode.",
+      rawResponse: {
+        vendor_id: input.vendorId,
+        status: "ACTIVE",
+        verified: true,
+        account_holder: input.bankAccount.accountHolder,
+        mock_mode: true,
+      },
+    };
+  }
+
+  async getVendorStatus(vendorId: string): Promise<RegisterVendorResult> {
+    return {
+      success: true,
+      gateway: this.name,
+      vendorId,
+      status: "ACTIVE",
+      message: "Vendor is active on mock gateway.",
+      rawResponse: { vendor_id: vendorId, status: "ACTIVE", mock_mode: true },
+    };
   }
 
   async createSplitOrder(input: CreateSplitOrderInput): Promise<CreateSplitOrderResult> {

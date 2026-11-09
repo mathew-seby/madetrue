@@ -355,3 +355,23 @@ export async function updateSellerProfileSupabase(
     body: JSON.stringify({ id, updates }),
   });
 }
+
+export interface RegisterVendorResponse {
+  success: boolean;
+  seller?: Seller;
+  vendorId?: string;
+  status?: string;
+  kyc_status?: string;
+  message?: string;
+}
+
+export async function registerSellerVendorSupabase(
+  id: string
+): Promise<Seller | null> {
+  const res = await requestJson<RegisterVendorResponse>(
+    `/api/sellers/${encodeURIComponent(id)}/vendor`,
+    { method: "POST" }
+  );
+  return res.seller ?? null;
+}
+

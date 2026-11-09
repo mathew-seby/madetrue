@@ -139,5 +139,7 @@ export type {
   SettlementFilter,
   SettlementItem,
   SettlementSummary,
+  RegisterVendorInput,
+  RegisterVendorResult,
 } from "@/lib/payments/types";
 

@@ -38,6 +38,7 @@ import {
   updateSellerApplicationSupabase,
   fetchSellerPayoutSupabase,
   updateSellerProfileSupabase,
+  registerSellerVendorSupabase,
   updateOrderStatusSupabase,
   type SellerApplicationAction,
   type SellerPayoutDetails,
@@ -590,11 +591,36 @@ export async function updateSellerApplication(
     ...sellers[index],
     is_verified: action === "approve",
     kyc_status: action === "approve" ? "verified" : "pending",
+    payment_vendor_ref:
+      action === "approve"
+        ? sellers[index].payment_vendor_ref || `vendor_${sellers[index].id}`
+        : sellers[index].payment_vendor_ref,
     application_status,
   };
   saveStoredSellers(sellers);
   return sellers[index];
 }
+
+// Phase 6 Step 2 — register an approved seller as a gateway vendor (Easy Split)
+export async function registerSellerVendor(id: string): Promise<Seller | null> {
+  if (isSupabaseEnabled()) return registerSellerVendorSupabase(id);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const sellers = getStoredSellers();
+  const index = sellers.findIndex((s) => s.id === id);
+  if (index === -1) return null;
+
+  const seller = sellers[index];
+  const vendorId = seller.payment_vendor_ref || `vendor_${seller.id}`;
+
+  sellers[index] = {
+    ...seller,
+    payment_vendor_ref: vendorId,
+    kyc_status: "verified",
+  };
+  saveStoredSellers(sellers);
+  return sellers[index];
+}
+
 
 // Payout display fields for the console's KYC card. Mock mode keeps them
 // inline on the stored seller; Supabase mode reads the private

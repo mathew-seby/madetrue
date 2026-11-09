@@ -11,6 +11,7 @@ import {
   setProductHidden,
   deleteProduct,
   updateSellerApplication,
+  registerSellerVendor,
   getPayoutDetailsForSeller,
   getApplicationStatus,
   getOrdersAdmin, 
@@ -418,6 +419,37 @@ export default function AdminPage() {
       showToast("Could not update the application. Try again.", "error");
     }
   };
+
+  const [registeringVendorId, setRegisteringVendorId] = useState<string | null>(null);
+
+  const handleRegisterVendor = async (sellerId: string) => {
+    setRegisteringVendorId(sellerId);
+    try {
+      const updated = await registerSellerVendor(sellerId);
+      if (updated) {
+        showToast(
+          `Onboarded "${updated.business_name}" as gateway vendor (${updated.payment_vendor_ref}).`,
+          "success"
+        );
+        logConsoleAction({
+          entity_type: "seller",
+          entity_id: updated.id,
+          entity_label: updated.business_name,
+          action: "vendor_onboarded",
+          summary: `Onboarded as gateway vendor: "${updated.payment_vendor_ref}" (KYC: ${updated.kyc_status}).`,
+        });
+        loadModerationData();
+      } else {
+        showToast("Vendor registration could not be completed.", "error");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Vendor registration failed.";
+      showToast(msg, "error");
+    } finally {
+      setRegisteringVendorId(null);
+    }
+  };
+
 
   // Hide/unhide — the moderation overlay (is_hidden + note). Explicit
   // cancel (prompt Escape) aborts the action; an empty note is fine.
@@ -1417,16 +1449,38 @@ export default function AdminPage() {
                             </span>
                           </div>
                         </div>
+
+                        <div className="flex items-center justify-between text-[9px] pt-1.5 border-t border-warm-brown/5">
+                          <span className="text-warm-brown/70 font-semibold">Easy Split Vendor ID:</span>
+                          <span className="font-mono font-bold text-text-dark">
+                            {seller.payment_vendor_ref || "Not registered yet"}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="flex flex-wrap justify-end gap-2 pt-2.5">
                         {applicationStatus === "approved" && (
-                          <button
-                            onClick={() => handleSellerApplication(seller.id, "revoke")}
-                            className="px-4 py-2 border border-red-200 hover:bg-red-50 text-red-600 text-xs font-bold rounded-xl transition cursor-pointer font-sans"
-                          >
-                            Revoke Approval
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleRegisterVendor(seller.id)}
+                              disabled={registeringVendorId === seller.id}
+                              className="px-3.5 py-2 bg-warm-brown/10 hover:bg-warm-brown/15 text-warm-brown text-xs font-bold rounded-xl transition cursor-pointer font-sans disabled:opacity-50"
+                            >
+                              {registeringVendorId === seller.id
+                                ? "Registering..."
+                                : seller.kyc_status === "failed"
+                                  ? "Retry Gateway Onboarding"
+                                  : seller.payment_vendor_ref
+                                    ? "Sync Gateway Vendor"
+                                    : "Register Gateway Vendor"}
+                            </button>
+                            <button
+                              onClick={() => handleSellerApplication(seller.id, "revoke")}
+                              className="px-4 py-2 border border-red-200 hover:bg-red-50 text-red-600 text-xs font-bold rounded-xl transition cursor-pointer font-sans"
+                            >
+                              Revoke Approval
+                            </button>
+                          </>
                         )}
                         {applicationStatus === "rejected" && (
                           <button

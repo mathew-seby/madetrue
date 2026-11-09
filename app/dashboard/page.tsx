@@ -5,7 +5,7 @@ import StatsCard from '@/components/dashboard/StatsCard';
 import { computeDashboardStats } from '@/lib/utils/dashboardStats';
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus, updateSellerProfile } from "@/lib/supabase/client";
+import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus, updateSellerProfile, registerSellerVendor } from "@/lib/supabase/client";
 import { Seller, Category, Product, ProductBadgeTag, Order } from "@/types";
 import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package, Truck } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
@@ -244,6 +244,32 @@ export default function DashboardPage() {
       setStoreSaving(false);
     }
   };
+
+  const [isRetryingPayout, setIsRetryingPayout] = useState(false);
+
+  const handleRetryPayout = async () => {
+    if (!actingSeller) return;
+    setIsRetryingPayout(true);
+    try {
+      const updated = await registerSellerVendor(actingSeller.id);
+      if (updated) {
+        setSellers((prev) =>
+          prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s))
+        );
+        setStoreStatus({
+          kind: "success",
+          text: `Gateway vendor registered: ${updated.payment_vendor_ref}. Payouts are active!`,
+        });
+        setTimeout(() => setStoreStatus(null), 5000);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Payout retry failed. Please try again.";
+      setStoreStatus({ kind: "error", text: msg });
+    } finally {
+      setIsRetryingPayout(false);
+    }
+  };
+
 
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -1362,6 +1388,27 @@ export default function DashboardPage() {
                         ? "Verified and set: when buyers pay, your share settles straight into your bank account — no chasing, no paperwork."
                         : "Your application and bank details are being verified by MADETRUE moderators. Your storefront is already live; payouts switch on the moment verification passes."}
                   </p>
+
+                  <div className="flex items-center justify-between flex-wrap gap-2 pt-3 mt-3 border-t border-warm-brown/10 text-xs font-sans">
+                    <span className="text-text-dark/60">
+                      Gateway Vendor ID:{" "}
+                      <strong className="font-mono text-text-dark">
+                        {actingSeller.payment_vendor_ref || "Registration pending"}
+                      </strong>
+                    </span>
+
+                    {(actingSeller.kyc_status === "failed" ||
+                      (!actingSeller.payment_vendor_ref && actingSeller.is_verified)) && (
+                      <button
+                        type="button"
+                        onClick={handleRetryPayout}
+                        disabled={isRetryingPayout}
+                        className="px-3 py-1.5 bg-white border border-warm-brown/30 hover:bg-cream-bg text-warm-brown font-bold rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
+                      >
+                        {isRetryingPayout ? "Registering..." : "Retry Payout Registration"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (
