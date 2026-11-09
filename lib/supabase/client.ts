@@ -916,6 +916,126 @@ export async function createSplitCheckoutSession(params: {
   return res.json();
 }
 
+/**
+ * Processes a mock or live webhook event to update order status and split settlement status.
+ */
+export async function processMockWebhook(event: {
+  type: string;
+  order_id: string;
+  payment_id?: string;
+}): Promise<boolean> {
+  if (isSupabaseEnabled()) {
+    const res = await fetch("/api/webhooks/cashfree", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-webhook-timestamp": String(Date.now()),
+        "x-webhook-signature": "mock_sig",
+      },
+      body: JSON.stringify({
+        type: event.type,
+        data: {
+          order: { order_id: event.order_id },
+          payment: {
+            cf_payment_id: event.payment_id || `cf_${Date.now()}`,
+            payment_status: event.type.includes("SUCCESS") ? "SUCCESS" : "FAILED",
+          },
+        },
+      }),
+    });
+    return res.ok;
+  }
+
+  // Mock mode: update localStorage orders
+  const storedOrders = localStorage.getItem("madetrue_orders");
+  if (!storedOrders) return false;
+  try {
+    const allOrders = JSON.parse(storedOrders) as Order[];
+    let changed = false;
+
+    for (let i = 0; i < allOrders.length; i++) {
+      if (allOrders[i].gateway_order_ref === event.order_id) {
+        changed = true;
+        if (event.type.includes("SUCCESS")) {
+          allOrders[i].split_status = "completed";
+          allOrders[i].gateway_payment_ref = event.payment_id || `cf_mock_${Date.now()}`;
+        } else {
+          allOrders[i].status = "cancelled";
+          allOrders[i].split_status = "failed";
+          // Restore stock in mock store
+          const prods = getStoredProducts();
+          const pIdx = prods.findIndex((p) => p.id === allOrders[i].product_id);
+          if (pIdx !== -1) {
+            prods[pIdx].stock += allOrders[i].quantity;
+            prods[pIdx].is_available = true;
+            saveStoredProducts(prods);
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      localStorage.setItem("madetrue_orders", JSON.stringify(allOrders));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sweeps online payments that were abandoned by the user beyond timeout and cancels them honestly.
+ */
+export async function expireAbandonedOrders(timeoutMinutes = 30): Promise<number> {
+  if (isSupabaseEnabled()) {
+    const res = await fetch(`/api/orders/expire-abandoned?minutes=${timeoutMinutes}`, {
+      method: "POST",
+    });
+    if (!res.ok) return 0;
+    const data = await res.json().catch(() => ({}));
+    return Number(data.expired_count) || 0;
+  }
+
+  // Mock mode
+  const storedOrders = localStorage.getItem("madetrue_orders");
+  if (!storedOrders) return 0;
+  try {
+    const allOrders = JSON.parse(storedOrders) as Order[];
+    const threshold = Date.now() - timeoutMinutes * 60 * 1000;
+    let expiredCount = 0;
+
+    for (let i = 0; i < allOrders.length; i++) {
+      const ord = allOrders[i];
+      if (
+        ord.gateway &&
+        ord.status === "pending" &&
+        ord.split_status === "pending" &&
+        new Date(ord.created_at).getTime() < threshold
+      ) {
+        ord.status = "cancelled";
+        ord.split_status = "not_applicable";
+        expiredCount++;
+
+        const prods = getStoredProducts();
+        const pIdx = prods.findIndex((p) => p.id === ord.product_id);
+        if (pIdx !== -1) {
+          prods[pIdx].stock += ord.quantity;
+          prods[pIdx].is_available = true;
+          saveStoredProducts(prods);
+        }
+      }
+    }
+
+    if (expiredCount > 0) {
+      localStorage.setItem("madetrue_orders", JSON.stringify(allOrders));
+    }
+    return expiredCount;
+  } catch {
+    return 0;
+  }
+}
+
+
 
 // ---------------------------------------------------------------------------
 // Admin audit trail (Phase 5 Step 7). Every console moderation action

@@ -11,9 +11,9 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 6 · Step 4/7 — Webhooks & payment states — ⬜ pending. Next: **Phase 6 · Step 4/7**
-**Last completed:** Phase 6 · Step 3/7 — Split checkout — commit "feat(phase6): split checkout with easy split session and honest maker breakdown" — 2026-11-09
-**Baseline gates (this step):** tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (25 routes)
+**Current position:** Phase 6 · Step 5/7 — Refunds — ⬜ pending. Next: **Phase 6 · Step 5/7**
+**Last completed:** Phase 6 · Step 4/7 — Webhooks & payment states — commit "feat(phase6): verified idempotent webhooks, ledger reflection, and abandoned order expiration" — 2026-11-09
+**Baseline gates (this step):** tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (26 routes)
 **Open owner note:** (1) Apply migration 0009_admin_audit.sql in the Supabase SQL editor; (2) Cashfree sandbox credentials can be added to `.env.local` whenever ready (all steps operate deterministically on `MockPaymentAdapter` meanwhile).
 
 ---
@@ -99,7 +99,7 @@
 | 1 | Payment adapter & prerequisites | adapter interface merged; Cashfree account checklist; sandbox keys in `.env.local` (🔑 owner step if keys missing) | ✅ done | feat(phase6): payment adapter interface, cashfree easy split & mock implementation | 2026-11-09 |
 | 2 | Seller vendor onboarding | sellers registered as Cashfree vendors (KYC + bank); pending/active shown; retry path | ✅ done | feat(phase6): seller vendor onboarding with easy split & retry path | 2026-11-09 |
 | 3 | Split checkout | UPI/cards/netbanking; seller/commission/delivery-fee split correct; COD unchanged | ✅ done | feat(phase6): split checkout with easy split session and honest maker breakdown | 2026-11-09 |
-| 4 | Webhooks & payment states | verified idempotent webhooks; orders + ledger reflect states; abandoned payments expire | ⬜ pending | — | — |
+| 4 | Webhooks & payment states | verified idempotent webhooks; orders + ledger reflect states; abandoned payments expire | ✅ done | feat(phase6): verified idempotent webhooks, ledger reflection, and abandoned order expiration | 2026-11-09 |
 | 5 | Refunds | full/partial via gateway API; states/ledger/UI/WhatsApp reflect | ⬜ pending | — | — |
 | 6 | Settlements | settlement reports synced; seller paid/pending/settled view; commission report | ⬜ pending | — | — |
 | 7 | Go-live | sandbox E2E pass; legal pages live; activation checklist; production keys | ⬜ pending | — | — |
@@ -154,6 +154,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-09 | Phase 6 Step 4 ✔ | Webhooks & payment states: `POST /api/webhooks/cashfree` verifies HMAC-SHA256 signatures via adapter, enforces DB-level idempotency via `transactions.gateway_event_id` unique constraint, transitions order `split_status = 'completed'` / updates `gateway_payment_ref` on SUCCESS, cancels & restores inventory on FAILED/USER_DROPPED, and records double-entry payments/commissions in the ledger; `POST /api/orders/expire-abandoned` safely sweeps pending online sessions older than threshold (30m), restoring product stock honestly; `lib/supabase/client.ts` extended with `processMockWebhook` and `expireAbandonedOrders` for mock parity; tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (26 routes). Owner commit pending. |
 | 2026-11-09 | Phase 6 Step 3 ✔ | Split checkout: new server route `POST /api/checkout/split` computes multi-seller vs platform commission splits and initializes adapter session; `types/index.ts` Order model and `app/api/orders/route.ts` extended with gateway/split fields and ledger insertions; checkout UI displays transparent maker-share breakdown for online payments while keeping COD completely unchanged; success screen confirms online split reference; tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (25 routes). Owner commit pending. |
 | 2026-11-09 | Phase 6 Step 2 ✔ | Seller vendor onboarding: `PaymentAdapter` extended with `registerVendor` and `getVendorStatus` implemented across `MockPaymentAdapter` and `CashfreePaymentAdapter`; new server route `POST /api/sellers/[id]/vendor` securely reads private `seller_payout_kyc` and calls adapter; client & writeSupabase `registerSellerVendor`; Maker dashboard Settings tab and Admin console Makers section display Easy Split vendor ID, status chips, and one-click retry/sync onboarding path; audit logging attached; tsc ✅ · eslint ✅ (0 errors / 33 warnings) · build ✅ (24 routes). Owner commit pending. |
 | 2026-11-09 | Phase 6 Step 1 ✔ | Payment adapter & prerequisites: unified `PaymentAdapter` interface (`createSplitOrder`/`verifyPayment`/`createRefund`/`verifyWebhook`/`getSettlements`), `CashfreePaymentAdapter` with Easy Split API integration + HMAC-SHA256 signature verification, deterministic `MockPaymentAdapter`, `getPaymentAdapter()` factory with graceful fallback, types re-exported in `types/index.ts`, comprehensive onboarding & sandbox guide in `docs/cashfree-setup-guide.md`. 🔑 Owner prerequisite flagged for `.env.local` sandbox keys. tsc ✅ · eslint ✅ (0 errors / 33 warnings) · build ✅ (23 routes). Owner commit pending. |
