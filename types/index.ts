@@ -53,6 +53,13 @@ export interface Product {
   created_at: string;
   status?: 'pending' | 'approved' | 'rejected';
   documents?: { name: string; url: string }[];
+  // Admin moderation overlay (Phase 5): hidden products stay in the maker's
+  // dashboard but vanish from every public catalog surface. Distinct from
+  // is_available so maker visibility controls never undo admin concealment.
+  is_hidden?: boolean;
+  // Audit note the moderator attaches to a moderation action (also carries
+  // rejection reasons so they're finally persisted, not only emailed).
+  moderation_note?: string;
   lat?: number;
   lng?: number;
   address?: string;

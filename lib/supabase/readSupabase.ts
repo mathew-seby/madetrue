@@ -112,7 +112,7 @@ export async function fetchSellerByIdSupabase(
 // ---------------------------------------------------------------------------
 
 const PRODUCT_COLUMNS =
-  "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission";
+  "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission, is_hidden, moderation_note";
 
 export function mapProduct(row: Record<string, unknown>): Product {
   return {
@@ -130,6 +130,8 @@ export function mapProduct(row: Record<string, unknown>): Product {
     created_at: row.created_at as string,
     status: (row.status as Product["status"]) ?? undefined,
     documents: (row.documents as Product["documents"]) ?? undefined,
+    is_hidden: row.is_hidden === null ? undefined : Boolean(row.is_hidden),
+    moderation_note: (row.moderation_note as string | null) ?? undefined,
     lat: (row.lat as number | null) ?? undefined,
     lng: (row.lng as number | null) ?? undefined,
     address: (row.address as string | null) ?? undefined,
@@ -152,9 +154,10 @@ export async function fetchProductsSupabase(
 ): Promise<Product[]> {
   const supabase = await getReadClient();
 
-  // Public listing = approved only, exactly like the mock filter in
-  // client.ts (and like what RLS grants the anon key).
-  let query = supabase.from("products").select(PRODUCT_COLUMNS).eq("status", "approved");
+  // Public listing = approved + not hidden by moderation, exactly like the
+  // mock filter in client.ts (and like what RLS would return to the anon
+  // key: approved products, public catalog rows).
+  let query = supabase.from("products").select(PRODUCT_COLUMNS).eq("status", "approved").eq("is_hidden", false);
 
   if (filters?.category) {
     query = query.eq("category", filters.category);
@@ -206,6 +209,7 @@ export async function fetchProductsBySellerIdSupabase(
     .select(PRODUCT_COLUMNS)
     .eq("seller_id", sellerId)
     .eq("status", "approved")
+    .eq("is_hidden", false)
     .order("id", { ascending: true });
 
   if (error) throw fail("products by seller", error.message);

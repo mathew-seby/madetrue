@@ -839,6 +839,14 @@ export default function DashboardPage() {
 
                     <div className="flex items-center justify-between pt-2 border-t border-warm-brown/5 gap-2 flex-wrap font-sans">
                       <div className="flex items-center gap-1.5 flex-wrap">
+                        {product.is_hidden && (
+                          <span
+                            className="text-[10px] text-white font-bold uppercase tracking-wider bg-red-600/85 px-2 py-0.5 rounded-full"
+                            title={product.moderation_note ? `A MADETRUE moderator hid this listing from buyers: ${product.moderation_note}` : "A MADETRUE moderator hid this listing from buyers"}
+                          >
+                            Hidden by Moderation
+                          </span>
+                        )}
                         {product.stock <= 0 ? (
                           <span className="text-[10px] text-red-700 font-bold uppercase tracking-wider bg-red-100 px-2 py-0.5 rounded-full">
                             Sold Out (0 units)

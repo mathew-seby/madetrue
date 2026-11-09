@@ -18,6 +18,8 @@ import {
   fetchProductsForSellerSupabase,
   deleteProductSupabase,
   uploadProductImageSupabase,
+  updateProductStatusSupabase,
+  setProductHiddenSupabase,
   submitSellerSupabase,
   updateSellerVerificationSupabase,
   updateSellerApplicationSupabase,
@@ -125,8 +127,9 @@ export async function getProducts(filters?: ProductFilters): Promise<Product[]> 
   await new Promise((resolve) => setTimeout(resolve, 150));
   const allProducts = getStoredProducts();
 
-  // Public listing should only return approved products or initial mock products (no status)
-  let products = allProducts.filter((p) => !p.status || p.status === "approved");
+  // Public listing should only return approved products (or initial mock
+  // products with no status) that are NOT hidden by admin moderation.
+  let products = allProducts.filter((p) => !p.status || (p.status === "approved" && !p.is_hidden));
 
   if (filters?.category) {
     products = products.filter((p) => p.category === filters.category);
@@ -159,6 +162,10 @@ export async function getProductById(id: string): Promise<Product | null> {
   await new Promise((resolve) => setTimeout(resolve, 50));
   const products = getStoredProducts();
   const product = products.find((p) => p.id === id);
+  // Hidden by moderation: behave exactly like the listing — the detail
+  // page is not part of the public catalog anymore (Supabase mode: the
+  // 0008 RLS policy makes the same call at the database).
+  if (product?.is_hidden) return null;
   return product || null;
 }
 
@@ -166,8 +173,10 @@ export async function getProductsBySellerId(sellerId: string): Promise<Product[]
   if (isSupabaseEnabled()) return fetchProductsBySellerIdSupabase(sellerId);
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
-  // Filter by seller id and ensure they are approved for public listing
-  return products.filter((p) => p.seller_id === sellerId && (!p.status || p.status === "approved"));
+  // Filter by seller id and ensure they are approved for public listing —
+  // and not hidden by admin moderation (a hidden product vanishes from
+  // the maker's public store, but keeps existing in their dashboard).
+  return products.filter((p) => p.seller_id === sellerId && (p.status === "approved" || !p.status) && !p.is_hidden);
 }
 
 /* ADMIN & SELLER ACTIONS (MOCKED) */
@@ -195,8 +204,17 @@ export async function getProductsForSeller(sellerId: string): Promise<Product[]>
   return products.filter((p) => p.seller_id === sellerId);
 }
 
-// Delete a product listing (used by seller dashboard and admin console)
-export async function deleteProduct(id: string, sellerId?: string): Promise<boolean> {
+// Delete a product listing (used by seller dashboard and admin console).
+// The optional audit note (admin removal) is recorded in the mock email
+// stream before the row disappears; a durable cross-action audit log is
+// Phase 5 Step 7. In Supabase mode the DELETE route does not carry a note
+// (the row is gone — the note has nowhere to live) — flagged honestly in
+// the step log.
+export async function deleteProduct(
+  id: string,
+  sellerId?: string,
+  note?: string
+): Promise<boolean> {
   if (isSupabaseEnabled()) return deleteProductSupabase(id, sellerId);
   await new Promise((resolve) => setTimeout(resolve, 50));
   const products = getStoredProducts();
@@ -205,6 +223,23 @@ export async function deleteProduct(id: string, sellerId?: string): Promise<bool
   if (sellerId && products[index].seller_id !== sellerId) {
     throw new Error("[madetrue] You can only delete your own products.");
   }
+
+  const product = products[index];
+  if (note && note.trim()) {
+    // Removal always tells the maker WHAT happened and why — the audit
+    // note doubles as the honest reason, since the row itself is gone.
+    const sellers = getStoredSellers();
+    const seller = sellers.find((s) => s.id === product.seller_id);
+    if (seller) {
+      const sellerEmail = `${seller.business_name.toLowerCase().replace(/[^a-z0-9]/g, "")}@madetrue.in`;
+      sendMockEmail(
+        sellerEmail,
+        `Listing Removed by Moderation: ${product.name}`,
+        `Dear ${seller.business_name},\n\nA MADETRUE moderator removed your listing "${product.name}" along with the following note for you:\n\n"${note.trim()}"\n\nApplied orders keep their history. If this looks wrong, reply or reach out on WhatsApp — we review removals the same day.\n\nSincerely,\nMADETRUE Admin Team`
+      );
+    }
+  }
+
   const remaining = products.filter((p) => p.id !== id);
   saveStoredProducts(remaining);
   return true;
@@ -263,13 +298,17 @@ export async function addProduct(productData: Omit<Product, "id" | "created_at">
   return newProduct;
 }
 
-// Update the review status of a product (approve/reject)
+// Update the review status of a product (approve/reject/re-open).
+// The rejection reason doubles as the product's moderation note — Phase
+// 5 finally persists it on the row (previously it only went into the
+// mock email stream), so the maker and the console both see WHY.
 export async function updateProductStatus(
   id: string,
   status: "approved" | "rejected" | "pending",
   reason?: string,
   commission?: number
 ): Promise<Product | null> {
+  if (isSupabaseEnabled()) return updateProductStatusSupabase(id, status, reason, commission);
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
   const index = products.findIndex((p) => p.id === id);
@@ -280,12 +319,15 @@ export async function updateProductStatus(
     const finalCommission = commission !== undefined ? commission : (originalProduct.commission || 0);
     const finalPrice = basePrice + finalCommission;
 
-    products[index] = { 
-      ...originalProduct, 
+    products[index] = {
+      ...originalProduct,
       status,
       base_price: basePrice,
       commission: finalCommission,
-      price: finalPrice
+      price: finalPrice,
+      // An empty decision (approve / re-review) clears a stale note; the
+      // rejection prompt always supplies one.
+      moderation_note: reason?.trim() || undefined,
     };
     saveStoredProducts(products);
 
@@ -315,6 +357,46 @@ export async function updateProductStatus(
   }
 
   return null;
+}
+
+// Hide/unhide a product from every public surface — the admin moderation
+// overlay. The maker keeps the row in their dashboard (badge explains the
+// state) and cannot undo it: PATCH /api/products refuses is_hidden from
+// non-admins, and 0008's guard trigger pins the column at the database.
+export async function setProductHidden(
+  id: string,
+  is_hidden: boolean,
+  note?: string
+): Promise<Product | null> {
+  if (isSupabaseEnabled()) return setProductHiddenSupabase(id, is_hidden, note);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const products = getStoredProducts();
+  const index = products.findIndex((p) => p.id === id);
+  if (index === -1) return null;
+
+  products[index] = {
+    ...products[index],
+    is_hidden,
+    moderation_note: note?.trim() || undefined,
+  };
+  saveStoredProducts(products);
+
+  // Concealment explains itself: the maker's dashboard shows the hidden
+  // badge and the note, and the mock email records the action.
+  const sellers = getStoredSellers();
+  const seller = sellers.find((s) => s.id === products[index].seller_id);
+  if (seller) {
+    const sellerEmail = `${seller.business_name.toLowerCase().replace(/[^a-z0-9]/g, "")}@madetrue.in`;
+    const subject = is_hidden
+      ? `Listing Hidden by Moderation: ${products[index].name}`
+      : `Listing Back On The Market: ${products[index].name}`;
+    const body = is_hidden
+      ? `Dear ${seller.business_name},\n\nYour listing "${products[index].name}" is temporarily hidden from buyers while the moderation team takes another look.${note?.trim() ? `\n\nModerator note:\n"${note.trim()}"\n` : ""}\nYour listing is safe in your Maker Dashboard — nothing is lost.\n\nSincerely,\nMADETRUE Admin Team`
+      : `Dear ${seller.business_name},\n\nGood news — "${products[index].name}" is visible to buyers again on MADETRUE.${note?.trim() ? ` A modnote was included:\n"${note.trim()}"` : ""}\n\nThank you for your patience.\n\nSincerely,\nMADETRUE Admin Team`;
+    sendMockEmail(sellerEmail, subject, body);
+  }
+
+  return products[index];
 }
 
 // Add a new seller (maker onboarding)

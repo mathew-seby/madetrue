@@ -108,6 +108,40 @@ export async function deleteProductSupabase(id: string, sellerId?: string): Prom
   return Boolean(res.success);
 }
 
+// Phase 5 Step 3 — admin product moderation. The review decision
+// (status + commission, recomputed server-side from base_price) and the
+// visibility overlay (is_hidden + moderation_note) ride the admin-only
+// keys of PATCH /api/products.
+export async function updateProductStatusSupabase(
+  id: string,
+  status: Product["status"],
+  reason?: string,
+  commission?: number
+): Promise<Product | null> {
+  const updates: Record<string, unknown> = { status };
+  if (commission !== undefined) updates.commission = commission;
+  if (reason !== undefined && reason.trim()) updates.moderation_note = reason.trim();
+  return requestJson<Product | null>("/api/products", {
+    method: "PATCH",
+    body: JSON.stringify({ id, updates }),
+  });
+}
+
+export async function setProductHiddenSupabase(
+  id: string,
+  is_hidden: boolean,
+  note?: string
+): Promise<Product | null> {
+  const updates: Record<string, unknown> = { is_hidden };
+  // An explicitly provided (possibly empty) note always lands — the route
+  // maps "" to null so a reinstated listing's stale note is cleared.
+  if (note !== undefined) updates.moderation_note = note.trim();
+  return requestJson<Product | null>("/api/products", {
+    method: "PATCH",
+    body: JSON.stringify({ id, updates }),
+  });
+}
+
 export async function uploadProductImageSupabase(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);

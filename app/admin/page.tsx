@@ -6,7 +6,9 @@ import Link from "next/link";
 import { 
   getSellers, 
   getAllProductsAdmin, 
-  updateProductStatus, 
+  updateProductStatus,
+  setProductHidden,
+  deleteProduct,
   updateSellerApplication,
   getPayoutDetailsForSeller,
   getApplicationStatus,
@@ -21,7 +23,8 @@ import {
   ShieldCheck, LogOut, Check, X, Clock, Eye, Store, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
   ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
-  Users, Send, Award, ShieldAlert, Calendar, CreditCard 
+  Users, Send, Award, ShieldAlert, Calendar, CreditCard,
+  Search, Trash2, EyeOff
 } from "lucide-react";
 
 // Pre-seed three demo orders the first time the admin console runs.
@@ -116,6 +119,9 @@ export default function AdminPage() {
 
   // Expanded product detail
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
+
+  // Product moderation search (name, maker, category, audit note).
+  const [productQuery, setProductQuery] = useState("");
 
   // Toast Notification State
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -272,6 +278,61 @@ export default function AdminPage() {
     }
   };
 
+  // Hide/unhide — the moderation overlay (is_hidden + note). Explicit
+  // cancel (prompt Escape) aborts the action; an empty note is fine.
+  const handleSetProductHidden = async (productId: string, hideState: boolean) => {
+    const product = products.find((p) => p.id === productId);
+    const promptText = hideState
+      ? `Why is "${product?.name}" being hidden from buyers? (Optional note, recorded for the maker and the audit log)`
+      : `Any note for the maker while reinstating "${product?.name}"? (Optional)`;
+    const note = window.prompt(promptText);
+    if (note === null) return;
+
+    try {
+      const updated = await setProductHidden(productId, hideState, note);
+      if (updated) {
+        showToast(
+          hideState
+            ? `Listing "${updated.name}" is hidden from the marketplace.`
+            : `Listing "${updated.name}" is visible to buyers again.`,
+          "success"
+        );
+        loadModerationData();
+      }
+    } catch {
+      showToast("Could not update the listing's visibility. Try again.", "error");
+    }
+  };
+
+  // Remove — permanent. Confirm first, then record the audit note (the
+  // mock email stream carries it to the maker since the row won't exist
+  // after this; the durable audit table arrives in Step 7).
+  const handleRemoveProduct = async (productId: string) => {
+    const product = products.find((p) => p.id === productId);
+    const confirmed = window.confirm(
+      `Remove "${product?.name}" permanently? This cannot be undone and the maker is notified with the note below. Use Hide instead if the listing may come back.`
+    );
+    if (!confirmed) return;
+
+    const note = window.prompt("Add an audit note for this removal (recorded with the moderation action and sent to the maker):");
+    if (note === null) return;
+
+    try {
+      const removed = await deleteProduct(productId, undefined, note);
+      if (removed) {
+        showToast(
+          `Listing "${product?.name}" was removed from MADETRUE.${note.trim() ? " Audit note recorded and emailed to the maker." : ""}`,
+          "success"
+        );
+        loadModerationData();
+      } else {
+        showToast("That listing could not be found.", "error");
+      }
+    } catch {
+      showToast("Could not remove the listing. Try again.", "error");
+    }
+  };
+
   const handleUpdateOrderStatus = async (orderId: string, newStatus: 'pending' | 'accepted' | 'completed' | 'cancelled') => {
     try {
       const updated = await updateOrderStatus(orderId, newStatus);
@@ -310,12 +371,27 @@ export default function AdminPage() {
   const approvedProducts = products.filter((p) => !p.status || p.status === "approved");
   const rejectedProducts = products.filter((p) => p.status === "rejected");
 
+  // Moderation search (Step 3): name, maker store, category, audit note.
+  // Case-insensitive and applied on top of the active queue.
+  const query = productQuery.trim().toLowerCase();
+  const matchesSearch = (p: Product) => {
+    if (!query) return true;
+    const seller = sellersMap[p.seller_id];
+    return (
+      p.name.toLowerCase().includes(query) ||
+      p.category.toLowerCase().includes(query) ||
+      (p.moderation_note ?? "").toLowerCase().includes(query) ||
+      (seller?.business_name ?? "").toLowerCase().includes(query)
+    );
+  };
+
   const currentProductsList =
-    activeTab === "pending"
+    (activeTab === "pending"
       ? pendingProducts
       : activeTab === "approved"
         ? approvedProducts
-        : rejectedProducts;
+        : rejectedProducts
+    ).filter(matchesSearch);
 
   const filteredSellersList = sellersList.filter((s) => {
     if (sellerFilter === "all") return true;
@@ -499,6 +575,27 @@ export default function AdminPage() {
               </div>
             </div>
 
+            {/* Moderation Search (Step 3) */}
+            <div className="relative">
+              <Search className="absolute left-4 top-3.5 h-4 w-4 text-warm-brown/60" />
+              <input
+                type="text"
+                value={productQuery}
+                onChange={(e) => setProductQuery(e.target.value)}
+                placeholder="Find a listing — search by product, maker store, category, or moderation note..."
+                className="w-full pl-11 pr-4 py-3 bg-[#FAF7F2] border border-warm-brown/10 rounded-2xl text-sm text-text-dark placeholder:text-warm-brown/40 focus:border-primary-green focus:ring-0 focus:outline-none transition"
+              />
+              {productQuery && (
+                <button
+                  onClick={() => setProductQuery("")}
+                  className="absolute right-3.5 top-3.5 text-warm-brown/50 hover:text-red-600 transition cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
             {/* Sub Tabs */}
             <div className="flex border-b border-warm-brown/10">
               {(["pending", "approved", "rejected"] as const).map((tab) => (
@@ -526,6 +623,7 @@ export default function AdminPage() {
                 {currentProductsList.map((product) => {
                   const seller = sellersMap[product.seller_id];
                   const isExpanded = expandedProductId === product.id;
+                  const isHidden = Boolean(product.is_hidden);
                   return (
                     <div
                       key={product.id}
@@ -555,6 +653,11 @@ export default function AdminPage() {
                               <span className="inline-flex items-center text-[10px] font-bold text-warm-brown bg-warm-brown/5 border border-warm-brown/10 px-2 py-0.5 rounded-md uppercase tracking-wider font-sans">
                                 {product.category}
                               </span>
+                              {isHidden && (
+                                <span className="inline-flex items-center text-[9px] font-bold text-white bg-red-600/85 px-2 py-0.5 rounded-md uppercase tracking-wide font-sans">
+                                  <EyeOff className="h-2.5 w-2.5 mr-1" /> Hidden from Marketplace
+                                </span>
+                              )}
                               {product.tags.slice(0, 3).map((tag) => (
                                 <span
                                   key={tag}
@@ -585,6 +688,11 @@ export default function AdminPage() {
                               </div>
                             </div>
                             <p className="text-xs text-text-dark/60 line-clamp-2 leading-relaxed">{product.description}</p>
+                            {product.moderation_note && (
+                              <p className="text-[10px] text-warm-brown bg-cream-bg border border-warm-brown/10 rounded-lg px-2.5 py-1.5 leading-relaxed">
+                                <b>Moderation note:</b> {product.moderation_note}
+                              </p>
+                            )}
                           </div>
 
                           <div className="flex items-center justify-between pt-2">
@@ -726,9 +834,9 @@ export default function AdminPage() {
                             </div>
                           </div>
 
-                          <div className="pt-4 border-t border-warm-brown/10 flex items-center justify-between">
+                          <div className="pt-4 border-t border-warm-brown/10 flex items-center justify-between flex-wrap gap-2">
                             <span className="text-[9px] text-text-dark/40 font-bold uppercase font-sans">Product ID: {product.id}</span>
-                            <div className="flex items-center space-x-2">
+                            <div className="flex items-center space-x-2 flex-wrap">
                               {activeTab !== "approved" && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleApproval(product.id, "approved"); }}
@@ -753,6 +861,30 @@ export default function AdminPage() {
                                   <Clock className="h-3.5 w-3.5 mr-1" /> Send to Re-review
                                 </button>
                               )}
+                              {/* Moderation overlay controls (Step 3) */}
+                              {product.status === "approved" && !isHidden && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleSetProductHidden(product.id, true); }}
+                                  className="inline-flex items-center justify-center px-4 py-2 border border-amber-200 hover:bg-amber-50 text-xs font-bold text-amber-700 rounded-xl transition cursor-pointer font-sans"
+                                >
+                                  <EyeOff className="h-3.5 w-3.5 mr-1" /> Hide
+                                </button>
+                              )}
+                              {isHidden && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleSetProductHidden(product.id, false); }}
+                                  className="inline-flex items-center justify-center px-4 py-2 border border-primary-green/30 hover:bg-primary-green/5 text-xs font-bold text-primary-green rounded-xl transition cursor-pointer font-sans"
+                                >
+                                  <Eye className="h-3.5 w-3.5 mr-1" /> Unhide
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleRemoveProduct(product.id); }}
+                                className="inline-flex items-center justify-center px-4 py-2 border border-red-200 hover:bg-red-50 text-xs font-bold text-red-600 rounded-xl transition cursor-pointer font-sans"
+                                title="Permanently remove this listing"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -764,8 +896,14 @@ export default function AdminPage() {
             ) : (
               <div className="text-center py-20 bg-[#FAF7F2] border border-warm-brown/10 rounded-3xl space-y-4">
                 <Inbox className="h-12 w-12 text-warm-brown/40 mx-auto" />
-                <h3 className="font-serif text-lg font-bold text-text-dark">Approval Queue is Empty</h3>
-                <p className="text-xs text-text-dark/60 max-w-xs mx-auto leading-relaxed">No products matched this queue.</p>
+                <h3 className="font-serif text-lg font-bold text-text-dark">
+                  {productQuery ? "No Listings Matched Your Search" : "Approval Queue is Empty"}
+                </h3>
+                <p className="text-xs text-text-dark/60 max-w-xs mx-auto leading-relaxed">
+                  {productQuery
+                    ? "Try a different name, maker store, or category — nothing in this queue matches right now."
+                    : "No products matched this queue."}
+                </p>
               </div>
             )}
           </div>
