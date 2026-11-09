@@ -27,6 +27,7 @@ import {
   isValidOrderTransition,
   getInvalidTransitionMessage,
 } from "@/lib/utils/orderStatus";
+import { getPaymentAdapter } from "@/lib/payments";
 
 const PRODUCT_COLUMNS =
   "id, seller_id, name, price, base_price, commission, status, is_available, stock";
@@ -482,7 +483,7 @@ export async function PATCH(request: Request) {
     );
   }
 
-  // 5) If order is cancelled, restore product stock
+  // 5) If order is cancelled, restore product stock & process refund for online orders
   if (newStatus === "cancelled" && currentStatus !== "cancelled") {
     const { data: product } = await supabase
       .from("products")
@@ -499,6 +500,39 @@ export async function PATCH(request: Request) {
         .from("products")
         .update({ stock: restored, is_available: true })
         .eq("id", order.product_id);
+    }
+
+    // If online order, issue refund via gateway adapter
+    if (order.payment_method === "upi" || order.gateway) {
+      const orderTotal =
+        Number(order.price ?? 0) * Number(order.quantity ?? 1) +
+        Number(order.delivery_fee ?? 0);
+
+      if (orderTotal > 0) {
+        try {
+          const adapter = getPaymentAdapter();
+          const refundRes = await adapter.createRefund({
+            orderId: order.id,
+            gatewayOrderId: order.gateway_order_ref || order.id,
+            refundId: `ref_cancel_${order.id}_${Date.now()}`,
+            refundAmount: orderTotal,
+            reason: "Order cancellation",
+          });
+
+          await supabase.from("transactions").insert({
+            order_id: order.id,
+            seller_id: order.seller_id,
+            gateway: order.gateway || (adapter.name === "cashfree" ? "cashfree" : "mock"),
+            gateway_event_id: refundRes.gatewayRefundId || `ref_cancel_${order.id}_${Date.now()}`,
+            type: "refund",
+            amount: orderTotal,
+            currency: "INR",
+            status: refundRes.status === "FAILED" ? "failed" : "completed",
+          });
+        } catch {
+          // Non-fatal if gateway refund or ledger insertion fails
+        }
+      }
     }
   }
 

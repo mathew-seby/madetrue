@@ -6,6 +6,7 @@ import {
   Order,
   AuditEntry,
   AuditEntityType,
+  Transaction,
 } from "../../types";
 import { isSupabaseEnabled } from "./dataSource";
 import {
@@ -40,17 +41,23 @@ import {
   updateSellerProfileSupabase,
   registerSellerVendorSupabase,
   updateOrderStatusSupabase,
+  refundOrderSupabase,
+  fetchOrderRefundDetailsSupabase,
+  type RefundOrderResponse,
   type SellerApplicationAction,
   type SellerPayoutDetails,
 } from "./writeSupabase";
 import type { SellerProfileUpdates } from "./writeSupabase";
+import { getPaymentAdapter } from "@/lib/payments";
 
 // Re-exposed so the console can speak the same action/payload vocabulary
 // as the transport layer (admin page imports only from client.ts).
 export type {
   SellerApplicationAction,
   SellerPayoutDetails,
+  RefundOrderResponse,
 } from "./writeSupabase";
+export type { OrderRefundDetailsResponse } from "./writeSupabase";
 import {
   isValidOrderTransition,
   getInvalidTransitionMessage,
@@ -1163,4 +1170,149 @@ export async function decrementProductStock(
     return products[index];
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Transactions & Refunds (Phase 6 Step 5)
+// ---------------------------------------------------------------------------
+
+export async function getOrderTransactions(orderId: string): Promise<Transaction[]> {
+  if (isSupabaseEnabled()) {
+    try {
+      const details = await fetchOrderRefundDetailsSupabase(orderId);
+      return details.transactions || [];
+    } catch {
+      return [];
+    }
+  }
+
+  if (typeof window === "undefined") return [];
+  const storedTx = localStorage.getItem("madetrue_transactions");
+  if (!storedTx) return [];
+  try {
+    const list: Transaction[] = JSON.parse(storedTx);
+    return list.filter((t) => t.order_id === orderId);
+  } catch {
+    return [];
+  }
+}
+
+export async function refundOrder(
+  orderId: string,
+  options?: { amount?: number; reason?: string }
+): Promise<RefundOrderResponse> {
+  if (isSupabaseEnabled()) {
+    return refundOrderSupabase(orderId, options);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const orders = getStoredOrders();
+  const index = orders.findIndex((o) => o.id === orderId);
+  if (index === -1) {
+    return { success: false, error: `Order #${orderId} not found.` };
+  }
+
+  const order = orders[index];
+  const storedTx = typeof window !== "undefined" ? localStorage.getItem("madetrue_transactions") : null;
+  let allTx: Transaction[] = [];
+  if (storedTx) {
+    try {
+      allTx = JSON.parse(storedTx);
+    } catch {
+      allTx = [];
+    }
+  }
+
+  const orderTotal =
+    (order.price || 0) * order.quantity + (order.delivery_fee || 0);
+
+  const priorRefunded = allTx
+    .filter((tx) => tx.order_id === orderId && tx.type === "refund" && tx.status !== "failed")
+    .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+
+  const maxRefundable = Math.max(0, orderTotal - priorRefunded);
+  if (maxRefundable <= 0) {
+    return { success: false, error: `Order #${orderId} is already fully refunded.` };
+  }
+
+  const refundAmount = options?.amount
+    ? Number(Math.min(options.amount, maxRefundable).toFixed(2))
+    : Number(maxRefundable.toFixed(2));
+
+  if (refundAmount <= 0) {
+    return { success: false, error: "Refund amount must be greater than zero." };
+  }
+
+  // Call adapter
+  const adapter = getPaymentAdapter();
+  const refundId = `ref_${order.id}_${Date.now()}`;
+  const refundResult = await adapter.createRefund({
+    orderId: order.id,
+    gatewayOrderId: order.gateway_order_ref || order.id,
+    refundId,
+    refundAmount,
+    reason: options?.reason || "Customer order refund",
+  });
+
+  if (!refundResult.success) {
+    return {
+      success: false,
+      error: refundResult.error || "Payment gateway rejected the refund.",
+    };
+  }
+
+  const newTx: Transaction = {
+    id: `tx_ref_${Date.now()}`,
+    order_id: order.id,
+    seller_id: order.seller_id,
+    gateway: order.gateway || "mock",
+    gateway_event_id: refundResult.gatewayRefundId || refundId,
+    type: "refund",
+    amount: refundAmount,
+    currency: "INR",
+    status: refundResult.status === "FAILED" ? "failed" : "completed",
+    created_at: new Date().toISOString(),
+  };
+
+  if (typeof window !== "undefined") {
+    localStorage.setItem("madetrue_transactions", JSON.stringify([newTx, ...allTx]));
+  }
+
+  const isFullRefund = priorRefunded + refundAmount >= orderTotal;
+  let updatedOrder = { ...order };
+
+  if (isFullRefund && order.status !== "cancelled") {
+    updatedOrder = { ...order, status: "cancelled" };
+    orders[index] = updatedOrder;
+    saveStoredOrders(orders);
+
+    // Restore stock
+    const products = getStoredProducts();
+    const prodIdx = products.findIndex((p) => p.id === order.product_id);
+    if (prodIdx !== -1) {
+      products[prodIdx].stock += order.quantity;
+      products[prodIdx].is_available = true;
+      saveStoredProducts(products);
+    }
+  }
+
+  // Append audit
+  recordAudit({
+    actor_name: "Console Admin / Maker",
+    actor_email: "support@madetrue.local",
+    entity_type: "order",
+    entity_id: order.id,
+    entity_label: order.product_name ?? order.id,
+    action: "order_refunded",
+    summary: `Refund of ₹${refundAmount} (${isFullRefund ? "full" : "partial"}) recorded. Reason: ${options?.reason || "Not specified"}`,
+  });
+
+  return {
+    success: true,
+    refundId: refundResult.gatewayRefundId || refundId,
+    refundAmount,
+    isFullRefund,
+    status: refundResult.status,
+    order: updatedOrder,
+  };
 }

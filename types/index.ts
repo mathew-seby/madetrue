@@ -127,6 +127,20 @@ export interface AuditEntry {
   summary: string;
 }
 
+// Append-only transactions ledger (Phase 2 schema, Phase 6 payments & refunds)
+export interface Transaction {
+  id: string;
+  order_id: string;
+  seller_id: string;
+  gateway: 'cashfree' | 'razorpay' | 'payu' | 'mock';
+  gateway_event_id: string;
+  type: 'payment' | 'refund' | 'settlement' | 'commission';
+  amount: number;
+  currency: string;
+  status: 'pending' | 'completed' | 'failed';
+  created_at: string;
+}
+
 // Payment adapter and split settlements (Phase 6):
 export type {
   PaymentGatewayName,

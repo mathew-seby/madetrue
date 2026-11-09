@@ -5,12 +5,13 @@ import StatsCard from '@/components/dashboard/StatsCard';
 import { computeDashboardStats } from '@/lib/utils/dashboardStats';
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus, updateSellerProfile, registerSellerVendor } from "@/lib/supabase/client";
+import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus, updateSellerProfile, registerSellerVendor, refundOrder } from "@/lib/supabase/client";
 import { Seller, Category, Product, ProductBadgeTag, Order } from "@/types";
 import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package, Truck } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { RoleGuard } from "@/components/shared/RoleGuard";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
+import { buildRefundWhatsAppUrl } from "@/lib/utils/whatsapp";
 
 const FALLBACK_PRODUCT_IMAGE = "https://images.unsplash.com/photo-1541832676-9b763b0239ab?w=600&auto=format&fit=crop&q=80"; // Traditional clay pot
 
@@ -71,15 +72,34 @@ export default function DashboardPage() {
     setOrderActionSuccess(null);
     setUpdatingOrderId(orderId);
     try {
-      const updated = await updateOrderStatus(orderId, targetStatus, selectedSellerId);
+      let updated: Order | null = null;
+      const targetOrder = myOrders.find((o) => o.id === orderId);
+      const isOnlinePaid =
+        targetOrder &&
+        (targetOrder.payment_method === "upi" || Boolean(targetOrder.gateway));
+
+      if (targetStatus === "cancelled" && isOnlinePaid) {
+        const refundRes = await refundOrder(orderId, {
+          reason: "Order cancelled by maker",
+        });
+        if (!refundRes.success) {
+          throw new Error(refundRes.error || "Failed to process customer refund on cancellation.");
+        }
+        updated = refundRes.order ?? (await updateOrderStatus(orderId, "cancelled", selectedSellerId));
+      } else {
+        updated = await updateOrderStatus(orderId, targetStatus, selectedSellerId);
+      }
+
       if (updated) {
         setMyOrders((prev) =>
-          prev.map((o) => (o.id === orderId ? updated : o))
+          prev.map((o) => (o.id === orderId ? updated! : o))
         );
         const friendlyMessages: Record<string, string> = {
           accepted: "Order accepted! Customer knows you are preparing their authentic items.",
           completed: "Order marked completed! Fulfillment finished.",
-          cancelled: "Order cancelled and stock restored to inventory.",
+          cancelled: isOnlinePaid
+            ? "Order cancelled, customer refunded via gateway, and stock restored."
+            : "Order cancelled and stock restored to inventory.",
         };
         setOrderActionSuccess(
           friendlyMessages[targetStatus] || `Order status updated to ${targetStatus}.`
@@ -1144,15 +1164,37 @@ export default function DashboardPage() {
                           {cleanPhone && (
                             <div className="flex items-center gap-2 pt-2 border-t border-warm-brown/5">
                               <a
-                                href={`https://wa.me/91${cleanPhone}?text=${encodeURIComponent(
-                                  `Hello ${order.buyer_name || "Customer"}, this is your MADETRUE maker regarding your order #${order.id} (${order.product_name ?? "item"} × ${order.quantity}).`
-                                )}`}
+                                href={
+                                  order.status === "cancelled" &&
+                                  (order.payment_method === "upi" || order.gateway)
+                                    ? buildRefundWhatsAppUrl(cleanPhone, {
+                                        buyerName: order.buyer_name,
+                                        orderId: order.id,
+                                        productName: order.product_name,
+                                        refundAmount:
+                                          (order.price || 0) * order.quantity +
+                                          (order.delivery_fee || 0),
+                                        reason: "Order cancellation",
+                                        gateway: order.gateway,
+                                      })
+                                    : `https://wa.me/91${cleanPhone}?text=${encodeURIComponent(
+                                        `Hello ${order.buyer_name || "Customer"}, this is your MADETRUE maker regarding your order #${order.id} (${order.product_name ?? "item"} × ${order.quantity}).`
+                                      )}`
+                                }
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center px-3 py-1.5 bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#128C7E] rounded-lg font-bold text-[11px] transition"
+                                className={`inline-flex items-center px-3 py-1.5 rounded-lg font-bold text-[11px] transition ${
+                                  order.status === "cancelled" &&
+                                  (order.payment_method === "upi" || order.gateway)
+                                    ? "bg-amber-100 hover:bg-amber-200 text-amber-900"
+                                    : "bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#128C7E]"
+                                }`}
                               >
                                 <MessageCircle className="h-3.5 w-3.5 mr-1" />
-                                WhatsApp
+                                {order.status === "cancelled" &&
+                                (order.payment_method === "upi" || order.gateway)
+                                  ? "WhatsApp Refund Notice"
+                                  : "WhatsApp"}
                               </a>
                               <a
                                 href={`tel:${order.buyer_phone}`}
@@ -1207,9 +1249,11 @@ export default function DashboardPage() {
                               {order.status === "pending" && (
                                 <>
                                   {cancelConfirmId === order.id ? (
-                                    <div className="flex items-center gap-1.5 bg-red-50 p-1 rounded-xl border border-red-200">
+                                    <div className="flex items-center gap-1.5 bg-red-50 p-1.5 rounded-xl border border-red-200">
                                       <span className="text-[11px] font-bold text-red-700 px-2 font-sans">
-                                        Cancel?
+                                        {order.payment_method === "upi" || order.gateway
+                                          ? `Refund ₹${lineTotal} & Cancel?`
+                                          : "Cancel?"}
                                       </span>
                                       <button
                                         type="button"
@@ -1218,7 +1262,9 @@ export default function DashboardPage() {
                                         }
                                         className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold font-sans transition cursor-pointer"
                                       >
-                                        Yes, Cancel
+                                        {order.payment_method === "upi" || order.gateway
+                                          ? "Yes, Cancel & Refund"
+                                          : "Yes, Cancel"}
                                       </button>
                                       <button
                                         type="button"
@@ -1254,9 +1300,11 @@ export default function DashboardPage() {
                               {order.status === "accepted" && (
                                 <>
                                   {cancelConfirmId === order.id ? (
-                                    <div className="flex items-center gap-1.5 bg-red-50 p-1 rounded-xl border border-red-200">
+                                    <div className="flex items-center gap-1.5 bg-red-50 p-1.5 rounded-xl border border-red-200">
                                       <span className="text-[11px] font-bold text-red-700 px-2 font-sans">
-                                        Cancel?
+                                        {order.payment_method === "upi" || order.gateway
+                                          ? `Refund ₹${lineTotal} & Cancel?`
+                                          : "Cancel?"}
                                       </span>
                                       <button
                                         type="button"
@@ -1265,7 +1313,9 @@ export default function DashboardPage() {
                                         }
                                         className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold font-sans transition cursor-pointer"
                                       >
-                                        Yes, Cancel
+                                        {order.payment_method === "upi" || order.gateway
+                                          ? "Yes, Cancel & Refund"
+                                          : "Yes, Cancel"}
                                       </button>
                                       <button
                                         type="button"

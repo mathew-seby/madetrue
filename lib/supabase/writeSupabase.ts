@@ -8,7 +8,7 @@
 // the DB product row, exactly what 0002_rls.sql trusts to a signed-in
 // client once Phase 3 has real sessions).
 
-import type { AuditEntry, Category, Order, Product, Seller } from "../../types";
+import type { AuditEntry, Category, Order, Product, Seller, Transaction } from "../../types";
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -374,4 +374,50 @@ export async function registerSellerVendorSupabase(
   );
   return res.seller ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// Refunds (Phase 6 Step 5) — full & partial refunds via Gateway API
+// ---------------------------------------------------------------------------
+
+export interface RefundOrderResponse {
+  success: boolean;
+  refundId?: string;
+  refundAmount?: number;
+  isFullRefund?: boolean;
+  status?: string;
+  order?: Order;
+  error?: string;
+}
+
+export async function refundOrderSupabase(
+  orderId: string,
+  options?: { amount?: number; reason?: string }
+): Promise<RefundOrderResponse> {
+  return requestJson<RefundOrderResponse>(
+    `/api/orders/${encodeURIComponent(orderId)}/refund`,
+    {
+      method: "POST",
+      body: JSON.stringify(options ?? {}),
+    }
+  );
+}
+
+export interface OrderRefundDetailsResponse {
+  order_id: string;
+  order_total: number;
+  refunded_total: number;
+  refundable_amount: number;
+  is_fully_refunded: boolean;
+  transactions: Transaction[];
+}
+
+export async function fetchOrderRefundDetailsSupabase(
+  orderId: string
+): Promise<OrderRefundDetailsResponse> {
+  return requestJson<OrderRefundDetailsResponse>(
+    `/api/orders/${encodeURIComponent(orderId)}/refund`,
+    { method: "GET" }
+  );
+}
+
 
