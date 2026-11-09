@@ -227,10 +227,14 @@ export async function POST(request: Request) {
           ? null
           : Number(incoming.lng),
       delivery_fee: Number(incoming.delivery_fee ?? 0),
-      gateway: null,
-      gateway_order_ref: null,
-      gateway_payment_ref: null,
-      split_status: "not_applicable" as const,
+      gateway: incoming.gateway ? String(incoming.gateway) : null,
+      gateway_order_ref: incoming.gateway_order_ref ? String(incoming.gateway_order_ref) : null,
+      gateway_payment_ref: incoming.gateway_payment_ref ? String(incoming.gateway_payment_ref) : null,
+      split_status: incoming.split_status
+        ? String(incoming.split_status)
+        : incoming.payment_method === "upi"
+        ? "pending"
+        : "not_applicable",
     };
 
     const { data, error: insertError } = await supabase
@@ -253,6 +257,25 @@ export async function POST(request: Request) {
         { error: `Saving your order failed: ${insertError.message}` },
         { status: 500 }
       );
+    }
+
+    // Ledger transaction record for online / gateway orders
+    if (row.gateway && data?.id) {
+      const eventId = `tx_${data.id}_${Date.now()}`;
+      try {
+        await supabase.from("transactions").insert({
+          order_id: data.id,
+          seller_id: row.seller_id,
+          gateway: row.gateway,
+          gateway_event_id: eventId,
+          type: "payment",
+          amount: Number(row.price) * Number(row.quantity),
+          currency: "INR",
+          status: row.split_status === "completed" ? "completed" : "pending",
+        });
+      } catch {
+        // Non-fatal if transactions insert fails in transitional dev
+      }
     }
 
     inserted.push(mapOrderRow(data));
@@ -504,5 +527,9 @@ function mapOrderRow(row: Record<string, unknown>): Order {
     buyer_phone: (row.buyer_phone as string | null) ?? undefined,
     product_name: (row.product_name as string | null) ?? undefined,
     price: (row.price as number | null) ?? undefined,
+    gateway: (row.gateway as Order["gateway"]) ?? undefined,
+    gateway_order_ref: (row.gateway_order_ref as string | null) ?? undefined,
+    gateway_payment_ref: (row.gateway_payment_ref as string | null) ?? undefined,
+    split_status: (row.split_status as Order["split_status"]) ?? undefined,
   };
 }

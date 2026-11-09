@@ -837,6 +837,32 @@ export async function saveOrders(newOrders: Order[]): Promise<Order[]> {
   allOrders = [...newOrders, ...allOrders];
   localStorage.setItem("madetrue_orders", JSON.stringify(allOrders));
 
+  // If online payment, record transactions in mock ledger
+  if (newOrders[0]?.gateway) {
+    const storedTx = localStorage.getItem("madetrue_transactions");
+    let allTx: unknown[] = [];
+    if (storedTx) {
+      try {
+        allTx = JSON.parse(storedTx);
+      } catch {
+        allTx = [];
+      }
+    }
+    const newTx = newOrders.map((o) => ({
+      id: `tx_${o.id}_${Date.now()}`,
+      order_id: o.id,
+      seller_id: o.seller_id,
+      gateway: o.gateway,
+      gateway_event_id: `evt_${o.id}_${Date.now()}`,
+      type: "payment",
+      amount: (o.price || 0) * o.quantity,
+      currency: "INR",
+      status: o.split_status === "completed" ? "completed" : "pending",
+      created_at: new Date().toISOString(),
+    }));
+    localStorage.setItem("madetrue_transactions", JSON.stringify([...newTx, ...allTx]));
+  }
+
   // Decrement stock for purchased products
   for (const item of newOrders) {
     await decrementProductStock(item.product_id, item.quantity);
@@ -844,6 +870,52 @@ export async function saveOrders(newOrders: Order[]): Promise<Order[]> {
 
   return newOrders;
 }
+
+export interface SplitSessionResponse {
+  success: boolean;
+  gateway: string;
+  gatewayOrderId: string;
+  paymentSessionId?: string;
+  paymentUrl?: string;
+  splits: Array<{ vendorId: string; amount: number }>;
+  breakdown: {
+    subtotal: number;
+    deliveryFee: number;
+    totalAmount: number;
+    makersShare: number;
+    platformShare: number;
+  };
+  error?: string;
+}
+
+export async function createSplitCheckoutSession(params: {
+  items: Array<{
+    productId: string;
+    sellerId: string;
+    quantity: number;
+    price: number;
+    basePrice?: number;
+    commission?: number;
+  }>;
+  deliveryFee: number;
+  customer: {
+    name: string;
+    phone: string;
+    email?: string;
+  };
+}): Promise<SplitSessionResponse> {
+  const res = await fetch("/api/checkout/split", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err.error as string) || `Failed to create payment session (${res.status})`);
+  }
+  return res.json();
+}
+
 
 // ---------------------------------------------------------------------------
 // Admin audit trail (Phase 5 Step 7). Every console moderation action

@@ -9,7 +9,7 @@ import { useCart } from "@/components/shared/CartProvider";
 import { Seller, Order } from "@/types";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
 import { DELIVERY_FEE } from "@/lib/utils/constants";
-import { saveOrders, getSellerById } from "@/lib/supabase/client";
+import { saveOrders, getSellerById, createSplitCheckoutSession } from "@/lib/supabase/client";
 import { buildWhatsAppUrl } from "@/lib/utils/whatsapp";
 
 /** The subset of a freshly placed order that the success screen needs. */
@@ -23,6 +23,9 @@ interface CreatedOrder {
   address: string;
   payment_method: "upi" | "cod";
   delivery_fee?: number;
+  gateway?: string | null;
+  gateway_order_ref?: string | null;
+  split_status?: string;
 }
 
 /**
@@ -240,7 +243,41 @@ export default function CheckoutPage() {
 
     try {
       // Simulate slight delay
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      let gatewayOrderId: string | null = null;
+      let gatewayName: Order["gateway"] = null;
+      let splitStatus: Order["split_status"] = "not_applicable";
+      let gatewayPaymentId: string | null = null;
+
+      // Online Payment (UPI / Cards / Netbanking) via Easy Split adapter
+      if (paymentMethod === "upi") {
+        const splitSession = await createSplitCheckoutSession({
+          items: cart.map((item) => ({
+            productId: item.product.id,
+            sellerId: item.product.seller_id,
+            quantity: item.quantity,
+            price: item.product.price,
+            basePrice: item.product.base_price,
+            commission: item.product.commission,
+          })),
+          deliveryFee,
+          customer: {
+            name: name.trim(),
+            phone: phone.trim(),
+            email: currentUser?.email,
+          },
+        });
+
+        if (!splitSession.success) {
+          throw new Error(splitSession.error || "Failed to initialize online split payment session.");
+        }
+
+        gatewayOrderId = splitSession.gatewayOrderId;
+        gatewayName = splitSession.gateway as Order["gateway"];
+        gatewayPaymentId = `pay_${Date.now()}`;
+        splitStatus = "pending";
+      }
 
       const newOrders: Order[] = cart.map((item, idx) => ({
         id: `order-${Date.now()}-${idx}`,
@@ -266,7 +303,11 @@ export default function CheckoutPage() {
         whatsapp_notified: false,
         created_at: new Date().toISOString(),
         lat: latitude,
-        lng: longitude
+        lng: longitude,
+        gateway: gatewayName,
+        gateway_order_ref: gatewayOrderId,
+        gateway_payment_ref: gatewayPaymentId,
+        split_status: splitStatus,
       }));
 
       // Persist the basket (Supabase in the database when the switch is
@@ -294,6 +335,9 @@ export default function CheckoutPage() {
           address: order.address,
           payment_method: order.payment_method,
           delivery_fee: order.delivery_fee ?? 0,
+          gateway: order.gateway,
+          gateway_order_ref: order.gateway_order_ref,
+          split_status: order.split_status,
         }))
       );
       setOrderMakers(makers);
@@ -349,6 +393,23 @@ export default function CheckoutPage() {
               Thank you for supporting regional producers. Your order has been registered in the database.
             </p>
           </div>
+
+          {/* Online Payment & Split Settlement Confirmation */}
+          {createdOrders[0]?.gateway_order_ref && (
+            <div className="p-3.5 bg-primary-green/5 border border-primary-green/20 rounded-2xl text-left space-y-1 font-sans">
+              <div className="flex items-center justify-between text-xs flex-wrap gap-2">
+                <span className="font-bold text-primary-green flex items-center gap-1.5">
+                  <CheckCircle className="h-4 w-4" /> Online Payment Confirmed
+                </span>
+                <span className="font-mono text-[10px] bg-white px-2.5 py-0.5 rounded-full border border-warm-brown/15 font-bold text-text-dark">
+                  Ref: {createdOrders[0].gateway_order_ref}
+                </span>
+              </div>
+              <p className="text-[11px] text-text-dark/60 leading-relaxed">
+                Automated split settlement initiated via {createdOrders[0].gateway === "cashfree" ? "Cashfree Easy Split" : "Easy Split Gateway"}.
+              </p>
+            </div>
+          )}
 
           {/* Orders summary */}
           <div className="border border-warm-brown/10 rounded-2xl p-4 bg-white text-left space-y-3">
@@ -704,9 +765,31 @@ export default function CheckoutPage() {
                           : "bg-white text-text-dark border-warm-brown/15 hover:border-warm-brown/30"
                       }`}
                     >
-                      UPI / Scan & Pay
+                      Online Payment (UPI/Cards)
                     </button>
                   </div>
+
+                  {paymentMethod === "upi" && (
+                    <div className="p-3.5 bg-primary-green/5 border border-primary-green/20 rounded-2xl space-y-1.5 font-sans mt-3">
+                      <div className="flex justify-between items-center text-xs font-bold text-text-dark">
+                        <span className="flex items-center gap-1.5">
+                          <CreditCard className="h-3.5 w-3.5 text-primary-green" /> Direct to Makers (Split Settlement):
+                        </span>
+                        <span className="text-primary-green font-mono">
+                          ₹{cart.reduce((sum, item) => sum + (item.product.base_price ?? item.product.price) * item.quantity, 0)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px] text-text-dark/70">
+                        <span>Platform Commission &amp; Delivery:</span>
+                        <span className="font-mono">
+                          ₹{(subtotal + deliveryFee) - cart.reduce((sum, item) => sum + (item.product.base_price ?? item.product.price) * item.quantity, 0)}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-text-dark/50 pt-1 border-t border-primary-green/10 leading-relaxed">
+                        ⚡ Powered by Easy Split: Your payment splits at source — the maker&apos;s share routes straight to their verified bank account.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-4">
@@ -715,7 +798,11 @@ export default function CheckoutPage() {
                     disabled={submitting}
                     className="w-full px-6 py-3.5 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200 cursor-pointer disabled:opacity-50 uppercase tracking-wider font-sans flex items-center justify-center"
                   >
-                    {submitting ? "Processing Checkout..." : "Place Order & Route (COD/UPI)"}
+                    {submitting
+                      ? "Processing Checkout..."
+                      : paymentMethod === "upi"
+                        ? `Pay ₹${subtotal + deliveryFee} via Online Split (UPI/Card)`
+                        : `Place Cash on Delivery Order (₹${subtotal + deliveryFee})`}
                   </button>
                 </div>
               </form>

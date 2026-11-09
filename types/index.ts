@@ -91,6 +91,11 @@ export interface Order {
   price?: number;
   // Recorded once per delivery basket on its first line (checkout rule).
   delivery_fee?: number;
+  // Gateway & Split payment fields (Phase 6):
+  gateway?: 'cashfree' | 'razorpay' | 'payu' | 'mock' | null;
+  gateway_order_ref?: string | null;
+  gateway_payment_ref?: string | null;
+  split_status?: 'not_applicable' | 'pending' | 'completed' | 'failed';
 }
 
 export interface Category {
