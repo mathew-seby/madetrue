@@ -8,7 +8,16 @@
 // the DB product row, exactly what 0002_rls.sql trusts to a signed-in
 // client once Phase 3 has real sessions).
 
-import type { AuditEntry, Category, Order, Product, Seller, Transaction } from "../../types";
+import type {
+  AuditEntry,
+  Category,
+  Order,
+  Product,
+  Seller,
+  Transaction,
+  PlatformCommissionReport,
+  SettlementSummary,
+} from "../../types";
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -419,5 +428,38 @@ export async function fetchOrderRefundDetailsSupabase(
     { method: "GET" }
   );
 }
+
+// ---------------------------------------------------------------------------
+// Settlements & Commission Reports (Phase 6 Step 6)
+// ---------------------------------------------------------------------------
+
+export interface SettlementsResponse {
+  gateway: string;
+  summary: SettlementSummary;
+  commissionReport: PlatformCommissionReport;
+}
+
+export async function fetchSettlementsSupabase(
+  sellerId?: string
+): Promise<SettlementsResponse> {
+  const query = sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : "";
+  return requestJson<SettlementsResponse>(`/api/settlements${query}`, {
+    method: "GET",
+  });
+}
+
+export async function syncSettlementsSupabase(
+  sellerId?: string
+): Promise<{ success: boolean; count: number; summary: SettlementSummary }> {
+  const query = sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : "";
+  return requestJson<{
+    success: boolean;
+    count: number;
+    summary: SettlementSummary;
+  }>(`/api/settlements${query}`, {
+    method: "POST",
+  });
+}
+
 
 

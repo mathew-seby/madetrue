@@ -7,6 +7,9 @@ import {
   AuditEntry,
   AuditEntityType,
   Transaction,
+  PlatformCommissionReport,
+  SettlementSummary,
+  MakerCommissionReportRow,
 } from "../../types";
 import { isSupabaseEnabled } from "./dataSource";
 import {
@@ -43,7 +46,10 @@ import {
   updateOrderStatusSupabase,
   refundOrderSupabase,
   fetchOrderRefundDetailsSupabase,
+  fetchSettlementsSupabase,
+  syncSettlementsSupabase,
   type RefundOrderResponse,
+  type SettlementsResponse,
   type SellerApplicationAction,
   type SellerPayoutDetails,
 } from "./writeSupabase";
@@ -56,6 +62,7 @@ export type {
   SellerApplicationAction,
   SellerPayoutDetails,
   RefundOrderResponse,
+  SettlementsResponse,
 } from "./writeSupabase";
 export type { OrderRefundDetailsResponse } from "./writeSupabase";
 import {
@@ -1316,3 +1323,130 @@ export async function refundOrder(
     order: updatedOrder,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Settlements & Commission Reports (Phase 6 Step 6)
+// ---------------------------------------------------------------------------
+
+export async function getSettlementData(
+  sellerId?: string
+): Promise<SettlementsResponse> {
+  if (isSupabaseEnabled()) {
+    return fetchSettlementsSupabase(sellerId);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const orders = getStoredOrders().filter((o) => o.status !== "cancelled");
+  const sellers = getStoredSellers();
+  const targetSellers = sellerId ? sellers.filter((s) => s.id === sellerId) : sellers;
+
+  const adapter = getPaymentAdapter();
+  const primaryVendorRef = sellerId ? targetSellers[0]?.payment_vendor_ref : undefined;
+  const settlementSummary = await adapter.getSettlements({ vendorId: primaryVendorRef });
+
+  const makerRows: MakerCommissionReportRow[] = targetSellers.map((seller) => {
+    const makerOrders = orders.filter((o) => o.seller_id === seller.id);
+    const orderCount = makerOrders.length;
+
+    let grossSales = 0;
+    let makerShare = 0;
+    let commission = 0;
+    let deliveryFees = 0;
+
+    for (const order of makerOrders) {
+      const qty = Number(order.quantity ?? 1);
+      const linePrice = Number(order.price ?? 0);
+      const lineBase = Number(order.base_price ?? linePrice);
+      const lineComm = Number(order.commission ?? Math.max(0, linePrice - lineBase));
+      const lineFee = Number(order.delivery_fee ?? 0);
+
+      grossSales += linePrice * qty;
+      makerShare += lineBase * qty;
+      commission += lineComm * qty;
+      deliveryFees += lineFee;
+    }
+
+    const makerSettlements = settlementSummary.settlements.filter(
+      (s) => !s.vendorId || s.vendorId === seller.payment_vendor_ref
+    );
+    const settledAmount = makerSettlements
+      .filter((s) => s.status === "SETTLED")
+      .reduce((sum, s) => sum + s.amount, 0);
+
+    const pendingSettlement = Math.max(0, makerShare - settledAmount);
+    const status: MakerCommissionReportRow["status"] =
+      orderCount === 0
+        ? "no_sales"
+        : pendingSettlement > 0
+        ? "pending"
+        : "settled";
+
+    return {
+      sellerId: seller.id,
+      businessName: seller.business_name,
+      vendorRef: seller.payment_vendor_ref || undefined,
+      orderCount,
+      grossSales: Number(grossSales.toFixed(2)),
+      makerShare: Number(makerShare.toFixed(2)),
+      commission: Number(commission.toFixed(2)),
+      deliveryFees: Number(deliveryFees.toFixed(2)),
+      settledAmount: Number(settledAmount.toFixed(2)),
+      pendingSettlement: Number(pendingSettlement.toFixed(2)),
+      status,
+    };
+  });
+
+  const totalGrossSales = makerRows.reduce((acc, r) => acc + r.grossSales, 0);
+  const totalMakerPayouts = makerRows.reduce((acc, r) => acc + r.makerShare, 0);
+  const totalCommissionEarned = makerRows.reduce((acc, r) => acc + r.commission, 0);
+  const totalDeliveryFees = makerRows.reduce((acc, r) => acc + r.deliveryFees, 0);
+  const totalSettledToMakers = makerRows.reduce((acc, r) => acc + r.settledAmount, 0);
+  const totalPendingSettlement = makerRows.reduce((acc, r) => acc + r.pendingSettlement, 0);
+
+  const commissionReport: PlatformCommissionReport = {
+    period: "All-time (Mock Realtime Synced)",
+    currency: "INR",
+    totalGrossSales: Number(totalGrossSales.toFixed(2)),
+    totalMakerPayouts: Number(totalMakerPayouts.toFixed(2)),
+    totalCommissionEarned: Number(totalCommissionEarned.toFixed(2)),
+    totalDeliveryFees: Number(totalDeliveryFees.toFixed(2)),
+    totalSettledToMakers: Number(totalSettledToMakers.toFixed(2)),
+    totalPendingSettlement: Number(totalPendingSettlement.toFixed(2)),
+    makerBreakdown: makerRows,
+  };
+
+  return {
+    gateway: adapter.name,
+    summary: settlementSummary,
+    commissionReport,
+  };
+}
+
+export async function syncSettlements(
+  sellerId?: string
+): Promise<{ success: boolean; count: number; summary: SettlementSummary }> {
+  if (isSupabaseEnabled()) {
+    return syncSettlementsSupabase(sellerId);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const adapter = getPaymentAdapter();
+  const summary = await adapter.getSettlements();
+
+  recordAudit({
+    actor_name: "Console Admin / Maker",
+    actor_email: "support@madetrue.local",
+    entity_type: "seller",
+    entity_id: sellerId || "all",
+    entity_label: "Settlement Reports",
+    action: "settlements_synced",
+    summary: `Settlement reports synced from Mock Gateway (${summary.settlements.length} settlement batches verified, ₹${summary.totalSettled} settled).`,
+  });
+
+  return {
+    success: true,
+    count: summary.settlements.length,
+    summary,
+  };
+}
+

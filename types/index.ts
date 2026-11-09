@@ -141,6 +141,33 @@ export interface Transaction {
   created_at: string;
 }
 
+// Settlement & Commission Reports (Phase 6 Step 6):
+export interface MakerCommissionReportRow {
+  sellerId: string;
+  businessName: string;
+  vendorRef?: string;
+  orderCount: number;
+  grossSales: number;
+  makerShare: number;
+  commission: number;
+  deliveryFees: number;
+  settledAmount: number;
+  pendingSettlement: number;
+  status: "settled" | "pending" | "no_sales";
+}
+
+export interface PlatformCommissionReport {
+  period: string;
+  currency: string;
+  totalGrossSales: number;
+  totalMakerPayouts: number;
+  totalCommissionEarned: number;
+  totalDeliveryFees: number;
+  totalSettledToMakers: number;
+  totalPendingSettlement: number;
+  makerBreakdown: MakerCommissionReportRow[];
+}
+
 // Payment adapter and split settlements (Phase 6):
 export type {
   PaymentGatewayName,

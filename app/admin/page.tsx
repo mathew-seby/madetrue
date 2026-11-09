@@ -18,13 +18,15 @@ import {
   updateOrderStatus, 
   updateOrderWhatsappStatus,
   refundOrder,
+  getSettlementData,
+  syncSettlements,
   addCategory,
   updateCategory,
   deleteCategory,
   getAuditLog,
   recordAudit
 } from "@/lib/supabase/client";
-import type { SellerApplicationAction, SellerPayoutDetails } from "@/lib/supabase/client";
+import type { SellerApplicationAction, SellerPayoutDetails, SettlementsResponse } from "@/lib/supabase/client";
 import { Order, Product, Seller, Category, AuditEntry, AuditEntityType } from "@/types";
 import { DELIVERY_FEE } from "@/lib/utils/constants";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
@@ -36,7 +38,7 @@ import {
   ShieldCheck, LogOut, Check, X, Clock, Eye, Store, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
   ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
-  Users, Send, Award, ShieldAlert, Calendar, CreditCard, RotateCcw,
+  Users, Send, Award, ShieldAlert, Calendar, CreditCard, RotateCcw, Landmark,
   Search, Trash2, EyeOff, ArrowDownUp, Layers, PenLine, ChartColumn, RefreshCw, History,
   Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower
 } from "lucide-react";
@@ -189,6 +191,10 @@ export default function AdminPage() {
   const [refundReason, setRefundReason] = useState<string>("");
   const [refundSubmitting, setRefundSubmitting] = useState<boolean>(false);
 
+  // Settlement & Commission state (Phase 6 Step 6)
+  const [settlementData, setSettlementData] = useState<SettlementsResponse | null>(null);
+  const [syncingSettlements, setSyncingSettlements] = useState(false);
+
   // Payout display fields per maker store, hydrated from the private
   // seller_payout_kyc table (mock: inline on the seller row) by the
   // admin-only /api/sellers/[id]/payout route. `{}` → the card loses
@@ -264,6 +270,14 @@ export default function AdminPage() {
     } catch (e) {
       console.warn("[madetrue] audit trail unavailable:", e);
       setAuditLog([]);
+    }
+
+    // Settlements and commission reports (Phase 6 Step 6)
+    try {
+      const sData = await getSettlementData();
+      setSettlementData(sData);
+    } catch (e) {
+      console.warn("[madetrue] settlement reports unavailable:", e);
     }
   }, [showToast]);
 
@@ -626,6 +640,32 @@ export default function AdminPage() {
       showToast(err instanceof Error ? err.message : "Failed to process refund.", "error");
     } finally {
       setRefundSubmitting(false);
+    }
+  };
+
+  const handleSyncSettlements = async () => {
+    setSyncingSettlements(true);
+    try {
+      const res = await syncSettlements();
+      if (res.success) {
+        showToast(
+          `Synced ${res.count} settlement batches from payment gateway!`,
+          "success"
+        );
+        logConsoleAction({
+          entity_type: "seller",
+          entity_id: "all",
+          entity_label: "Settlement Reports",
+          action: "settlements_synced",
+          summary: `Settlement reports synced (${res.count} batches, ₹${res.summary.totalSettled} settled).`,
+        });
+        const fresh = await getSettlementData();
+        setSettlementData(fresh);
+      }
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Failed to sync settlements.", "error");
+    } finally {
+      setSyncingSettlements(false);
     }
   };
 
@@ -1893,6 +1933,108 @@ export default function AdminPage() {
                   ))}
                 </div>
               ))}
+            </div>
+
+            {/* EASY SPLIT SETTLEMENTS & COMMISSION REPORT (Phase 6 Step 6) */}
+            <div className="bg-[#FAF7F2] p-6 rounded-3xl border border-warm-brown/10 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-warm-brown/10 pb-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-8 h-8 rounded-xl bg-primary-green/10 text-primary-green flex items-center justify-center">
+                      <Landmark className="h-4 w-4" />
+                    </span>
+                    <h3 className="font-serif text-lg font-bold text-text-dark">
+                      Marketplace Settlements & Commission Report
+                    </h3>
+                  </div>
+                  <p className="text-xs text-text-dark/60 leading-relaxed font-sans">
+                    Synced with Cashfree Easy Split platform gateway. Displays maker payouts, realized platform commissions, and pending banking clearances.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSyncSettlements}
+                  disabled={syncingSettlements}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary-green hover:bg-[#224f3b] disabled:opacity-50 text-cream-bg text-xs font-bold rounded-xl transition cursor-pointer font-sans shrink-0 self-start"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${syncingSettlements ? "animate-spin" : ""}`} />
+                  {syncingSettlements ? "Syncing..." : "Sync Gateway Settlements"}
+                </button>
+              </div>
+
+              {/* Settlement KPI strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-sans">
+                <div className="bg-white/80 p-4 rounded-2xl border border-warm-brown/10">
+                  <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">Total Settled to Makers</span>
+                  <p className="text-2xl font-serif font-bold text-primary-green mt-1">
+                    ₹{settlementData?.commissionReport.totalSettledToMakers ?? settlementData?.summary.totalSettled ?? 0}
+                  </p>
+                  <span className="text-[9px] text-text-dark/40 block">Credited directly to maker bank accounts</span>
+                </div>
+                <div className="bg-white/80 p-4 rounded-2xl border border-warm-brown/10">
+                  <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">Pending Settlement</span>
+                  <p className="text-2xl font-serif font-bold text-amber-700 mt-1">
+                    ₹{settlementData?.commissionReport.totalPendingSettlement ?? settlementData?.summary.pendingSettlement ?? 0}
+                  </p>
+                  <span className="text-[9px] text-text-dark/40 block">In clearance cycle (T+1 / T+2 days)</span>
+                </div>
+                <div className="bg-white/80 p-4 rounded-2xl border border-warm-brown/10">
+                  <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">Platform Commission Earned</span>
+                  <p className="text-2xl font-serif font-bold text-accent-gold mt-1">
+                    ₹{settlementData?.commissionReport.totalCommissionEarned ?? analytics.commission}
+                  </p>
+                  <span className="text-[9px] text-text-dark/40 block">Retained automatically by Easy Split</span>
+                </div>
+              </div>
+
+              {/* Maker Breakdown Commission Table */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-warm-brown uppercase tracking-wider font-sans">
+                  Maker-by-Maker Settlement & Commission Ledger
+                </h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs font-sans">
+                    <thead>
+                      <tr className="border-b border-warm-brown/10 text-[9px] font-bold uppercase tracking-wider text-warm-brown/60">
+                        <th className="py-2.5 px-3">Maker Store</th>
+                        <th className="py-2.5 px-3">Vendor Ref</th>
+                        <th className="py-2.5 px-3 text-right">Orders</th>
+                        <th className="py-2.5 px-3 text-right">Gross GMV</th>
+                        <th className="py-2.5 px-3 text-right">Maker Share</th>
+                        <th className="py-2.5 px-3 text-right">Settled</th>
+                        <th className="py-2.5 px-3 text-right">Pending</th>
+                        <th className="py-2.5 px-3 text-right">Commission</th>
+                        <th className="py-2.5 px-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-warm-brown/5">
+                      {(settlementData?.commissionReport.makerBreakdown ?? []).map((row) => (
+                        <tr key={row.sellerId} className="hover:bg-warm-brown/5 transition">
+                          <td className="py-3 px-3 font-bold text-text-dark font-serif">{row.businessName}</td>
+                          <td className="py-3 px-3 font-mono text-[10px] text-text-dark/60">{row.vendorRef || "Pending KYC"}</td>
+                          <td className="py-3 px-3 text-right text-text-dark font-semibold">{row.orderCount}</td>
+                          <td className="py-3 px-3 text-right text-text-dark font-semibold">₹{row.grossSales}</td>
+                          <td className="py-3 px-3 text-right font-bold text-primary-green">₹{row.makerShare}</td>
+                          <td className="py-3 px-3 text-right text-text-dark/70 font-mono">₹{row.settledAmount}</td>
+                          <td className="py-3 px-3 text-right text-amber-700 font-mono">₹{row.pendingSettlement}</td>
+                          <td className="py-3 px-3 text-right font-bold text-accent-gold">₹{row.commission}</td>
+                          <td className="py-3 px-3 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                              row.status === "settled"
+                                ? "bg-primary-green/10 text-primary-green"
+                                : row.status === "pending"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-warm-brown/10 text-warm-brown/60"
+                            }`}>
+                              {row.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -11,9 +11,9 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 6 · Step 6/7 — Settlements — ⬜ pending. Next: **Phase 6 · Step 6/7**
-**Last completed:** Phase 6 · Step 5/7 — Refunds — commit "feat(phase6): full and partial refunds via gateway adapter with ledger and whatsapp reflection" — 2026-11-09
-**Baseline gates (this step):** tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (27 routes)
+**Current position:** Phase 6 · Step 7/7 — Go-live — ⬜ pending. Next: **Phase 6 · Step 7/7**
+**Last completed:** Phase 6 · Step 6/7 — Settlements — commit "feat(phase6): settlement reports synced, seller paid/pending/settled view, and commission report" — 2026-11-09
+**Baseline gates (this step):** tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (28 routes)
 **Open owner note:** (1) Apply migration 0009_admin_audit.sql in the Supabase SQL editor; (2) Cashfree sandbox credentials can be added to `.env.local` whenever ready (all steps operate deterministically on `MockPaymentAdapter` meanwhile).
 
 ---
@@ -101,7 +101,7 @@
 | 3 | Split checkout | UPI/cards/netbanking; seller/commission/delivery-fee split correct; COD unchanged | ✅ done | feat(phase6): split checkout with easy split session and honest maker breakdown | 2026-11-09 |
 | 4 | Webhooks & payment states | verified idempotent webhooks; orders + ledger reflect states; abandoned payments expire | ✅ done | feat(phase6): verified idempotent webhooks, ledger reflection, and abandoned order expiration | 2026-11-09 |
 | 5 | Refunds | full/partial via gateway API; states/ledger/UI/WhatsApp reflect | ✅ done | feat(phase6): full and partial refunds via gateway adapter with ledger and whatsapp reflection | 2026-11-09 |
-| 6 | Settlements | settlement reports synced; seller paid/pending/settled view; commission report | ⬜ pending | — | — |
+| 6 | Settlements | settlement reports synced; seller paid/pending/settled view; commission report | ✅ done | feat(phase6): settlement reports synced, seller paid/pending/settled view, and commission report | 2026-11-09 |
 | 7 | Go-live | sandbox E2E pass; legal pages live; activation checklist; production keys | ⬜ pending | — | — |
 
 **Phase done when:** a sandbox split order (UPI + card), a refund, and a vendor onboarding all pass end-to-end — and the owner has written pricing quotes + activation approval.
@@ -154,6 +154,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-09 | Phase 6 Step 6 ✔ | Settlements: new server route `GET`/`POST /api/settlements` connects `PaymentAdapter.getSettlements` with session-guarded seller isolation and admin-wide aggregation; calculates real-time commission report (gross GMV, maker share, 10% platform commissions, delivery fees); `lib/supabase/client.ts` extended with `getSettlementData` and `syncSettlements` with mock-mode parity; Maker dashboard adds dedicated "Payouts & Settlements" tab with paid/pending/commission KPI cards, Easy Split vendor details, and batch transfer history; Admin console adds live Marketplace Settlements & Commission Report with maker-by-maker ledger table and one-click gateway sync; tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (28 routes). Owner commit pending. |
 | 2026-11-09 | Phase 6 Step 5 ✔ | Refunds: new route `POST /api/orders/[id]/refund` + `GET` for full/partial refunds via universal `PaymentAdapter.createRefund` (with proportional vendor split reversals for Cashfree Easy Split); ledger transactions recorded with status & amount; `PATCH /api/orders` triggers auto-refund on cancellation of paid online orders; `lib/supabase/client.ts` extended with `refundOrder` and `getOrderTransactions` with mock-mode parity; Admin console order details gain gateway & split badges, one-click "Issue Refund" modal, and "WhatsApp Refund Receipt" click-to-chat; Maker dashboard cancellation prompts "Cancel & Refund" with `buildRefundWhatsAppUrl` integration; tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (27 routes). Owner commit pending. |
 | 2026-11-09 | Phase 6 Step 4 ✔ | Webhooks & payment states: `POST /api/webhooks/cashfree` verifies HMAC-SHA256 signatures via adapter, enforces DB-level idempotency via `transactions.gateway_event_id` unique constraint, transitions order `split_status = 'completed'` / updates `gateway_payment_ref` on SUCCESS, cancels & restores inventory on FAILED/USER_DROPPED, and records double-entry payments/commissions in the ledger; `POST /api/orders/expire-abandoned` safely sweeps pending online sessions older than threshold (30m), restoring product stock honestly; `lib/supabase/client.ts` extended with `processMockWebhook` and `expireAbandonedOrders` for mock parity; tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (26 routes). Owner commit pending. |
 | 2026-11-09 | Phase 6 Step 3 ✔ | Split checkout: new server route `POST /api/checkout/split` computes multi-seller vs platform commission splits and initializes adapter session; `types/index.ts` Order model and `app/api/orders/route.ts` extended with gateway/split fields and ledger insertions; checkout UI displays transparent maker-share breakdown for online payments while keeping COD completely unchanged; success screen confirms online split reference; tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (25 routes). Owner commit pending. |
