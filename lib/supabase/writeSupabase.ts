@@ -8,7 +8,7 @@
 // the DB product row, exactly what 0002_rls.sql trusts to a signed-in
 // client once Phase 3 has real sessions).
 
-import type { Order, Product, Seller } from "../../types";
+import type { Category, Order, Product, Seller } from "../../types";
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -59,6 +59,36 @@ export async function fetchOrdersForSellerSupabase(sellerId: string): Promise<Or
 // isolation guards live on the route, not here.
 export async function fetchOrdersAdminSupabase(): Promise<Order[]> {
   return requestJson<Order[]>("/api/orders", { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Categories — admin console CRUD (Phase 5 Step 5).
+// ---------------------------------------------------------------------------
+
+export async function submitCategorySupabase(
+  category: { name: string; slug: string; icon: string }
+): Promise<Category> {
+  return requestJson<Category>("/api/categories", {
+    method: "POST",
+    body: JSON.stringify(category),
+  });
+}
+
+export async function updateCategorySupabase(
+  id: string,
+  updates: Pick<Category, "name" | "slug" | "icon">
+): Promise<Category> {
+  return requestJson<Category>("/api/categories", {
+    method: "PATCH",
+    body: JSON.stringify({ id, ...updates }),
+  });
+}
+
+export async function deleteCategorySupabase(id: string): Promise<Category> {
+  return requestJson<Category>("/api/categories", {
+    method: "DELETE",
+    body: JSON.stringify({ id }),
+  });
 }
 
 export async function updateOrderStatusSupabase(

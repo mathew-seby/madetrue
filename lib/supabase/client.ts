@@ -13,6 +13,9 @@ import {
   saveOrdersSupabase,
   fetchOrdersForSellerSupabase,
   fetchOrdersAdminSupabase,
+  submitCategorySupabase,
+  updateCategorySupabase,
+  deleteCategorySupabase,
   submitProductSupabase,
   editProductSupabase,
   fetchAllProductsSupabase,
@@ -42,6 +45,7 @@ import {
   isValidOrderTransition,
   getInvalidTransitionMessage,
 } from "@/lib/utils/orderStatus";
+import { DEFAULT_CATEGORY_ICON } from "@/lib/utils/categories";
 
 // This is our data layer client. It serves mock data by default
 // and uses local storage to simulate write operations (approvals, product additions) on the client side.
@@ -95,11 +99,122 @@ function saveStoredSellers(sellers: Seller[]) {
   }
 }
 
+// Helper to get the category list (public nav + admin console read from
+// this store in mock mode, so CRUD edits reflect everywhere immediately).
+function getStoredCategories(): Category[] {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("madetrue_categories");
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        console.error("Failed to parse stored categories", e);
+      }
+    }
+    // Initialize if not present
+    localStorage.setItem("madetrue_categories", JSON.stringify(mockCategories));
+    return mockCategories;
+  }
+  return mockCategories;
+}
+
+// Helper to save the category list
+function saveStoredCategories(categories: Category[]) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("madetrue_categories", JSON.stringify(categories));
+  }
+}
+
 export async function getCategories(): Promise<Category[]> {
   if (isSupabaseEnabled()) return fetchCategoriesSupabase();
   // Simulate network delay
   await new Promise((resolve) => setTimeout(resolve, 100));
-  return mockCategories;
+  return getStoredCategories();
+}
+
+// ---------------------------------------------------------------------------
+// Categories CRUD — admin console (Phase 5 Step 5). Supabase mode goes
+// through the admin-guarded /api/categories route (service role); mock
+// mode persists to the madetrue_categories store so the public nav
+// (FeaturedCategories, listing chips, footer link) reflects instantly.
+// Slug rules live in lib/utils/categories.ts and are mirrored by the
+// categories_slug_unique / categories_slug_format constraints in
+// 0001_init.sql — the database has the final word in Supabase mode.
+// ---------------------------------------------------------------------------
+
+export async function addCategory(
+  name: string,
+  slug: string,
+  icon: string = DEFAULT_CATEGORY_ICON
+): Promise<Category> {
+  if (isSupabaseEnabled()) {
+    return submitCategorySupabase({ name, slug, icon });
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const categories = getStoredCategories();
+  if (categories.some((c) => c.slug === slug)) {
+    throw new Error(`That category slug is already in use — pick another name or slug.`);
+  }
+  const category: Category = {
+    id: `cat-${Date.now()}`,
+    name: name.trim(),
+    icon,
+    slug,
+  };
+  saveStoredCategories([...categories, category]);
+  return category;
+}
+
+export async function updateCategory(
+  id: string,
+  updates: Partial<Category>
+): Promise<Category | null> {
+  if (isSupabaseEnabled()) {
+    return updateCategorySupabase(
+      id,
+      updates as Pick<Category, "name" | "slug" | "icon">
+    );
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const categories = getStoredCategories();
+  const index = categories.findIndex((c) => c.id === id);
+  if (index === -1) return null;
+
+  const clash = categories.some((c) => c.slug === updates.slug && c.id !== id);
+  if (clash) {
+    throw new Error(`That category slug is already in use — pick another slug.`);
+  }
+
+  const updated = { ...categories[index], ...updates } as Category;
+  const next = [...categories];
+  next[index] = updated;
+  saveStoredCategories(next);
+  return updated;
+}
+
+export async function deleteCategory(id: string): Promise<Category | null> {
+  if (isSupabaseEnabled()) {
+    return deleteCategorySupabase(id);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const categories = getStoredCategories();
+  const target = categories.find((c) => c.id === id);
+  if (!target) return null;
+
+  // Same guard as the server route: a category holding products cannot
+  // disappear — the FK in 0001_init.sql would refuse it.
+  const inUse = getStoredProducts().filter((p) => p.category === target.slug).length;
+  if (inUse > 0) {
+    throw new Error(
+      `"${target.name}" still holds ${inUse} product${inUse === 1 ? "" : "s"} — move or remove them first.`
+    );
+  }
+
+  saveStoredCategories(categories.filter((c) => c.id !== id));
+  return target;
 }
 
 export async function getSellers(): Promise<Seller[]> {

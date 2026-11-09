@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
+  getCategories, 
   getSellers, 
   getAllProductsAdmin, 
   updateProductStatus,
@@ -14,19 +15,24 @@ import {
   getApplicationStatus,
   getOrdersAdmin, 
   updateOrderStatus, 
-  updateOrderWhatsappStatus 
+  updateOrderWhatsappStatus,
+  addCategory,
+  updateCategory,
+  deleteCategory
 } from "@/lib/supabase/client";
 import type { SellerApplicationAction, SellerPayoutDetails } from "@/lib/supabase/client";
-import { Order, Product, Seller } from "@/types";
+import { Order, Product, Seller, Category } from "@/types";
 import { DELIVERY_FEE } from "@/lib/utils/constants";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
+import { CATEGORY_ICONS, DEFAULT_CATEGORY_ICON, slugifyName, isValidSlug, type CategoryIcon } from "@/lib/utils/categories";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { 
   ShieldCheck, LogOut, Check, X, Clock, Eye, Store, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
   ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
   Users, Send, Award, ShieldAlert, Calendar, CreditCard,
-  Search, Trash2, EyeOff, ArrowDownUp
+  Search, Trash2, EyeOff, ArrowDownUp, Layers, PenLine,
+  Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower
 } from "lucide-react";
 
 // Pre-seed three demo orders the first time the admin console runs.
@@ -112,6 +118,17 @@ function orderMoney(order: Order) {
   };
 }
 
+// Icon name → lucide component for the category cards' tile previews.
+// The CRUD whitelist lives in lib/utils/categories.ts; any unknown stored
+// name falls back to Leaf, exactly like the public homepage tiles.
+const CATEGORY_ICON_COMPONENTS: Record<string, ComponentType<{ className?: string }>> = {
+  Leaf,
+  UtensilsCrossed,
+  Brush: Paintbrush,
+  Sprout,
+  Flower,
+};
+
 export default function AdminPage() {
   const router = useRouter();
   const { currentUser, loading: authLoading, logout } = useAuth();
@@ -119,7 +136,7 @@ export default function AdminPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Main navigation sections: products, sellers, orders
-  const [currentSection, setCurrentSection] = useState<"products" | "sellers" | "orders">("products");
+  const [currentSection, setCurrentSection] = useState<"products" | "sellers" | "categories" | "orders">("products");
 
   // Data State
   const [products, setProducts] = useState<Product[]>([]);
@@ -127,6 +144,19 @@ export default function AdminPage() {
   const [sellersMap, setSellersMap] = useState<{ [key: string]: Seller }>({});
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Category management (Step 5): the live list the CRUD section edits,
+  // plus the draft being added or edited (null = list mode only). The
+  // slug input auto-follows the name until the moderator types in it.
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryDraft, setCategoryDraft] = useState<{
+    mode: "add" | "edit";
+    id?: string;
+    name: string;
+    slug: string;
+    icon: string;
+  } | null>(null);
+  const [categorySlugTouched, setCategorySlugTouched] = useState(false);
 
   // Sub-tabs filters
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
@@ -168,6 +198,7 @@ export default function AdminPage() {
     try {
       const allProducts = await getAllProductsAdmin();
       const allSellers = await getSellers();
+      const allCategories = await getCategories();
       
       // Load orders; pre-seed demo rows only in mock mode. In Supabase
       // mode the database IS the order book — an empty list is honest.
@@ -200,6 +231,7 @@ export default function AdminPage() {
       setSellersMap(sellerMap);
       setPayoutsMap(payoutMap);
       setOrders(allOrders);
+      setCategories(allCategories);
     } catch {
       showToast("Failed to fetch admin dashboard data", "error");
     } finally {
@@ -394,6 +426,109 @@ export default function AdminPage() {
     }
   };
 
+  // --- Category CRUD (Step 5) --------------------------------------------
+
+  const openAddCategory = () => {
+    setCategorySlugTouched(false);
+    setCategoryDraft({ mode: "add", name: "", slug: "", icon: DEFAULT_CATEGORY_ICON });
+  };
+
+  const openEditCategory = (cat: Category) => {
+    setCategorySlugTouched(true);
+    setCategoryDraft({ mode: "edit", id: cat.id, name: cat.name, slug: cat.slug, icon: cat.icon });
+  };
+
+  const handleSaveCategory = async () => {
+    if (!categoryDraft) return;
+
+    const name = categoryDraft.name.trim();
+    // The stored address is always a clean slug: whatever the moderator
+    // typed in the name box fills the gaps (same rules as the database).
+    const finalSlug = slugifyName(categoryDraft.slug.trim() || name);
+
+    if (!name) {
+      showToast("Give the category a name first.", "error");
+      return;
+    }
+    if (!isValidSlug(finalSlug)) {
+      showToast("The category address needs at least one letter or number.", "error");
+      return;
+    }
+
+    const clash = categories.find((c) => c.slug === finalSlug && c.id !== categoryDraft.id);
+    if (clash) {
+      showToast(`"${clash.name}" already uses the address "${finalSlug}".`, "error");
+      return;
+    }
+
+    // Renaming a slug changes the category's public web address — the
+    // DB FK follows products along automatically, but ask once.
+    const original = categories.find((c) => c.id === categoryDraft.id);
+    if (
+      categoryDraft.mode === "edit" &&
+      original &&
+      original.slug !== finalSlug &&
+      !window.confirm(
+        `Renaming changes this category's public address (from ?category=${original.slug} to ?category=${finalSlug}). Its products follow along. Continue?`
+      )
+    ) {
+      return;
+    }
+
+    const icon: CategoryIcon = CATEGORY_ICONS.includes(categoryDraft.icon as CategoryIcon)
+      ? (categoryDraft.icon as CategoryIcon)
+      : DEFAULT_CATEGORY_ICON;
+
+    try {
+      const saved =
+        categoryDraft.mode === "add"
+          ? await addCategory(name, finalSlug, icon)
+          : await updateCategory(categoryDraft.id as string, { name, slug: finalSlug, icon });
+      if (saved) {
+        showToast(
+          categoryDraft.mode === "add"
+            ? `Category "${saved.name}" is live for buyers.`
+            : `Category "${saved.name}" updated.`,
+          "success"
+        );
+        setCategoryDraft(null);
+        setCategorySlugTouched(false);
+        loadModerationData();
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Could not save the category.", "error");
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    const cat = categories.find((c) => c.id === categoryId);
+    if (!cat) return;
+
+    // Local guard with the same words the server uses: deleting a slug
+    // that holds products would bounce off the FK anyway.
+    const inUse = products.filter((p) => p.category === cat.slug).length;
+    if (inUse > 0) {
+      showToast(`"${cat.name}" still holds ${inUse} product${inUse === 1 ? "" : "s"} — move or remove them first.`, "error");
+      return;
+    }
+
+    if (!window.confirm(`Remove "${cat.name}" from MADETRUE? Its public links will disappear. This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const removed = await deleteCategory(cat.id);
+      if (removed) {
+        showToast(`Category "${removed.name}" removed.`, "success");
+        loadModerationData();
+      } else {
+        showToast("That category could not be found.", "error");
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Could not remove the category.", "error");
+    }
+  };
+
   const toggleExpand = (productId: string) => {
     setExpandedProductId((prev) => (prev === productId ? null : productId));
   };
@@ -560,7 +695,7 @@ export default function AdminPage() {
         </div>
 
         {/* Primary Dashboard Navigation Tabs */}
-        <div className="grid grid-cols-3 gap-3 bg-[#FAF7F2] p-2.5 rounded-2xl border border-warm-brown/10 shadow-sm max-w-2xl">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[#FAF7F2] p-2.5 rounded-2xl border border-warm-brown/10 shadow-sm max-w-2xl">
           <button
             onClick={() => setCurrentSection("products")}
             className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2 cursor-pointer font-sans ${
@@ -580,6 +715,16 @@ export default function AdminPage() {
             }`}
           >
             <Store className="h-4 w-4" /> Makers
+          </button>
+          <button
+            onClick={() => setCurrentSection("categories")}
+            className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2 cursor-pointer font-sans ${
+              currentSection === "categories"
+                ? "bg-primary-green text-cream-bg shadow-sm"
+                : "bg-white text-text-dark/70 border border-warm-brown/10 hover:border-warm-brown/30"
+            }`}
+          >
+            <Layers className="h-4 w-4" /> Categories
           </button>
           <button
             onClick={() => setCurrentSection("orders")}
@@ -1156,6 +1301,197 @@ export default function AdminPage() {
                 <Users className="h-12 w-12 text-warm-brown/40 mx-auto" />
                 <h3 className="font-serif text-lg font-bold text-text-dark">No Producers Registered</h3>
                 <p className="text-xs text-text-dark/60 max-w-xs mx-auto leading-relaxed">No maker profiles found matching this query.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* SECTION 4: CATEGORY MANAGEMENT (Step 5) */}
+        {currentSection === "categories" && (
+          <div className="space-y-6">
+            {/* Header + Add CTA */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF7F2] p-5 rounded-3xl border border-warm-brown/10 shadow-sm">
+              <div className="space-y-1">
+                <h2 className="font-serif text-lg font-bold text-text-dark">Marketplace Categories</h2>
+                <p className="text-xs text-text-dark/60 leading-relaxed max-w-lg">
+                  Buyers browse by these tiles. The homepage, listing filters, and footer links all follow the names and web addresses kept here — they update everywhere the moment you save.
+                </p>
+              </div>
+              <button
+                onClick={openAddCategory}
+                disabled={!!categoryDraft}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-green hover:bg-[#224f3b] disabled:opacity-50 text-cream-bg text-xs font-bold rounded-xl transition cursor-pointer font-sans shrink-0 self-start"
+              >
+                <Layers className="h-3.5 w-3.5" /> Add a Category
+              </button>
+            </div>
+
+            {/* Add / Edit draft form */}
+            {categoryDraft && (
+              <div className="bg-white/60 border border-primary-green/25 rounded-3xl p-6 space-y-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-serif text-base font-bold text-text-dark">
+                    {categoryDraft.mode === "add"
+                      ? "Introduce a New Category"
+                      : `Editing "${categoryDraft.name}"`}
+                  </h3>
+                  <button
+                    onClick={() => setCategoryDraft(null)}
+                    className="text-warm-brown/50 hover:text-red-600 transition cursor-pointer p-1"
+                    title="Discard changes"
+                    aria-label="Discard category form"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <label htmlFor="category-name" className="block space-y-1.5">
+                    <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider font-sans">Category Name</span>
+                    <input
+                      id="category-name"
+                      type="text"
+                      value={categoryDraft.name}
+                      onChange={(e) =>
+                        setCategoryDraft((prev) =>
+                          prev
+                            ? { ...prev, name: e.target.value, slug: categorySlugTouched ? prev.slug : slugifyName(e.target.value) }
+                            : prev
+                        )
+                      }
+                      placeholder="e.g. Handwoven Textiles"
+                      className="w-full px-4 py-2.5 bg-[#FAF7F2] border border-warm-brown/10 rounded-xl text-sm text-text-dark placeholder:text-warm-brown/40 focus:border-primary-green focus:outline-none transition"
+                    />
+                  </label>
+                  <label htmlFor="category-slug" className="block space-y-1.5">
+                    <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider font-sans">Web Address (Slug)</span>
+                    <input
+                      id="category-slug"
+                      type="text"
+                      value={categoryDraft.slug}
+                      onChange={(e) => {
+                        setCategorySlugTouched(true);
+                        setCategoryDraft((prev) => (prev ? { ...prev, slug: e.target.value } : prev));
+                      }}
+                      placeholder="handwoven-textiles"
+                      className="w-full px-4 py-2.5 bg-[#FAF7F2] border border-warm-brown/10 rounded-xl text-sm font-mono text-text-dark placeholder:text-warm-brown/40 focus:border-primary-green focus:outline-none transition"
+                    />
+                    <span className="text-[8px] text-text-dark/40 font-mono block">/products?category={categoryDraft.slug || "…"}</span>
+                  </label>
+                  <label htmlFor="category-icon" className="block space-y-1.5">
+                    <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider font-sans">Tile Icon</span>
+                    <select
+                      id="category-icon"
+                      value={categoryDraft.icon}
+                      onChange={(e) =>
+                        setCategoryDraft((prev) => (prev ? { ...prev, icon: e.target.value } : prev))
+                      }
+                      className="w-full px-4 py-2.5 bg-[#FAF7F2] border border-warm-brown/10 rounded-xl text-sm text-text-dark cursor-pointer focus:border-primary-green focus:outline-none transition"
+                    >
+                      {CATEGORY_ICONS.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                    <span className="flex items-center gap-1.5 text-[9px] text-warm-brown/70 font-sans">
+                      <span className="w-5 h-5 bg-primary-green/10 text-primary-green rounded-md flex items-center justify-center">
+                        {(() => {
+                          const DraftIcon = CATEGORY_ICON_COMPONENTS[categoryDraft.icon] || CATEGORY_ICON_COMPONENTS.Leaf;
+                          return <DraftIcon className="h-3 w-3" />;
+                        })()}
+                      </span>
+                      Preview on the buyer tiles
+                    </span>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    onClick={() => setCategoryDraft(null)}
+                    className="px-4 py-2 border border-warm-brown/20 hover:bg-warm-brown/5 text-warm-brown text-xs font-bold rounded-xl transition cursor-pointer font-sans"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveCategory}
+                    className="px-5 py-2 bg-primary-green hover:bg-[#224f3b] text-cream-bg text-xs font-bold rounded-xl transition cursor-pointer font-sans"
+                  >
+                    {categoryDraft.mode === "add" ? "Create Category" : "Save Changes"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Category list */}
+            {loading ? (
+              <div className="text-center py-16 text-sm text-warm-brown font-semibold">
+                Loading the category shelves...
+              </div>
+            ) : categories.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {categories.map((cat) => {
+                  const inUse = products.filter((p) => p.category === cat.slug).length;
+                  const IconComponent = CATEGORY_ICON_COMPONENTS[cat.icon] || Leaf;
+                  return (
+                    <div
+                      key={cat.id}
+                      className="bg-[#FAF7F2] rounded-3xl border border-warm-brown/10 p-5 space-y-4 shadow-sm hover:border-primary-green/20 transition"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="w-10 h-10 bg-primary-green/10 text-primary-green rounded-xl flex items-center justify-center shrink-0">
+                          <IconComponent className="h-5 w-5" />
+                        </div>
+                        <span
+                          className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full font-sans ${
+                            inUse > 0
+                              ? "bg-primary-green/10 text-primary-green"
+                              : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {inUse === 0 ? "No products yet" : `${inUse} product${inUse === 1 ? "" : "s"}`}
+                        </span>
+                      </div>
+                      <div className="space-y-0.5">
+                        <h3 className="font-serif text-base font-bold text-text-dark">{cat.name}</h3>
+                        <p className="text-[10px] font-mono text-text-dark/50 truncate" title={`/products?category=${cat.slug}`}>
+                          /products?category={cat.slug}
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-warm-brown/5">
+                        <span className="text-[9px] text-text-dark/40 font-bold uppercase font-sans">
+                          ID: <span className="font-mono">{cat.id}</span>
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => openEditCategory(cat)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 border border-warm-brown/20 hover:bg-warm-brown/5 text-warm-brown text-[10px] font-bold rounded-lg transition cursor-pointer font-sans"
+                          >
+                            <PenLine className="h-3 w-3" /> Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCategory(cat.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 border border-red-200 hover:bg-red-50 text-red-600 text-[10px] font-bold rounded-lg transition cursor-pointer font-sans"
+                          >
+                            <Trash2 className="h-3 w-3" /> Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-20 bg-[#FAF7F2] border border-warm-brown/10 rounded-3xl space-y-4">
+                <Inbox className="h-12 w-12 text-warm-brown/40 mx-auto" />
+                <h3 className="font-serif text-lg font-bold text-text-dark">No Categories Yet</h3>
+                <p className="text-xs text-text-dark/60 max-w-xs mx-auto leading-relaxed">
+                  The homepage wants its shelves — introduce the first category so buyers have somewhere to wander.
+                </p>
+                <button
+                  onClick={openAddCategory}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-green hover:bg-[#224f3b] text-cream-bg text-xs font-bold rounded-xl transition cursor-pointer font-sans"
+                >
+                  <Layers className="h-3.5 w-3.5" /> Add a Category
+                </button>
               </div>
             )}
           </div>
