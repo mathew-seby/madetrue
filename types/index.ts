@@ -121,3 +121,23 @@ export interface AuditEntry {
   /** The before → after sentence shown in the console. */
   summary: string;
 }
+
+// Payment adapter and split settlements (Phase 6):
+export type {
+  PaymentGatewayName,
+  PaymentAdapter,
+  SplitRecipient,
+  CustomerDetails,
+  CreateSplitOrderInput,
+  CreateSplitOrderResult,
+  VerifyPaymentResult,
+  RefundInput,
+  RefundResult,
+  WebhookVerificationInput,
+  WebhookEvent,
+  WebhookVerificationResult,
+  SettlementFilter,
+  SettlementItem,
+  SettlementSummary,
+} from "@/lib/payments/types";
+
