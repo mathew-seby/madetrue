@@ -18,13 +18,15 @@ import {
 } from "@/lib/supabase/client";
 import type { SellerApplicationAction, SellerPayoutDetails } from "@/lib/supabase/client";
 import { Order, Product, Seller } from "@/types";
+import { DELIVERY_FEE } from "@/lib/utils/constants";
+import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { 
   ShieldCheck, LogOut, Check, X, Clock, Eye, Store, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
   ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
   Users, Send, Award, ShieldAlert, Calendar, CreditCard,
-  Search, Trash2, EyeOff
+  Search, Trash2, EyeOff, ArrowDownUp
 } from "lucide-react";
 
 // Pre-seed three demo orders the first time the admin console runs.
@@ -45,6 +47,7 @@ const MOCK_SEEDED_ORDERS = [
     delivery_type: "delivery",
     address: "Pipeline Road, Kakkanad, Kochi, Ernakulam, Kerala",
     payment_method: "cod",
+    delivery_fee: DELIVERY_FEE,
     whatsapp_notified: true,
     created_at: new Date(Date.now() - 3600000 * 2).toISOString(), // 2 hours ago
     lat: 9.9816,
@@ -64,6 +67,7 @@ const MOCK_SEEDED_ORDERS = [
     delivery_type: "delivery",
     address: "Near Church, Aluva, Kochi, Ernakulam, Kerala",
     payment_method: "upi",
+    delivery_fee: DELIVERY_FEE,
     whatsapp_notified: false,
     created_at: new Date(Date.now() - 3600000 * 12).toISOString(), // 12 hours ago
     lat: 10.1076,
@@ -83,12 +87,30 @@ const MOCK_SEEDED_ORDERS = [
     delivery_type: "delivery",
     address: "Thrikkakara, Kochi, Ernakulam, Kerala",
     payment_method: "cod",
+    delivery_fee: DELIVERY_FEE,
     whatsapp_notified: true,
     created_at: new Date(Date.now() - 3600000 * 48).toISOString(), // 2 days ago
     lat: 10.0269,
     lng: 76.3268
   }
 ];
+
+// Honest per-order money breakdown for the console's order book. Seller
+// share falls back to the line price when base_price is missing (legacy
+// mock rows), and the delivery fee rides delivery baskets only (₹49 flat,
+// locked decision #4).
+function orderMoney(order: Order) {
+  const price = order.price ?? 0;
+  const subtotal = price * order.quantity;
+  const deliveryFee = order.delivery_type === "delivery" ? order.delivery_fee ?? 0 : 0;
+  return {
+    subtotal,
+    sellerShare: (order.base_price ?? price) * order.quantity,
+    commission: (order.commission ?? 0) * order.quantity,
+    deliveryFee,
+    total: subtotal + deliveryFee,
+  };
+}
 
 export default function AdminPage() {
   const router = useRouter();
@@ -110,6 +132,15 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [sellerFilter, setSellerFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [orderFilter, setOrderFilter] = useState<"all" | "pending" | "accepted" | "completed" | "cancelled">("all");
+
+  // Order book (Step 4): search, fulfillment/payment filters, sort
+  // direction, and which order's detail view is open. All purely
+  // client-side on top of the already-global order list.
+  const [orderQuery, setOrderQuery] = useState("");
+  const [orderStageFilter, setOrderStageFilter] = useState<"all" | "delivery" | "pickup">("all");
+  const [orderPayFilter, setOrderPayFilter] = useState<"all" | "upi" | "cod">("all");
+  const [orderSortDir, setOrderSortDir] = useState<"newest" | "oldest">("newest");
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
   // Payout display fields per maker store, hydrated from the private
   // seller_payout_kyc table (mock: inline on the seller row) by the
@@ -138,9 +169,10 @@ export default function AdminPage() {
       const allProducts = await getAllProductsAdmin();
       const allSellers = await getSellers();
       
-      // Load orders and pre-seed if empty
+      // Load orders; pre-seed demo rows only in mock mode. In Supabase
+      // mode the database IS the order book — an empty list is honest.
       let allOrders: Order[] = await getOrdersAdmin();
-      if (allOrders.length === 0 && typeof window !== "undefined") {
+      if (!isSupabaseEnabled() && allOrders.length === 0 && typeof window !== "undefined") {
         localStorage.setItem("madetrue_orders", JSON.stringify(MOCK_SEEDED_ORDERS));
         allOrders = MOCK_SEEDED_ORDERS as Order[];
       }
@@ -398,10 +430,32 @@ export default function AdminPage() {
     return getApplicationStatus(s) === sellerFilter;
   });
 
-  const filteredOrdersList = orders.filter((o) => {
-    if (orderFilter === "all") return true;
-    return o.status === orderFilter;
-  });
+  // Order book list (Step 4): the status tab, delivery/payment filters and
+  // the search box stack on top of each other; newest first by default.
+  const orderNeedle = orderQuery.trim().toLowerCase();
+  const matchesOrderSearch = (o: Order) => {
+    if (!orderNeedle) return true;
+    const maker = sellersMap[o.seller_id];
+    return (
+      o.id.toLowerCase().includes(orderNeedle) ||
+      (o.buyer_name ?? "").toLowerCase().includes(orderNeedle) ||
+      (o.buyer_phone ?? "").toLowerCase().includes(orderNeedle) ||
+      (o.product_name ?? "").toLowerCase().includes(orderNeedle) ||
+      (o.address ?? "").toLowerCase().includes(orderNeedle) ||
+      (maker?.business_name ?? "").toLowerCase().includes(orderNeedle)
+    );
+  };
+
+  const filteredOrdersList = orders
+    .filter((o) => (orderFilter === "all" ? true : o.status === orderFilter))
+    .filter((o) => (orderStageFilter === "all" ? true : o.delivery_type === orderStageFilter))
+    .filter((o) => (orderPayFilter === "all" ? true : o.payment_method === orderPayFilter))
+    .filter(matchesOrderSearch)
+    .sort((a, b) =>
+      orderSortDir === "newest"
+        ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        : new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
 
   const getProductCount = (tab: "pending" | "approved" | "rejected") => {
     if (tab === "pending") return pendingProducts.length;
@@ -1127,6 +1181,60 @@ export default function AdminPage() {
               ))}
             </div>
 
+            {/* Order book search + filters (Step 4): stacked on top of the
+                active status tab — the tab counts stay unfiltered and honest. */}
+            <div className="flex flex-col md:flex-row gap-3">
+              <div className="relative flex-grow">
+                <Search className="absolute left-4 top-3.5 h-4 w-4 text-warm-brown/60" />
+                <input
+                  type="text"
+                  value={orderQuery}
+                  onChange={(e) => setOrderQuery(e.target.value)}
+                  placeholder="Search the order book — buyer, phone, item, maker store, address, or order ID..."
+                  className="w-full pl-11 pr-4 py-3 bg-[#FAF7F2] border border-warm-brown/10 rounded-2xl text-sm text-text-dark placeholder:text-warm-brown/40 focus:border-primary-green focus:ring-0 focus:outline-none transition"
+                />
+                {orderQuery && (
+                  <button
+                    onClick={() => setOrderQuery("")}
+                    className="absolute right-3.5 top-3.5 text-warm-brown/50 hover:text-red-600 transition cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <select
+                  aria-label="Filter orders by fulfillment type"
+                  value={orderStageFilter}
+                  onChange={(e) => setOrderStageFilter(e.target.value as typeof orderStageFilter)}
+                  className="py-3 px-4 bg-[#FAF7F2] border border-warm-brown/10 rounded-2xl text-xs font-semibold text-text-dark cursor-pointer focus:border-primary-green focus:outline-none transition"
+                >
+                  <option value="all">All fulfillment types</option>
+                  <option value="delivery">Delivery orders</option>
+                  <option value="pickup">Pickup orders</option>
+                </select>
+                <select
+                  aria-label="Filter orders by payment method"
+                  value={orderPayFilter}
+                  onChange={(e) => setOrderPayFilter(e.target.value as typeof orderPayFilter)}
+                  className="py-3 px-4 bg-[#FAF7F2] border border-warm-brown/10 rounded-2xl text-xs font-semibold text-text-dark cursor-pointer focus:border-primary-green focus:outline-none transition"
+                >
+                  <option value="all">All payment methods</option>
+                  <option value="upi">UPI / Online</option>
+                  <option value="cod">Cash on Delivery</option>
+                </select>
+                <button
+                  onClick={() => setOrderSortDir((prev) => (prev === "newest" ? "oldest" : "newest"))}
+                  className="inline-flex items-center gap-1.5 py-3 px-4 bg-[#FAF7F2] border border-warm-brown/10 rounded-2xl text-xs font-semibold text-warm-brown hover:border-primary-green/30 hover:text-primary-green transition cursor-pointer font-sans"
+                  title="Flip the sort direction of the order list"
+                >
+                  <ArrowDownUp className="h-3.5 w-3.5" />
+                  {orderSortDir === "newest" ? "Newest first" : "Oldest first"}
+                </button>
+              </div>
+            </div>
+
             {loading ? (
               <div className="text-center py-16 text-sm text-warm-brown font-semibold">
                 Loading community order journals...
@@ -1136,6 +1244,8 @@ export default function AdminPage() {
                 {filteredOrdersList.map((order) => {
                   const cleanPhone = (order.buyer_phone ?? "").replace(/\D/g, "");
                   const isDestinationValid = isCoordinatesInErnakulam(order.lat, order.lng);
+                  const isExpanded = expandedOrderId === order.id;
+                  const money = orderMoney(order);
                   const statusColors = {
                     pending: "bg-amber-100 text-amber-800 border-amber-200",
                     accepted: "bg-blue-100 text-blue-800 border-blue-200",
@@ -1143,23 +1253,44 @@ export default function AdminPage() {
                     cancelled: "bg-red-50 text-red-600 border-red-100"
                   };
                   return (
-                    <div key={order.id} className="bg-[#FAF7F2] rounded-3xl border border-warm-brown/10 p-5 sm:p-6 shadow-sm hover:border-primary-green/20 transition space-y-4">
-                      {/* Top banner info */}
-                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3.5 border-b border-warm-brown/5">
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-warm-brown/60 uppercase font-bold tracking-wider font-sans block font-semibold">Order Entry</span>
-                          <span className="font-mono text-xs font-bold text-text-dark block">{order.id}</span>
+                    <div key={order.id} className={`bg-[#FAF7F2] rounded-3xl border p-5 sm:p-6 shadow-sm transition space-y-4 ${isExpanded ? "border-primary-green/30 shadow-md" : "border-warm-brown/10 hover:border-primary-green/20"}`}>
+                      {/* Collapsed order-book row (Step 4) */}
+                      <div
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer"
+                        onClick={() => setExpandedOrderId((prev) => (prev === order.id ? null : order.id))}
+                      >
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full border font-sans ${statusColors[order.status as keyof typeof statusColors] || "bg-warm-brown/5 text-warm-brown"}`}>
+                              {order.status}
+                            </span>
+                            <span className="font-mono text-[10px] text-text-dark/40 truncate max-w-[13rem]" title={order.id}>{order.id}</span>
+                          </div>
+                          <h3 className="font-serif text-base font-bold text-text-dark truncate">
+                            {order.product_name ?? "Custom basket"}
+                          </h3>
+                          <p className="text-[11px] text-text-dark/60 font-sans font-semibold truncate">
+                            {sellersMap[order.seller_id]?.business_name ?? order.seller_id} → {order.buyer_name ?? "Guest buyer"}
+                          </p>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-1 shrink-0">
+                          <span className="text-lg font-serif font-bold text-primary-green">₹{money.total}</span>
                           <span className="text-[10px] text-text-dark/50 font-semibold font-sans flex items-center">
                             <Calendar className="h-3.5 w-3.5 mr-1" />
                             {new Date(order.created_at).toLocaleString()}
                           </span>
-                          <span className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full border font-sans ${statusColors[order.status as keyof typeof statusColors] || "bg-warm-brown/5 text-warm-brown"}`}>
-                            {order.status}
+                          <span className="inline-flex items-center text-xs font-semibold text-primary-green font-sans">
+                            {isExpanded ? (
+                              <><ChevronUp className="h-4 w-4 mr-1" /> Collapse Details</>
+                            ) : (
+                              <><Eye className="h-4 w-4 mr-1" /> View Full Details</>
+                            )}
                           </span>
                         </div>
                       </div>
+
+                      {/* Expanded detail */}
+                      {isExpanded && (<>
 
                       {/* Main grids */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1167,7 +1298,8 @@ export default function AdminPage() {
                         <div className="space-y-3">
                           <div className="space-y-1">
                             <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block font-sans">Consumer (Buyer)</span>
-                            <p className="text-xs text-text-dark font-bold">{order.buyer_name}</p>
+                            <p className="text-xs text-text-dark font-bold">{order.buyer_name ?? "Guest buyer"}</p>
+                            <p className="text-[9px] text-text-dark/40 font-mono truncate" title={order.buyer_id}>Buyer: {order.buyer_id}</p>
                             <a 
                               href={`https://wa.me/91${cleanPhone}?text=Hello%20${encodeURIComponent(order.buyer_name ?? "")},%20this%20is%20MADETRUE%20Admin%20regarding%20your%20order%20${order.id}`} 
                               target="_blank" 
@@ -1180,16 +1312,19 @@ export default function AdminPage() {
 
                           <div className="space-y-1 pt-1.5 border-t border-warm-brown/5">
                             <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block font-sans">Item Details</span>
-                            <p className="text-xs font-bold text-text-dark leading-tight">{order.product_name}</p>
+                            <p className="text-xs font-bold text-text-dark leading-tight">{order.product_name ?? "Custom basket"}</p>
+                            <p className="text-[9px] text-text-dark/40 font-mono truncate" title={order.product_id}>Product: {order.product_id}</p>
                             <div className="text-[11px] text-text-dark/60 font-sans">
-                              Quantity: <span className="font-bold text-text-dark">{order.quantity}</span> | Price: ₹{order.price}
-                            </div>
-                            <div className="text-xs font-bold text-primary-green font-sans">
-                              Subtotal Total: ₹{(order.price ?? 0) * order.quantity}
+                              Quantity: <span className="font-bold text-text-dark">{order.quantity}</span> | Price: ₹{order.price ?? 0}
                             </div>
                             <div className="text-[10px] text-text-dark/70 font-sans border-t border-dashed border-warm-brown/10 pt-1 mt-1 space-y-0.5">
-                              <div>Seller Share: ₹{(order.base_price ?? order.price ?? 0) * order.quantity}</div>
-                              <div>Admin Commission: ₹{(order.commission || 0) * order.quantity}</div>
+                              <div>Item Subtotal: ₹{money.subtotal}</div>
+                              <div>Seller Share: ₹{money.sellerShare}</div>
+                              <div>Admin Commission: ₹{money.commission}</div>
+                              <div>Delivery Fee: {order.delivery_type === "delivery" ? `₹${money.deliveryFee}` : "Free (pickup)"}</div>
+                            </div>
+                            <div className="text-xs font-bold text-primary-green font-sans">
+                              Order Total: ₹{money.total}
                             </div>
                           </div>
                         </div>
@@ -1312,6 +1447,7 @@ export default function AdminPage() {
                           )}
                         </div>
                       </div>
+                      </>)}
                     </div>
                   );
                 })}
@@ -1319,8 +1455,14 @@ export default function AdminPage() {
             ) : (
               <div className="text-center py-20 bg-[#FAF7F2] border border-warm-brown/10 rounded-3xl space-y-4">
                 <ShoppingBag className="h-12 w-12 text-warm-brown/40 mx-auto" />
-                <h3 className="font-serif text-lg font-bold text-text-dark">Order Book is Empty</h3>
-                <p className="text-xs text-text-dark/60 max-w-xs mx-auto leading-relaxed">No orders matched this status query.</p>
+                <h3 className="font-serif text-lg font-bold text-text-dark">
+                  {orderNeedle ? "No Orders Matched Your Search" : "Order Book is Empty"}
+                </h3>
+                <p className="text-xs text-text-dark/60 max-w-xs mx-auto leading-relaxed">
+                  {orderNeedle || orderStageFilter !== "all" || orderPayFilter !== "all"
+                    ? "Try another buyer, item, maker, or widen the filters above — nothing in the order book matches right now."
+                    : "No orders matched this status query."}
+                </p>
               </div>
             )}
           </div>

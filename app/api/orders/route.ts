@@ -499,6 +499,7 @@ function mapOrderRow(row: Record<string, unknown>): Order {
     lng: (row.lng as number | null) ?? undefined,
     base_price: (row.base_price as number | null) ?? undefined,
     commission: (row.commission as number | null) ?? undefined,
+    delivery_fee: (row.delivery_fee as number | null) ?? undefined,
     buyer_name: (row.buyer_name as string | null) ?? undefined,
     buyer_phone: (row.buyer_phone as string | null) ?? undefined,
     product_name: (row.product_name as string | null) ?? undefined,

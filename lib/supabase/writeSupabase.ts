@@ -54,6 +54,13 @@ export async function fetchOrdersForSellerSupabase(sellerId: string): Promise<Or
   });
 }
 
+// Admin console: the unfiltered global order book. GET /api/orders with no
+// query filters returns every order when the session role is admin —
+// isolation guards live on the route, not here.
+export async function fetchOrdersAdminSupabase(): Promise<Order[]> {
+  return requestJson<Order[]>("/api/orders", { method: "GET" });
+}
+
 export async function updateOrderStatusSupabase(
   id: string,
   status: Order["status"],

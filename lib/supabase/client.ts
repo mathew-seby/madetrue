@@ -12,6 +12,7 @@ import {
 import {
   saveOrdersSupabase,
   fetchOrdersForSellerSupabase,
+  fetchOrdersAdminSupabase,
   submitProductSupabase,
   editProductSupabase,
   fetchAllProductsSupabase,
@@ -580,10 +581,16 @@ function saveStoredOrders(orders: Order[]) {
   }
 }
 
-// Get all orders for admin panel
+// Get all orders for the admin panel — the global order book. Supabase
+// mode reads the DB through the admin-guarded route (the session decides
+// what rows leave the server); mock mode stays the localStorage fallback,
+// newest first so the console opens on today's activity.
 export async function getOrdersAdmin(): Promise<Order[]> {
+  if (isSupabaseEnabled()) return fetchOrdersAdminSupabase();
   await new Promise((resolve) => setTimeout(resolve, 100));
-  return getStoredOrders();
+  return getStoredOrders().sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
 }
 
 // Get orders belonging to a specific maker (seller dashboard inbox)
