@@ -54,7 +54,7 @@ export async function fetchCategoriesSupabase(): Promise<Category[]> {
 // ---------------------------------------------------------------------------
 
 const SELLER_COLUMNS =
-  "id, user_id, business_name, story, profile_photo_url, video_url, address, lat, lng, whatsapp_number, is_verified, payment_vendor_ref, kyc_status";
+  "id, user_id, business_name, story, profile_photo_url, video_url, address, lat, lng, whatsapp_number, is_verified, payment_vendor_ref, kyc_status, application_status";
 
 function mapSeller(row: Record<string, unknown>): Seller {
   return {
@@ -71,6 +71,8 @@ function mapSeller(row: Record<string, unknown>): Seller {
     is_verified: row.is_verified as boolean,
     payment_vendor_ref: (row.payment_vendor_ref as string | null) ?? undefined,
     kyc_status: (row.kyc_status as Seller["kyc_status"]) ?? undefined,
+    application_status:
+      (row.application_status as Seller["application_status"]) ?? undefined,
     pan: (row.pan as string | null) ?? undefined,
     bank_account_number: (row.bank_account_number as string | null) ?? undefined,
     bank_ifsc: (row.bank_ifsc as string | null) ?? undefined,
@@ -110,7 +112,7 @@ export async function fetchSellerByIdSupabase(
 // ---------------------------------------------------------------------------
 
 const PRODUCT_COLUMNS =
-  "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission";
+  "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission, is_hidden, moderation_note";
 
 export function mapProduct(row: Record<string, unknown>): Product {
   return {
@@ -128,6 +130,8 @@ export function mapProduct(row: Record<string, unknown>): Product {
     created_at: row.created_at as string,
     status: (row.status as Product["status"]) ?? undefined,
     documents: (row.documents as Product["documents"]) ?? undefined,
+    is_hidden: row.is_hidden === null ? undefined : Boolean(row.is_hidden),
+    moderation_note: (row.moderation_note as string | null) ?? undefined,
     lat: (row.lat as number | null) ?? undefined,
     lng: (row.lng as number | null) ?? undefined,
     address: (row.address as string | null) ?? undefined,
@@ -150,9 +154,10 @@ export async function fetchProductsSupabase(
 ): Promise<Product[]> {
   const supabase = await getReadClient();
 
-  // Public listing = approved only, exactly like the mock filter in
-  // client.ts (and like what RLS grants the anon key).
-  let query = supabase.from("products").select(PRODUCT_COLUMNS).eq("status", "approved");
+  // Public listing = approved + not hidden by moderation, exactly like the
+  // mock filter in client.ts (and like what RLS would return to the anon
+  // key: approved products, public catalog rows).
+  let query = supabase.from("products").select(PRODUCT_COLUMNS).eq("status", "approved").eq("is_hidden", false);
 
   if (filters?.category) {
     query = query.eq("category", filters.category);
@@ -204,6 +209,7 @@ export async function fetchProductsBySellerIdSupabase(
     .select(PRODUCT_COLUMNS)
     .eq("seller_id", sellerId)
     .eq("status", "approved")
+    .eq("is_hidden", false)
     .order("id", { ascending: true });
 
   if (error) throw fail("products by seller", error.message);

@@ -1,5 +1,12 @@
 import { mockCategories, mockSellers, mockProducts } from "./mockData";
-import { Category, Seller, Product, Order } from "../../types";
+import {
+  Category,
+  Seller,
+  Product,
+  Order,
+  AuditEntry,
+  AuditEntityType,
+} from "../../types";
 import { isSupabaseEnabled } from "./dataSource";
 import {
   fetchCategoriesSupabase,
@@ -12,22 +19,42 @@ import {
 import {
   saveOrdersSupabase,
   fetchOrdersForSellerSupabase,
+  fetchOrdersAdminSupabase,
+  submitCategorySupabase,
+  updateCategorySupabase,
+  deleteCategorySupabase,
+  appendAuditSupabase,
+  fetchAuditLogSupabase,
   submitProductSupabase,
   editProductSupabase,
   fetchAllProductsSupabase,
   fetchProductsForSellerSupabase,
   deleteProductSupabase,
   uploadProductImageSupabase,
+  updateProductStatusSupabase,
+  setProductHiddenSupabase,
   submitSellerSupabase,
   updateSellerVerificationSupabase,
+  updateSellerApplicationSupabase,
+  fetchSellerPayoutSupabase,
   updateSellerProfileSupabase,
   updateOrderStatusSupabase,
+  type SellerApplicationAction,
+  type SellerPayoutDetails,
 } from "./writeSupabase";
 import type { SellerProfileUpdates } from "./writeSupabase";
+
+// Re-exposed so the console can speak the same action/payload vocabulary
+// as the transport layer (admin page imports only from client.ts).
+export type {
+  SellerApplicationAction,
+  SellerPayoutDetails,
+} from "./writeSupabase";
 import {
   isValidOrderTransition,
   getInvalidTransitionMessage,
 } from "@/lib/utils/orderStatus";
+import { DEFAULT_CATEGORY_ICON } from "@/lib/utils/categories";
 
 // This is our data layer client. It serves mock data by default
 // and uses local storage to simulate write operations (approvals, product additions) on the client side.
@@ -81,11 +108,122 @@ function saveStoredSellers(sellers: Seller[]) {
   }
 }
 
+// Helper to get the category list (public nav + admin console read from
+// this store in mock mode, so CRUD edits reflect everywhere immediately).
+function getStoredCategories(): Category[] {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("madetrue_categories");
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        console.error("Failed to parse stored categories", e);
+      }
+    }
+    // Initialize if not present
+    localStorage.setItem("madetrue_categories", JSON.stringify(mockCategories));
+    return mockCategories;
+  }
+  return mockCategories;
+}
+
+// Helper to save the category list
+function saveStoredCategories(categories: Category[]) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("madetrue_categories", JSON.stringify(categories));
+  }
+}
+
 export async function getCategories(): Promise<Category[]> {
   if (isSupabaseEnabled()) return fetchCategoriesSupabase();
   // Simulate network delay
   await new Promise((resolve) => setTimeout(resolve, 100));
-  return mockCategories;
+  return getStoredCategories();
+}
+
+// ---------------------------------------------------------------------------
+// Categories CRUD — admin console (Phase 5 Step 5). Supabase mode goes
+// through the admin-guarded /api/categories route (service role); mock
+// mode persists to the madetrue_categories store so the public nav
+// (FeaturedCategories, listing chips, footer link) reflects instantly.
+// Slug rules live in lib/utils/categories.ts and are mirrored by the
+// categories_slug_unique / categories_slug_format constraints in
+// 0001_init.sql — the database has the final word in Supabase mode.
+// ---------------------------------------------------------------------------
+
+export async function addCategory(
+  name: string,
+  slug: string,
+  icon: string = DEFAULT_CATEGORY_ICON
+): Promise<Category> {
+  if (isSupabaseEnabled()) {
+    return submitCategorySupabase({ name, slug, icon });
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const categories = getStoredCategories();
+  if (categories.some((c) => c.slug === slug)) {
+    throw new Error(`That category slug is already in use — pick another name or slug.`);
+  }
+  const category: Category = {
+    id: `cat-${Date.now()}`,
+    name: name.trim(),
+    icon,
+    slug,
+  };
+  saveStoredCategories([...categories, category]);
+  return category;
+}
+
+export async function updateCategory(
+  id: string,
+  updates: Partial<Category>
+): Promise<Category | null> {
+  if (isSupabaseEnabled()) {
+    return updateCategorySupabase(
+      id,
+      updates as Pick<Category, "name" | "slug" | "icon">
+    );
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const categories = getStoredCategories();
+  const index = categories.findIndex((c) => c.id === id);
+  if (index === -1) return null;
+
+  const clash = categories.some((c) => c.slug === updates.slug && c.id !== id);
+  if (clash) {
+    throw new Error(`That category slug is already in use — pick another slug.`);
+  }
+
+  const updated = { ...categories[index], ...updates } as Category;
+  const next = [...categories];
+  next[index] = updated;
+  saveStoredCategories(next);
+  return updated;
+}
+
+export async function deleteCategory(id: string): Promise<Category | null> {
+  if (isSupabaseEnabled()) {
+    return deleteCategorySupabase(id);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const categories = getStoredCategories();
+  const target = categories.find((c) => c.id === id);
+  if (!target) return null;
+
+  // Same guard as the server route: a category holding products cannot
+  // disappear — the FK in 0001_init.sql would refuse it.
+  const inUse = getStoredProducts().filter((p) => p.category === target.slug).length;
+  if (inUse > 0) {
+    throw new Error(
+      `"${target.name}" still holds ${inUse} product${inUse === 1 ? "" : "s"} — move or remove them first.`
+    );
+  }
+
+  saveStoredCategories(categories.filter((c) => c.id !== id));
+  return target;
 }
 
 export async function getSellers(): Promise<Seller[]> {
@@ -114,8 +252,9 @@ export async function getProducts(filters?: ProductFilters): Promise<Product[]> 
   await new Promise((resolve) => setTimeout(resolve, 150));
   const allProducts = getStoredProducts();
 
-  // Public listing should only return approved products or initial mock products (no status)
-  let products = allProducts.filter((p) => !p.status || p.status === "approved");
+  // Public listing should only return approved products (or initial mock
+  // products with no status) that are NOT hidden by admin moderation.
+  let products = allProducts.filter((p) => !p.status || (p.status === "approved" && !p.is_hidden));
 
   if (filters?.category) {
     products = products.filter((p) => p.category === filters.category);
@@ -148,6 +287,10 @@ export async function getProductById(id: string): Promise<Product | null> {
   await new Promise((resolve) => setTimeout(resolve, 50));
   const products = getStoredProducts();
   const product = products.find((p) => p.id === id);
+  // Hidden by moderation: behave exactly like the listing — the detail
+  // page is not part of the public catalog anymore (Supabase mode: the
+  // 0008 RLS policy makes the same call at the database).
+  if (product?.is_hidden) return null;
   return product || null;
 }
 
@@ -155,8 +298,10 @@ export async function getProductsBySellerId(sellerId: string): Promise<Product[]
   if (isSupabaseEnabled()) return fetchProductsBySellerIdSupabase(sellerId);
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
-  // Filter by seller id and ensure they are approved for public listing
-  return products.filter((p) => p.seller_id === sellerId && (!p.status || p.status === "approved"));
+  // Filter by seller id and ensure they are approved for public listing —
+  // and not hidden by admin moderation (a hidden product vanishes from
+  // the maker's public store, but keeps existing in their dashboard).
+  return products.filter((p) => p.seller_id === sellerId && (p.status === "approved" || !p.status) && !p.is_hidden);
 }
 
 /* ADMIN & SELLER ACTIONS (MOCKED) */
@@ -184,8 +329,17 @@ export async function getProductsForSeller(sellerId: string): Promise<Product[]>
   return products.filter((p) => p.seller_id === sellerId);
 }
 
-// Delete a product listing (used by seller dashboard and admin console)
-export async function deleteProduct(id: string, sellerId?: string): Promise<boolean> {
+// Delete a product listing (used by seller dashboard and admin console).
+// The optional audit note (admin removal) is recorded in the mock email
+// stream before the row disappears; a durable cross-action audit log is
+// Phase 5 Step 7. In Supabase mode the DELETE route does not carry a note
+// (the row is gone — the note has nowhere to live) — flagged honestly in
+// the step log.
+export async function deleteProduct(
+  id: string,
+  sellerId?: string,
+  note?: string
+): Promise<boolean> {
   if (isSupabaseEnabled()) return deleteProductSupabase(id, sellerId);
   await new Promise((resolve) => setTimeout(resolve, 50));
   const products = getStoredProducts();
@@ -194,6 +348,23 @@ export async function deleteProduct(id: string, sellerId?: string): Promise<bool
   if (sellerId && products[index].seller_id !== sellerId) {
     throw new Error("[madetrue] You can only delete your own products.");
   }
+
+  const product = products[index];
+  if (note && note.trim()) {
+    // Removal always tells the maker WHAT happened and why — the audit
+    // note doubles as the honest reason, since the row itself is gone.
+    const sellers = getStoredSellers();
+    const seller = sellers.find((s) => s.id === product.seller_id);
+    if (seller) {
+      const sellerEmail = `${seller.business_name.toLowerCase().replace(/[^a-z0-9]/g, "")}@madetrue.in`;
+      sendMockEmail(
+        sellerEmail,
+        `Listing Removed by Moderation: ${product.name}`,
+        `Dear ${seller.business_name},\n\nA MADETRUE moderator removed your listing "${product.name}" along with the following note for you:\n\n"${note.trim()}"\n\nApplied orders keep their history. If this looks wrong, reply or reach out on WhatsApp — we review removals the same day.\n\nSincerely,\nMADETRUE Admin Team`
+      );
+    }
+  }
+
   const remaining = products.filter((p) => p.id !== id);
   saveStoredProducts(remaining);
   return true;
@@ -252,13 +423,17 @@ export async function addProduct(productData: Omit<Product, "id" | "created_at">
   return newProduct;
 }
 
-// Update the review status of a product (approve/reject)
+// Update the review status of a product (approve/reject/re-open).
+// The rejection reason doubles as the product's moderation note — Phase
+// 5 finally persists it on the row (previously it only went into the
+// mock email stream), so the maker and the console both see WHY.
 export async function updateProductStatus(
   id: string,
   status: "approved" | "rejected" | "pending",
   reason?: string,
   commission?: number
 ): Promise<Product | null> {
+  if (isSupabaseEnabled()) return updateProductStatusSupabase(id, status, reason, commission);
   await new Promise((resolve) => setTimeout(resolve, 100));
   const products = getStoredProducts();
   const index = products.findIndex((p) => p.id === id);
@@ -269,12 +444,15 @@ export async function updateProductStatus(
     const finalCommission = commission !== undefined ? commission : (originalProduct.commission || 0);
     const finalPrice = basePrice + finalCommission;
 
-    products[index] = { 
-      ...originalProduct, 
+    products[index] = {
+      ...originalProduct,
       status,
       base_price: basePrice,
       commission: finalCommission,
-      price: finalPrice
+      price: finalPrice,
+      // An empty decision (approve / re-review) clears a stale note; the
+      // rejection prompt always supplies one.
+      moderation_note: reason?.trim() || undefined,
     };
     saveStoredProducts(products);
 
@@ -304,6 +482,46 @@ export async function updateProductStatus(
   }
 
   return null;
+}
+
+// Hide/unhide a product from every public surface — the admin moderation
+// overlay. The maker keeps the row in their dashboard (badge explains the
+// state) and cannot undo it: PATCH /api/products refuses is_hidden from
+// non-admins, and 0008's guard trigger pins the column at the database.
+export async function setProductHidden(
+  id: string,
+  is_hidden: boolean,
+  note?: string
+): Promise<Product | null> {
+  if (isSupabaseEnabled()) return setProductHiddenSupabase(id, is_hidden, note);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const products = getStoredProducts();
+  const index = products.findIndex((p) => p.id === id);
+  if (index === -1) return null;
+
+  products[index] = {
+    ...products[index],
+    is_hidden,
+    moderation_note: note?.trim() || undefined,
+  };
+  saveStoredProducts(products);
+
+  // Concealment explains itself: the maker's dashboard shows the hidden
+  // badge and the note, and the mock email records the action.
+  const sellers = getStoredSellers();
+  const seller = sellers.find((s) => s.id === products[index].seller_id);
+  if (seller) {
+    const sellerEmail = `${seller.business_name.toLowerCase().replace(/[^a-z0-9]/g, "")}@madetrue.in`;
+    const subject = is_hidden
+      ? `Listing Hidden by Moderation: ${products[index].name}`
+      : `Listing Back On The Market: ${products[index].name}`;
+    const body = is_hidden
+      ? `Dear ${seller.business_name},\n\nYour listing "${products[index].name}" is temporarily hidden from buyers while the moderation team takes another look.${note?.trim() ? `\n\nModerator note:\n"${note.trim()}"\n` : ""}\nYour listing is safe in your Maker Dashboard — nothing is lost.\n\nSincerely,\nMADETRUE Admin Team`
+      : `Dear ${seller.business_name},\n\nGood news — "${products[index].name}" is visible to buyers again on MADETRUE.${note?.trim() ? ` A modnote was included:\n"${note.trim()}"` : ""}\n\nThank you for your patience.\n\nSincerely,\nMADETRUE Admin Team`;
+    sendMockEmail(sellerEmail, subject, body);
+  }
+
+  return products[index];
 }
 
 // Add a new seller (maker onboarding)
@@ -347,6 +565,64 @@ export async function updateSellerVerification(
     return sellers[index];
   }
   return null;
+}
+
+// Phase 5 Step 2 — admin moderation of a maker application. One action =
+// one consistent state; see updateSellerApplicationSupabase for the
+// field mapping it sends over /api/sellers PATCH.
+export async function updateSellerApplication(
+  id: string,
+  action: SellerApplicationAction
+): Promise<Seller | null> {
+  if (isSupabaseEnabled()) return updateSellerApplicationSupabase(id, action);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const sellers = getStoredSellers();
+  const index = sellers.findIndex((s) => s.id === id);
+  if (index === -1) return null;
+
+  const application_status: NonNullable<Seller["application_status"]> =
+    action === "approve"
+      ? "approved"
+      : action === "reject"
+        ? "rejected"
+        : "pending";
+  sellers[index] = {
+    ...sellers[index],
+    is_verified: action === "approve",
+    kyc_status: action === "approve" ? "verified" : "pending",
+    application_status,
+  };
+  saveStoredSellers(sellers);
+  return sellers[index];
+}
+
+// Payout display fields for the console's KYC card. Mock mode keeps them
+// inline on the stored seller; Supabase mode reads the private
+// seller_payout_kyc table through the admin-only /api/sellers/[id]/payout
+// route ({} when the maker hasn't submitted payout details yet).
+export async function getPayoutDetailsForSeller(
+  id: string
+): Promise<SellerPayoutDetails> {
+  if (isSupabaseEnabled()) return fetchSellerPayoutSupabase(id);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const seller = getStoredSellers().find((s) => s.id === id);
+  if (!seller) return {};
+  return {
+    pan: seller.pan,
+    bank_account_number: seller.bank_account_number,
+    bank_ifsc: seller.bank_ifsc,
+    bank_account_holder: seller.bank_account_holder,
+  };
+}
+
+// The honest application status of a seller row for the console. Rows
+// seeded before Phase 5 Step 2 carry no application_status; their
+// marketplace-visible outcome maps to approved whenever verification was
+// granted, pending otherwise.
+export function getApplicationStatus(
+  seller: Pick<Seller, "application_status" | "is_verified">
+): NonNullable<Seller["application_status"]> {
+  return seller.application_status ?? (seller.is_verified ? "approved" : "pending");
 }
 
 // Store settings: a maker updates their own store profile fields (Step 6).
@@ -429,10 +705,16 @@ function saveStoredOrders(orders: Order[]) {
   }
 }
 
-// Get all orders for admin panel
+// Get all orders for the admin panel — the global order book. Supabase
+// mode reads the DB through the admin-guarded route (the session decides
+// what rows leave the server); mock mode stays the localStorage fallback,
+// newest first so the console opens on today's activity.
 export async function getOrdersAdmin(): Promise<Order[]> {
+  if (isSupabaseEnabled()) return fetchOrdersAdminSupabase();
   await new Promise((resolve) => setTimeout(resolve, 100));
-  return getStoredOrders();
+  return getStoredOrders().sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
 }
 
 // Get orders belonging to a specific maker (seller dashboard inbox)
@@ -535,6 +817,89 @@ export async function saveOrders(newOrders: Order[]): Promise<Order[]> {
   }
 
   return newOrders;
+}
+
+// ---------------------------------------------------------------------------
+// Admin audit trail (Phase 5 Step 7). Every console moderation action
+// records one entry through recordAudit: the actor's identity rides in
+// from the session-signed-in console user; Supabase mode appends via the
+// admin-guarded /api/audit route (actor_id stamped server-side from the
+// session), mock mode persists to a madetrue_audit store capped at the
+// newest 500 entries. getAuditLog flips the same switch for reads.
+// ---------------------------------------------------------------------------
+
+const AUDIT_STORE_KEY = "madetrue_audit";
+const AUDIT_STORE_CAP = 500;
+
+export interface AuditDraft {
+  actor_name: string;
+  actor_email: string;
+  /** Mock mode only — the /api/audit route stamps the real id from the session. */
+  actor_id?: string;
+  entity_type: AuditEntityType;
+  entity_id: string;
+  entity_label: string;
+  action: string;
+  summary: string;
+}
+
+function getStoredAudit(): AuditEntry[] {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem(AUDIT_STORE_KEY);
+    if (stored) {
+      try {
+        return JSON.parse(stored) as AuditEntry[];
+      } catch (e) {
+        console.error("Failed to parse the stored audit trail", e);
+      }
+    }
+  }
+  return [];
+}
+
+function saveStoredAudit(entries: AuditEntry[]) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem(AUDIT_STORE_KEY, JSON.stringify(entries.slice(0, AUDIT_STORE_CAP)));
+  }
+}
+
+export async function getAuditLog(): Promise<AuditEntry[]> {
+  if (isSupabaseEnabled()) return fetchAuditLogSupabase();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  // The store is kept newest-first; guard against hand-edited ordering.
+  return getStoredAudit().sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+export async function recordAudit(draft: AuditDraft): Promise<boolean> {
+  if (isSupabaseEnabled()) {
+    return appendAuditSupabase({
+      actor_name: draft.actor_name,
+      actor_email: draft.actor_email,
+      entity_type: draft.entity_type,
+      entity_id: draft.entity_id,
+      entity_label: draft.entity_label,
+      action: draft.action,
+      summary: draft.summary,
+    });
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const entry: AuditEntry = {
+    id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    created_at: new Date().toISOString(),
+    actor_id: draft.actor_id ?? "local-console",
+    actor_name: draft.actor_name || "Unknown moderator",
+    actor_email: draft.actor_email,
+    entity_type: draft.entity_type,
+    entity_id: draft.entity_id,
+    entity_label: draft.entity_label,
+    action: draft.action,
+    summary: draft.summary,
+  };
+  saveStoredAudit([entry, ...getStoredAudit()]);
+  return true;
 }
 
 // Update a product and reset its status to pending review

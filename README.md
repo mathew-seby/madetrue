@@ -16,9 +16,13 @@ neighbors who love them. Story-driven, trust-first, and mobile-first at heart.
   ✅ **Phase 4** — Seller dashboard (products CRUD + Storage uploads, DB-backed
   stock, session-scoped order inbox, dashboard stats, store settings, and the
   isolation close-out: payout KYC behind a private table, atomic stock RPC,
-  session-derived identity on every write route, 17/17 live proof)
-- ▶️ **Now: Phase 5 — Admin console** (admin guard, seller management, product
-  moderation, order overview, categories, analytics, audit trail)
+  session-derived identity on every write route, 17/17 live proof) ·
+  ✅ **Phase 5** — Admin console (real admin session guard via role, seller
+  verification with private payout KYC review, product moderation with search/hide/unhide
+  and audit notes, global order overview, categories CRUD with live public nav,
+  platform analytics, and durable moderation audit trail)
+- ▶️ **Now: Phase 6 — Payments: Cashfree Easy Split first** (payment adapter & prerequisites,
+  seller vendor onboarding, split checkout, webhooks & states, refunds, settlements, go-live)
 - Live tracker: [`docs/build-progress.md`](./docs/build-progress.md). The
   workflow and phase-completion status-sync rules live in
   [`docs/master-build-prompt.md`](./docs/master-build-prompt.md) (§10b).

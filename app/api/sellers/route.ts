@@ -12,11 +12,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 // are written by POST (the seller's own submission) and must never be returned
 // by the public GET or verification PATCH of any seller row.
 const PUBLIC_SELLER_COLUMNS =
-  "id, user_id, business_name, story, profile_photo_url, video_url, address, lat, lng, whatsapp_number, is_verified, payment_vendor_ref, kyc_status";
+  "id, user_id, business_name, story, profile_photo_url, video_url, address, lat, lng, whatsapp_number, is_verified, payment_vendor_ref, kyc_status, application_status";
 
 // Storefront fields a maker may edit about their own store (Step 6).
-// Verification (is_verified, kyc_status) stays admin-only: it is never
-// accepted from a seller, from any route.
+// Verification (is_verified, kyc_status) and the application lifecycle
+// (application_status) stay admin-only: never accepted from a seller,
+// from any route.
 const OWNER_EDITABLE_FIELDS = [
   "business_name",
   "story",
@@ -27,6 +28,7 @@ const OWNER_EDITABLE_FIELDS = [
 ] as const;
 
 const KYC_STATUSES = ["not_started", "pending", "verified", "failed"] as const;
+const APPLICATION_STATUSES = ["pending", "approved", "rejected"] as const;
 
 function maybeUpdateNumber(
   raw: unknown,
@@ -154,6 +156,9 @@ export async function POST(request: Request) {
     whatsapp_number: whatsappNumber,
     is_verified: false,
     kyc_status: "pending" as const,
+    // Phase 5: every (re)application lands in the moderation queue —
+    // matches the 0007 default so the row and the schema always agree.
+    application_status: "pending" as const,
   };
 
   const { data: sellerData, error: sellerError } = await supabase
@@ -239,12 +244,17 @@ export async function PATCH(request: Request) {
   const body = isRecord(payload) ? payload : null;
   const id = body && typeof body.id === "string" ? body.id : null;
   const updates = isRecord(body?.updates) ? body.updates : null;
-  // The admin console still sends the older shape: { id, is_verified, kyc_status }.
+  // The admin console still sends the older shape: { id, is_verified,
+  // kyc_status, application_status }.
   const verificationAdditive =
     !updates &&
     body &&
     (typeof body.is_verified === "boolean" ||
-      typeof body.kyc_status === "string");
+      typeof body.kyc_status === "string" ||
+      (typeof body.application_status === "string" &&
+        (APPLICATION_STATUSES as readonly string[]).includes(
+          body.application_status
+        )));
 
   if (!id || (!updates && !verificationAdditive)) {
     return NextResponse.json(
@@ -286,10 +296,13 @@ export async function PATCH(request: Request) {
   const errors: string[] = [];
 
   if (updates) {
-    // Verification can never ride in with profile fields for non-admins.
+    // Verification and the application lifecycle can never ride in with
+    // profile fields for non-admins.
     if (
       !isAdmin &&
-      ((("is_verified") in updates) || (("kyc_status") in updates))
+      ((("is_verified") in updates) ||
+        (("kyc_status") in updates) ||
+        (("application_status") in updates))
     ) {
       errors.push(
         "Verification is handled by MADETRUE admins — write to us if something looks wrong."
@@ -328,6 +341,15 @@ export async function PATCH(request: Request) {
       ) {
         updateRow.kyc_status = updates.kyc_status;
       }
+      // Application lifecycle (approve / reject / reopen / revoke).
+      if (
+        typeof updates.application_status === "string" &&
+        (APPLICATION_STATUSES as readonly string[]).includes(
+          updates.application_status
+        )
+      ) {
+        updateRow.application_status = updates.application_status;
+      }
     }
   } else if (isAdmin && body) {
     // Legacy admin console verification shape.
@@ -343,6 +365,14 @@ export async function PATCH(request: Request) {
       (KYC_STATUSES as readonly string[]).includes(body.kyc_status)
     ) {
       updateRow.kyc_status = body.kyc_status;
+    }
+    if (
+      typeof body.application_status === "string" &&
+      (APPLICATION_STATUSES as readonly string[]).includes(
+        body.application_status
+      )
+    ) {
+      updateRow.application_status = body.application_status;
     }
   }
 

@@ -20,8 +20,12 @@ import { getServerUser, getOwnSellerId } from "@/lib/supabase/server-auth";
 import { mapProduct } from "@/lib/supabase/readSupabase";
 
 const PRODUCT_SELECT_COLUMNS =
-  "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission";
+  "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission, is_hidden, moderation_note";
 
+// Storefront/content fields the owning maker may edit (dashboard). The
+// review decision (status, commission) and the moderation overlay
+// (is_hidden, moderation_note) stay admin-only — never accepted from a
+// seller, mirroring the sellers route.
 const EDITABLE_COLUMNS = [
   "name",
   "description",
@@ -53,6 +57,8 @@ const CONTENT_COLUMNS = [
   "lng",
   "address",
 ];
+
+const PRODUCT_STATUS_VALUES = ["pending", "approved", "rejected"] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -97,7 +103,10 @@ export async function GET(request: Request) {
   if (effectiveSellerId) {
     query = query.eq("seller_id", effectiveSellerId);
   } else {
-    query = query.eq("status", "approved");
+    // Guest / anonymous catalog view: approved AND not hidden by
+    // moderation (the row's own RLS policy agrees; this keeps the
+    // answers identical even for the service-role key).
+    query = query.eq("status", "approved").eq("is_hidden", false);
   }
 
   const { data, error } = await query.order("id", { ascending: true });
@@ -246,14 +255,13 @@ export async function POST(request: Request) {
         ? null
         : String(product.address),
     documents: Array.isArray(product.documents) ? product.documents : [],
+    is_hidden: false,
   };
 
   const { data: inserted, error: insertError } = await supabase
     .from("products")
     .insert(submitRow)
-    .select(
-      "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission"
-    )
+    .select(PRODUCT_SELECT_COLUMNS)
     .single();
 
   if (insertError) {
@@ -313,7 +321,7 @@ export async function PATCH(request: Request) {
 
   const { data: existing, error: readError } = await supabase
     .from("products")
-    .select("id, seller_id, status")
+    .select("id, seller_id, status, price, base_price, commission")
     .eq("id", id)
     .maybeSingle();
 
@@ -349,21 +357,107 @@ export async function PATCH(request: Request) {
     CONTENT_COLUMNS.includes(column)
   );
 
+  // The moderation vocabulary (review decision, commission, visibility
+  // overlay) is admin-only in this route — from anyone else the answer
+  // is no, whatever the client would like to be true.
+  const MODERATION_KEYS = [
+    "is_hidden",
+    "moderation_note",
+    "status",
+    "commission",
+  ] as const;
+  if (
+    user.role !== "admin" &&
+    (Object.keys(updates) as string[]).some((key) =>
+      (MODERATION_KEYS as readonly string[]).includes(key)
+    )
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Review decisions and product visibility are handled by MADETRUE admins — write to us if something looks wrong.",
+      },
+      { status: 403 }
+    );
+  }
+
+  // Validate the admin values up front (friendly, never silent).
+  if (
+    updates.status !== undefined &&
+    !(PRODUCT_STATUS_VALUES as readonly string[]).includes(
+      updates.status as string
+    )
+  ) {
+    return NextResponse.json(
+      { error: "Unknown review decision." },
+      { status: 400 }
+    );
+  }
+  if (
+    updates.commission !== undefined &&
+    (!Number.isFinite(Number(updates.commission)) || Number(updates.commission) < 0)
+  ) {
+    return NextResponse.json(
+      { error: "Commission must be zero or a positive amount." },
+      { status: 400 }
+    );
+  }
+  if (updates.is_hidden !== undefined && typeof updates.is_hidden !== "boolean") {
+    return NextResponse.json(
+      { error: "Visibility must be true or false." },
+      { status: 400 }
+    );
+  }
+
   const updateRow: Record<string, unknown> = {};
   for (const column of touchedColumns) {
     updateRow[column] = updates[column];
   }
-  updateRow.status = contentChanged
-    ? "pending"
-    : (existing.status as Product["status"]);
+
+  const statusProvided =
+    user.role === "admin" &&
+    updates.status !== undefined &&
+    typeof updates.status === "string";
+
+  if (user.role === "admin") {
+    // Admin moderation writes (console: approve/reject/hide/unhide).
+    if (typeof updates.is_hidden === "boolean") {
+      updateRow.is_hidden = updates.is_hidden;
+    }
+    if (typeof updates.moderation_note === "string") {
+      // An explicit note always wins; an empty one clears a stale one.
+      updateRow.moderation_note = updates.moderation_note.trim() || null;
+    }
+
+    // Mirror the mock's approval math: the buyer-facing price is always
+    // the sourcing (base) price plus the moderated commission.
+    const commissionProvided =
+      updates.commission !== undefined && Number.isFinite(Number(updates.commission));
+    if (statusProvided || commissionProvided) {
+      const basePrice =
+        (existing.base_price as number | null) ??
+        (existing.price as number | null) ??
+        0;
+      const finalCommission = commissionProvided
+        ? Number(updates.commission)
+        : ((existing.commission as number | null) ?? 0);
+      updateRow.base_price = basePrice;
+      updateRow.commission = finalCommission;
+      updateRow.price = basePrice + finalCommission;
+    }
+  }
+
+  updateRow.status = statusProvided
+    ? (updates.status as Product["status"])
+    : contentChanged
+      ? "pending"
+      : (existing.status as Product["status"]);
 
   const { data: updated, error: updateError } = await supabase
     .from("products")
     .update(updateRow)
     .eq("id", id)
-    .select(
-      "id, seller_id, name, description, price, category, images, tags, stock, is_available, origin_details, created_at, status, documents, lat, lng, address, base_price, commission"
-    )
+    .select(PRODUCT_SELECT_COLUMNS)
     .single();
 
   if (updateError) {

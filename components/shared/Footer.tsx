@@ -1,15 +1,37 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Heart } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
+import { getCategories } from "@/lib/supabase/client";
+import { Category } from "@/types";
 
 export default function Footer() {
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith("/admin");
   const { currentUser } = useAuth();
   const sellerRoute = currentUser?.role === "seller" ? "/dashboard" : "/profile#become-maker";
+
+  // The Explore column links into the live catalog: the first category
+  // the admin console maintains (the homepage tiles and listing filters
+  // read the same list), so CRUD can never leave a broken link behind.
+  const [featuredCategory, setFeaturedCategory] = useState<Category | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getCategories()
+      .then((cats) => {
+        if (alive) setFeaturedCategory(cats[0] ?? null);
+      })
+      .catch(() => {
+        /* the footer stays quietly without a category link */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   if (isAdminRoute) return null;
 
@@ -42,11 +64,13 @@ export default function Footer() {
                 Meet the Makers
               </Link>
             </li>
-            <li>
-              <Link href="/products?category=spices" className="text-sm text-text-dark/80 hover:text-primary-green transition">
-                Idukki Spices
-              </Link>
-            </li>
+            {featuredCategory && (
+              <li>
+                <Link href={`/products?category=${featuredCategory.slug}`} className="text-sm text-text-dark/80 hover:text-primary-green transition">
+                  {featuredCategory.name}
+                </Link>
+              </li>
+            )}
           </ul>
         </div>
 

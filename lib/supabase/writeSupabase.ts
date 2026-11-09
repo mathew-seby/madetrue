@@ -8,7 +8,7 @@
 // the DB product row, exactly what 0002_rls.sql trusts to a signed-in
 // client once Phase 3 has real sessions).
 
-import type { Order, Product, Seller } from "../../types";
+import type { AuditEntry, Category, Order, Product, Seller } from "../../types";
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -52,6 +52,71 @@ export async function fetchOrdersForSellerSupabase(sellerId: string): Promise<Or
   return requestJson<Order[]>(`/api/orders?seller_id=${encodeURIComponent(sellerId)}`, {
     method: "GET",
   });
+}
+
+// Admin console: the unfiltered global order book. GET /api/orders with no
+// query filters returns every order when the session role is admin —
+// isolation guards live on the route, not here.
+export async function fetchOrdersAdminSupabase(): Promise<Order[]> {
+  return requestJson<Order[]>("/api/orders", { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Categories — admin console CRUD (Phase 5 Step 5).
+// ---------------------------------------------------------------------------
+
+export async function submitCategorySupabase(
+  category: { name: string; slug: string; icon: string }
+): Promise<Category> {
+  return requestJson<Category>("/api/categories", {
+    method: "POST",
+    body: JSON.stringify(category),
+  });
+}
+
+export async function updateCategorySupabase(
+  id: string,
+  updates: Pick<Category, "name" | "slug" | "icon">
+): Promise<Category> {
+  return requestJson<Category>("/api/categories", {
+    method: "PATCH",
+    body: JSON.stringify({ id, ...updates }),
+  });
+}
+
+export async function deleteCategorySupabase(id: string): Promise<Category> {
+  return requestJson<Category>("/api/categories", {
+    method: "DELETE",
+    body: JSON.stringify({ id }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Admin audit trail (Phase 5 Step 7). POST appends, GET reads — both go
+// through the admin-guarded /api/audit route; actor_id is stamped
+// server-side from the session, never from the request body.
+// ---------------------------------------------------------------------------
+
+export async function appendAuditSupabase(
+  entry: {
+    actor_name: string;
+    actor_email: string;
+    entity_type: AuditEntry["entity_type"];
+    entity_id: string;
+    entity_label: string;
+    action: string;
+    summary: string;
+  }
+): Promise<boolean> {
+  await requestJson<{ ok: boolean }>("/api/audit", {
+    method: "POST",
+    body: JSON.stringify(entry),
+  });
+  return true;
+}
+
+export async function fetchAuditLogSupabase(): Promise<AuditEntry[]> {
+  return requestJson<AuditEntry[]>("/api/audit", { method: "GET" });
 }
 
 export async function updateOrderStatusSupabase(
@@ -106,6 +171,40 @@ export async function deleteProductSupabase(id: string, sellerId?: string): Prom
     method: "DELETE",
   });
   return Boolean(res.success);
+}
+
+// Phase 5 Step 3 — admin product moderation. The review decision
+// (status + commission, recomputed server-side from base_price) and the
+// visibility overlay (is_hidden + moderation_note) ride the admin-only
+// keys of PATCH /api/products.
+export async function updateProductStatusSupabase(
+  id: string,
+  status: Product["status"],
+  reason?: string,
+  commission?: number
+): Promise<Product | null> {
+  const updates: Record<string, unknown> = { status };
+  if (commission !== undefined) updates.commission = commission;
+  if (reason !== undefined && reason.trim()) updates.moderation_note = reason.trim();
+  return requestJson<Product | null>("/api/products", {
+    method: "PATCH",
+    body: JSON.stringify({ id, updates }),
+  });
+}
+
+export async function setProductHiddenSupabase(
+  id: string,
+  is_hidden: boolean,
+  note?: string
+): Promise<Product | null> {
+  const updates: Record<string, unknown> = { is_hidden };
+  // An explicitly provided (possibly empty) note always lands — the route
+  // maps "" to null so a reinstated listing's stale note is cleared.
+  if (note !== undefined) updates.moderation_note = note.trim();
+  return requestJson<Product | null>("/api/products", {
+    method: "PATCH",
+    body: JSON.stringify({ id, updates }),
+  });
 }
 
 export async function uploadProductImageSupabase(file: File): Promise<string> {
@@ -186,6 +285,52 @@ export async function updateSellerVerificationSupabase(
     method: "PATCH",
     body: JSON.stringify({ id, is_verified, kyc_status }),
   });
+}
+
+// Phase 5 Step 2 — admin moderation of a maker application. One action =
+// one consistent state: approve opens the store (verified + approved +
+// gateway-KYC marked verified for Cashfree Easy Split onboarding), reject
+// parks the application as declined, reopen/revoke return it to the
+// pending queue.
+export type SellerApplicationAction = "approve" | "reject" | "reopen" | "revoke";
+
+export async function updateSellerApplicationSupabase(
+  id: string,
+  action: SellerApplicationAction
+): Promise<Seller | null> {
+  return requestJson<Seller | null>("/api/sellers", {
+    method: "PATCH",
+    // Legacy admin shape of PATCH /api/sellers (admin-only fields).
+    body: JSON.stringify({
+      id,
+      is_verified: action === "approve",
+      kyc_status: action === "approve" ? "verified" : "pending",
+      application_status:
+        action === "approve"
+          ? "approved"
+          : action === "reject"
+            ? "rejected"
+            : "pending",
+    }),
+  });
+}
+
+// The four payout-display fields of the private seller_payout_kyc table
+// (0006) — served by the admin-only /api/sellers/[id]/payout route.
+export interface SellerPayoutDetails {
+  pan?: string;
+  bank_account_number?: string;
+  bank_ifsc?: string;
+  bank_account_holder?: string;
+}
+
+export async function fetchSellerPayoutSupabase(
+  id: string
+): Promise<SellerPayoutDetails> {
+  return requestJson<SellerPayoutDetails>(
+    `/api/sellers/${encodeURIComponent(id)}/payout`,
+    { method: "GET" }
+  );
 }
 
 // Step 6 — a maker edits their own storefront (name, story, WhatsApp,

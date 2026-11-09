@@ -109,10 +109,17 @@ with docs/build-progress.md or git log, the tracker + git win)
   private seller_payout_kyc table (migration 0006, applied live), atomic
   stock RPC decrement_product_stock, public debug route deleted, and a
   17/17 live isolation proof (docs/phase4-isolation-proof.md).
-- Phases 5,6,7,9,10 ⬜ PENDING. Canonical next: Phase 5 · Step 1 (Admin guard).
-- Baseline gates: tsc clean · eslint 0 errors / 33 warnings · build ✅ (20 routes).
+- Phase 5 ✅ COMPLETE (7/7) — Admin console: admin session guard via role;
+  seller management & application approval/rejection with private payout KYC review;
+  product moderation with search, hide/unhide, permanent removal, and audit notes;
+  global order overview with status/fulfillment/payment filters and detail view;
+  category CRUD with unique slugs and live public navigation; platform analytics
+  (GMV, commissions, fees, top makers leaderboard); durable moderation audit trail
+  (migration 0009_admin_audit.sql, admin-guarded /api/audit, and console feed).
+- Phases 6,7,9,10 ⬜ PENDING. Canonical next: Phase 6 · Step 1 (Payment adapter & prerequisites).
+- Baseline gates: tsc clean · eslint 0 errors / 33 warnings · build ✅ (23 routes).
   Do NOT fix pre-existing warnings unless asked.
-- Snapshot date: 2026-11-08 (commit "feat(phase4): isolation proof and payout privacy").
+- Snapshot date: 2026-11-09 (commit "feat(phase5): audit trail — actor, entity, and moderation history").
 
 ## 6. CANONICAL ROADMAP — EXACTLY 7 STEPS PER PHASE (fixed numbering)
 Rules: one step = one session turn = one owner commit. Never renumber; if a
@@ -127,6 +134,7 @@ step must split, use 3a/3b under the same number. Statuses: ⬜ pending ·
 | 2 | Supabase foundation | ✅ 7/7 |
 | 3 | Auth & roles | ✅ 7/7 |
 | 4 | Seller dashboard | ✅ 7/7 |
+| 5 | Admin console | ✅ 7/7 |
 
 ### Phase 2 — Supabase foundation (7 steps)
 | # | Step | Done when |
