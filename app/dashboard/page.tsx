@@ -5,13 +5,21 @@ import StatsCard from '@/components/dashboard/StatsCard';
 import { computeDashboardStats } from '@/lib/utils/dashboardStats';
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus, updateSellerProfile, registerSellerVendor, refundOrder, getSettlementData, syncSettlements, type SettlementsResponse } from "@/lib/supabase/client";
+import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus, updateSellerProfile, registerSellerVendor, refundOrder, approveOrderCancellation, rejectOrderCancellation, getSettlementData, syncSettlements, type SettlementsResponse } from "@/lib/supabase/client";
 import { Seller, Category, Product, ProductBadgeTag, Order } from "@/types";
-import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package, Truck, Landmark, RefreshCw } from "lucide-react";
+import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package, Truck, Landmark, RefreshCw, AlertCircle } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { RoleGuard } from "@/components/shared/RoleGuard";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
 import { buildRefundWhatsAppUrl } from "@/lib/utils/whatsapp";
+import {
+  ORDER_STATUSES,
+  type OrderFilter,
+  getOrderStatusSummary,
+  getOrderActionLabel,
+  getOrderSuccessMessage,
+  isTerminalOrderStatus,
+} from "@/lib/utils/orderStatus";
 
 const FALLBACK_PRODUCT_IMAGE = "https://images.unsplash.com/photo-1541832676-9b763b0239ab?w=600&auto=format&fit=crop&q=80"; // Traditional clay pot
 
@@ -25,7 +33,7 @@ export default function DashboardPage() {
   const [myProducts, setMyProducts] = useState<Product[]>([]);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
   const stats = useMemo(() => computeDashboardStats(myOrders), [myOrders]);
-  const [orderFilter, setOrderFilter] = useState<"all" | "pending" | "accepted" | "completed" | "cancelled">("all");
+  const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
   const [loading, setLoading] = useState(true);
 
   // Form State
@@ -94,15 +102,12 @@ export default function DashboardPage() {
         setMyOrders((prev) =>
           prev.map((o) => (o.id === orderId ? updated! : o))
         );
-        const friendlyMessages: Record<string, string> = {
-          accepted: "Order accepted! Customer knows you are preparing their authentic items.",
-          completed: "Order marked completed! Fulfillment finished.",
-          cancelled: isOnlinePaid
-            ? "Order cancelled, customer refunded via gateway, and stock restored."
-            : "Order cancelled and stock restored to inventory.",
-        };
         setOrderActionSuccess(
-          friendlyMessages[targetStatus] || `Order status updated to ${targetStatus}.`
+          getOrderSuccessMessage(
+            targetStatus,
+            targetOrder?.delivery_type,
+            Boolean(isOnlinePaid)
+          )
         );
         setTimeout(() => setOrderActionSuccess(null), 4000);
         setCancelConfirmId(null);
@@ -120,6 +125,56 @@ export default function DashboardPage() {
           ? err.message
           : "Failed to update order status. Please try again.";
       setOrderActionError(message);
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
+  const handleApproveCancellation = async (orderId: string) => {
+    setOrderActionError(null);
+    setOrderActionSuccess(null);
+    setUpdatingOrderId(orderId);
+    try {
+      const res = await approveOrderCancellation(orderId);
+      if (!res.success || !res.order) {
+        throw new Error(res.error || "Failed to approve cancellation.");
+      }
+      setMyOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? res.order! : o))
+      );
+      setOrderActionSuccess(
+        "Cancellation approved, customer refunded via gateway, and stock restored."
+      );
+      setTimeout(() => setOrderActionSuccess(null), 4000);
+      if (selectedSellerId) {
+        getProductsForSeller(selectedSellerId).then(setMyProducts).catch(() => {});
+      }
+    } catch (err: unknown) {
+      setOrderActionError(
+        err instanceof Error ? err.message : "Failed to approve cancellation."
+      );
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
+  const handleRejectCancellation = async (orderId: string, reason?: string) => {
+    setOrderActionError(null);
+    setOrderActionSuccess(null);
+    setUpdatingOrderId(orderId);
+    try {
+      const updated = await rejectOrderCancellation(orderId, reason);
+      setMyOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? updated : o))
+      );
+      setOrderActionSuccess(
+        "Cancellation request declined. Order remains active for fulfillment."
+      );
+      setTimeout(() => setOrderActionSuccess(null), 4000);
+    } catch (err: unknown) {
+      setOrderActionError(
+        err instanceof Error ? err.message : "Failed to decline cancellation request."
+      );
     } finally {
       setUpdatingOrderId(null);
     }
@@ -1047,7 +1102,7 @@ export default function DashboardPage() {
           <div className="space-y-6">
             {/* Status Filter Sub-Tabs */}
             <div className="flex border-b border-warm-brown/10 overflow-x-auto whitespace-nowrap scrollbar-none">
-              {(["all", "pending", "accepted", "completed", "cancelled"] as const).map((tab) => {
+              {(["all", ...ORDER_STATUSES] as const).map((tab) => {
                 const count =
                   tab === "all"
                     ? myOrders.length
@@ -1112,8 +1167,16 @@ export default function DashboardPage() {
                   const statusColors: Record<string, string> = {
                     pending: "bg-amber-100 text-amber-800 border-amber-200",
                     accepted: "bg-blue-100 text-blue-800 border-blue-200",
-                    completed: "bg-primary-green/15 text-primary-green border-primary-green/20",
+                    ready: "bg-accent-gold/15 text-[#8a5a12] border-accent-gold/30",
+                    delivered: "bg-primary-green/15 text-primary-green border-primary-green/20",
                     cancelled: "bg-red-50 text-red-700 border-red-200",
+                  };
+                  const statusTextColors: Record<string, string> = {
+                    pending: "text-amber-800",
+                    accepted: "text-blue-800",
+                    ready: "text-[#8a5a12]",
+                    delivered: "text-primary-green",
+                    cancelled: "text-red-700",
                   };
 
                   return (
@@ -1252,35 +1315,60 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
+                      {/* Buyer Cancellation Request Review (Phase 7 Step 5) */}
+                      {order.cancel_requested && order.status !== "cancelled" && (
+                        <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in duration-150">
+                          <div className="space-y-0.5">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                              <AlertCircle className="h-4 w-4 text-amber-700 shrink-0" />
+                              Buyer requested cancellation
+                            </span>
+                            <p className="text-xs text-text-dark/80 pl-5.5">
+                              Reason: &ldquo;{order.cancel_reason || "Customer requested cancellation"}&rdquo;
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 pl-5.5 sm:pl-0">
+                            <button
+                              type="button"
+                              disabled={updatingOrderId === order.id}
+                              onClick={() => handleApproveCancellation(order.id)}
+                              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold font-sans transition cursor-pointer disabled:opacity-60 shadow-xs"
+                            >
+                              {order.payment_method === "upi" || order.gateway
+                                ? "Approve & Refund"
+                                : "Approve Cancellation"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={updatingOrderId === order.id}
+                              onClick={() => handleRejectCancellation(order.id)}
+                              className="px-3 py-1.5 border border-warm-brown/20 hover:bg-warm-brown/10 text-warm-brown rounded-lg text-xs font-bold font-sans transition cursor-pointer disabled:opacity-60"
+                            >
+                              Decline Request
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Order Status Action Bar */}
                       <div className="pt-3 border-t border-warm-brown/10 flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-text-dark/70 font-sans">
                           <span className="text-[10px] uppercase font-bold text-warm-brown tracking-wider">
                             Status Flow:
                           </span>
-                          {order.status === "pending" && (
-                            <span className="text-amber-800">
-                              New Order — Awaiting maker acceptance
-                            </span>
-                          )}
-                          {order.status === "accepted" && (
-                            <span className="text-blue-800">
-                              Accepted — In preparation for{" "}
-                              {order.delivery_type === "pickup"
-                                ? "pickup"
-                                : "local delivery"}
-                            </span>
-                          )}
-                          {order.status === "completed" && (
-                            <span className="text-primary-green flex items-center gap-1">
-                              <CheckCircle className="h-3.5 w-3.5" /> Fulfilled & Completed
-                            </span>
-                          )}
-                          {order.status === "cancelled" && (
-                            <span className="text-red-700 flex items-center gap-1">
-                              <XCircle className="h-3.5 w-3.5" /> Order Cancelled
-                            </span>
-                          )}
+                          <span
+                            className={`inline-flex items-center gap-1 ${
+                              statusTextColors[order.status] ?? "text-text-dark/70"
+                            }`}
+                          >
+                            {order.status === "delivered" && (
+                              <CheckCircle className="h-3.5 w-3.5" />
+                            )}
+                            {order.status === "cancelled" && (
+                              <XCircle className="h-3.5 w-3.5" />
+                            )}
+                            {getOrderStatusSummary(order.status, order.delivery_type)}
+                          </span>
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -1341,7 +1429,8 @@ export default function DashboardPage() {
                                 </>
                               )}
 
-                              {order.status === "accepted" && (
+                              {(order.status === "accepted" ||
+                                order.status === "ready") && (
                                 <>
                                   {cancelConfirmId === order.id ? (
                                     <div className="flex items-center gap-1.5 bg-red-50 p-1.5 rounded-xl border border-red-200">
@@ -1381,18 +1470,28 @@ export default function DashboardPage() {
                                       <button
                                         type="button"
                                         onClick={() =>
-                                          handleOrderStatusChange(order.id, "completed")
+                                          handleOrderStatusChange(
+                                            order.id,
+                                            order.status === "accepted"
+                                              ? "ready"
+                                              : "delivered"
+                                          )
                                         }
                                         className="inline-flex items-center px-4 py-1.5 bg-primary-green hover:bg-[#224f3b] text-cream-bg rounded-xl text-xs font-bold font-sans transition cursor-pointer shadow-sm"
                                       >
-                                        {order.delivery_type === "pickup" ? (
-                                          <>
-                                            <CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Ready & Picked Up
-                                          </>
+                                        {order.status === "ready" &&
+                                        order.delivery_type === "pickup" ? (
+                                          <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                                        ) : order.status === "ready" ? (
+                                          <Truck className="h-3.5 w-3.5 mr-1.5" />
                                         ) : (
-                                          <>
-                                            <Truck className="h-3.5 w-3.5 mr-1.5" /> Mark Delivered
-                                          </>
+                                          <Package className="h-3.5 w-3.5 mr-1.5" />
+                                        )}
+                                        {getOrderActionLabel(
+                                          order.status === "accepted"
+                                            ? "ready"
+                                            : "delivered",
+                                          order.delivery_type
                                         )}
                                       </button>
                                     </>
@@ -1400,8 +1499,7 @@ export default function DashboardPage() {
                                 </>
                               )}
 
-                              {(order.status === "completed" ||
-                                order.status === "cancelled") && (
+                              {isTerminalOrderStatus(order.status) && (
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-warm-brown/60 bg-warm-brown/5 px-3 py-1.5 rounded-lg border border-warm-brown/10 font-sans">
                                   Fulfillment Finished
                                 </span>

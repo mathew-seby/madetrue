@@ -24,10 +24,17 @@ import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
 import { getServerUser, getOwnSellerId } from "@/lib/supabase/server-auth";
 import {
+  ORDER_STATUSES,
   isValidOrderTransition,
   getInvalidTransitionMessage,
+  normalizeOrderStatus,
 } from "@/lib/utils/orderStatus";
 import { getPaymentAdapter } from "@/lib/payments";
+import {
+  buildMakerPlacedMessage,
+  sendBuyerStatusUpdate,
+  sendOrderWhatsApp,
+} from "@/lib/whatsapp/notify";
 
 const PRODUCT_COLUMNS =
   "id, seller_id, name, price, base_price, commission, status, is_available, stock";
@@ -57,7 +64,12 @@ export async function GET(request: Request) {
   const supabase = createSupabaseServerClient();
   let query = supabase.from("orders").select("*");
 
-  if (user.role === "admin") {
+  // Phase 7 Step 2 — `mine=1`: "my own purchases" for any signed-in role.
+  // Buyer history uses this so an admin/maker reading from the buyer page
+  // sees their own orders instead of the admin order book or maker inbox.
+  if (searchParams.get("mine") === "1") {
+    query = query.eq("buyer_id", user.id);
+  } else if (user.role === "admin") {
     // Admin overview: filters (seller_id / buyer_id) stay available.
     const sellerId = searchParams.get("seller_id");
     const buyerId = searchParams.get("buyer_id");
@@ -347,6 +359,41 @@ export async function POST(request: Request) {
     }
   }
 
+  // Phase 7 Step 3 — best-effort "new order" alert to each maker with fresh
+  // lines (one message per maker, not per line). Any provider problem stays
+  // in the send result; the checkout's existing wa.me confirm remains the
+  // visible fallback until a provider is configured. Never fails the order.
+  const sellerIds = Array.from(new Set(inserted.map((o) => o.seller_id)));
+  if (sellerIds.length > 0) {
+    const { data: makers } = await supabase
+      .from("sellers")
+      .select("id, business_name, whatsapp_number")
+      .in("id", sellerIds);
+
+    if (makers) {
+      // Reads are independent — send in parallel, bounded by each
+      // provider's own timeout, so the basket response never drags.
+      await Promise.all(
+        (makers as Array<{
+          id: string;
+          business_name: string | null;
+          whatsapp_number: string | null;
+        }>).map(async (maker) => {
+          const makerOrders = inserted.filter((o) => o.seller_id === maker.id);
+          const count = makerOrders.length;
+          if (count === 0) return;
+          await sendOrderWhatsApp({
+            to: maker.whatsapp_number ?? null,
+            body: buildMakerPlacedMessage(maker.business_name ?? "maker", count),
+            orderId: makerOrders[0]?.id ?? null,
+            recipientRole: "maker",
+            event: "makerPlaced",
+          });
+        })
+      );
+    }
+  }
+
   return NextResponse.json(inserted);
 }
 
@@ -393,13 +440,8 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const validStatuses: Order["status"][] = [
-    "pending",
-    "accepted",
-    "completed",
-    "cancelled",
-  ];
-  if (!validStatuses.includes(newStatus)) {
+  const validStatuses = ORDER_STATUSES;
+  if (!(validStatuses as readonly string[]).includes(newStatus)) {
     return NextResponse.json(
       {
         error: `Invalid status "${newStatus}". Must be one of: ${validStatuses.join(
@@ -536,7 +578,24 @@ export async function PATCH(request: Request) {
     }
   }
 
-  return NextResponse.json(mapOrderRow(updated));
+  // Phase 7 Step 3 → Step 4 — best-effort buyer WhatsApp update. The maker's
+  // business name is fetched so the template reads human; the provider is
+  // chosen by the environment, with none configured the notice honestly
+  // reports it (wa.me links stay the fallback). Whatever the outcome, the
+  // status change is already saved — WhatsApp can never fail an order.
+  const orderResult = mapOrderRow(updated);
+  const { data: makerNameRow } = await supabase
+    .from("sellers")
+    .select("business_name")
+    .eq("id", orderResult.seller_id)
+    .maybeSingle();
+  const whatsappNotice = await sendBuyerStatusUpdate(
+    orderResult,
+    (makerNameRow as { business_name: string | null } | null)?.business_name ??
+      null
+  );
+
+  return NextResponse.json({ ...orderResult, whatsappNotice });
 }
 
 function mapOrderRow(row: Record<string, unknown>): Order {
@@ -546,7 +605,8 @@ function mapOrderRow(row: Record<string, unknown>): Order {
     seller_id: row.seller_id as string,
     product_id: row.product_id as string,
     quantity: row.quantity as number,
-    status: row.status as Order["status"],
+    // Legacy rows may still say "completed"; the app calls it "delivered".
+    status: normalizeOrderStatus(row.status as string),
     delivery_type: row.delivery_type as Order["delivery_type"],
     address: row.address as string,
     payment_method: row.payment_method as Order["payment_method"],
@@ -565,5 +625,9 @@ function mapOrderRow(row: Record<string, unknown>): Order {
     gateway_order_ref: (row.gateway_order_ref as string | null) ?? undefined,
     gateway_payment_ref: (row.gateway_payment_ref as string | null) ?? undefined,
     split_status: (row.split_status as Order["split_status"]) ?? undefined,
+    cancel_requested: (row.cancel_requested as boolean | null) ?? false,
+    cancel_reason: (row.cancel_reason as string | null) ?? undefined,
+    cancel_requested_at: (row.cancel_requested_at as string | null) ?? undefined,
+    cancel_rejected_reason: (row.cancel_rejected_reason as string | null) ?? undefined,
   };
 }

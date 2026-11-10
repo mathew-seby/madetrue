@@ -290,7 +290,16 @@ Use exactly these strings — no variations:
 > category CRUD with unique slugs and live public navigation; platform analytics
 > (GMV, platform commissions, fees, top makers leaderboard); durable moderation audit
 > trail (migration 0009_admin_audit.sql, admin-guarded `/api/audit`, and console feed).
-> Next build phase: **Phase 6 — Payments: Cashfree Easy Split first.**
+> **Phase 7 (Order lifecycle & notifications) is complete:** 5-state status machine
+> (`pending → accepted → ready → delivered`, `cancelled` from pre-delivery states,
+> legacy `completed` normalized to `delivered`); buyer history at `/orders` with live
+> polling and deep links; universal WhatsApp adapter (`twilio`/`wati`/`none` with
+> honest wa.me fallback); pure template family for all 7 lifecycle events; full
+> cancellation lifecycle (request→approve→refund) with universal payment adapter
+> refunding and inventory restoration; durable notification delivery log (`0013`) and
+> retry hub in admin console; automated E2E journey test (`scripts/verifyPhase7Journey.ts`).
+> Phase 6 is 6/7 (Step 7 🔑 owner-blocked pending live Cashfree credentials).
+> Next build phase: **Phase 9 — Trust, legal & scale (Step 1: Legal pages).**
 > Payment strategy remains locked: **Cashfree Easy Split** primary (see Locked
 > Decisions #4), with Razorpay Route / PayU Split Settlements as
 > adapter-backed alternates.

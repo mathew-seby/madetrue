@@ -73,7 +73,7 @@ export interface Order {
   seller_id: string;
   product_id: string;
   quantity: number;
-  status: 'pending' | 'accepted' | 'completed' | 'cancelled';
+  status: 'pending' | 'accepted' | 'ready' | 'delivered' | 'cancelled';
   delivery_type: 'delivery' | 'pickup';
   address: string;
   payment_method: 'upi' | 'cod';
@@ -96,6 +96,11 @@ export interface Order {
   gateway_order_ref?: string | null;
   gateway_payment_ref?: string | null;
   split_status?: 'not_applicable' | 'pending' | 'completed' | 'failed';
+  // Cancellation fields (Phase 7 Step 5):
+  cancel_requested?: boolean;
+  cancel_reason?: string | null;
+  cancel_requested_at?: string | null;
+  cancel_rejected_reason?: string | null;
 }
 
 export interface Category {
@@ -188,4 +193,24 @@ export type {
   RegisterVendorInput,
   RegisterVendorResult,
 } from "@/lib/payments/types";
+
+// Notification delivery log (Phase 7 Step 6)
+export type NotificationDeliveryStatus = 'delivered' | 'failed' | 'fallback';
+
+export interface NotificationLog {
+  id: string;
+  order_id?: string | null;
+  recipient_phone: string;
+  recipient_role: 'buyer' | 'maker' | 'admin' | 'sandbox';
+  event: string;
+  channel: 'whatsapp';
+  provider: string;
+  status: NotificationDeliveryStatus;
+  provider_ref?: string | null;
+  error_message?: string | null;
+  retry_count: number;
+  last_attempt_at: string;
+  created_at: string;
+  body: string;
+}
 

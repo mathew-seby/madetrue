@@ -10,6 +10,7 @@ import {
   PlatformCommissionReport,
   SettlementSummary,
   MakerCommissionReportRow,
+  NotificationLog,
 } from "../../types";
 import { isSupabaseEnabled } from "./dataSource";
 import {
@@ -23,6 +24,7 @@ import {
 import {
   saveOrdersSupabase,
   fetchOrdersForSellerSupabase,
+  fetchOrdersForBuyerSupabase,
   fetchOrdersAdminSupabase,
   submitCategorySupabase,
   updateCategorySupabase,
@@ -48,6 +50,11 @@ import {
   fetchOrderRefundDetailsSupabase,
   fetchSettlementsSupabase,
   syncSettlementsSupabase,
+  requestOrderCancellationSupabase,
+  approveOrderCancellationSupabase,
+  rejectOrderCancellationSupabase,
+  fetchNotificationLogsSupabase,
+  retryNotificationLogSupabase,
   type RefundOrderResponse,
   type SettlementsResponse,
   type SellerApplicationAction,
@@ -64,10 +71,17 @@ export type {
   RefundOrderResponse,
   SettlementsResponse,
 } from "./writeSupabase";
+export type { WhatsAppProviderStatus, WhatsAppSandboxSendResult } from "./writeSupabase";
+export {
+  fetchWhatsAppProviderStatusSupabase,
+  sendWhatsAppSandboxSendSupabase,
+} from "./writeSupabase";
 export type { OrderRefundDetailsResponse } from "./writeSupabase";
 import {
   isValidOrderTransition,
   getInvalidTransitionMessage,
+  normalizeOrderStatus,
+  canCancelOrder,
 } from "@/lib/utils/orderStatus";
 import { DEFAULT_CATEGORY_ICON } from "@/lib/utils/categories";
 
@@ -729,7 +743,13 @@ function getStoredOrders(): Order[] {
     const stored = localStorage.getItem("madetrue_orders");
     if (stored) {
       try {
-        return JSON.parse(stored) as Order[];
+        const parsed = JSON.parse(stored) as Order[];
+        // Legacy rows may still say "completed"; the live machine calls
+        // that state "delivered" (Phase 7 Step 1).
+        return parsed.map((order) => ({
+          ...order,
+          status: normalizeOrderStatus(order.status),
+        }));
       } catch (e) {
         console.error("Failed to parse stored orders", e);
       }
@@ -767,10 +787,22 @@ export async function getOrdersForSeller(sellerId: string): Promise<Order[]> {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
+// Buyer history (Phase 7 Step 2): the signed-in user's own purchases,
+// whatever their role. Mock mode filters the localStorage book by the
+// buyer id checkout stamped on every row; Supabase mode asks the
+// session-scoped route (`mine=1`) — the client never says who it is.
+export async function getOrdersForBuyer(userId: string): Promise<Order[]> {
+  if (isSupabaseEnabled()) return fetchOrdersForBuyerSupabase();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return getStoredOrders()
+    .filter((o) => o.buyer_id === userId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
 // Update the status of an order
 export async function updateOrderStatus(
   id: string,
-  status: 'pending' | 'accepted' | 'completed' | 'cancelled',
+  status: Order["status"],
   sellerId?: string
 ): Promise<Order | null> {
   if (isSupabaseEnabled()) {
@@ -1288,7 +1320,9 @@ export async function refundOrder(
   const isFullRefund = priorRefunded + refundAmount >= orderTotal;
   let updatedOrder = { ...order };
 
-  if (isFullRefund && order.status !== "cancelled") {
+  // A delivered order stays delivered: the refund is recorded in the
+  // ledger, but fulfilment already happened and the stock left the shop.
+  if (isFullRefund && canCancelOrder(order.status)) {
     updatedOrder = { ...order, status: "cancelled" };
     orders[index] = updatedOrder;
     saveStoredOrders(orders);
@@ -1322,6 +1356,143 @@ export async function refundOrder(
     status: refundResult.status,
     order: updatedOrder,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Order Cancellations (Phase 7 Step 5): request → approve → refund
+// ---------------------------------------------------------------------------
+
+export async function requestOrderCancellation(
+  orderId: string,
+  reason: string
+): Promise<Order> {
+  if (isSupabaseEnabled()) {
+    return requestOrderCancellationSupabase(orderId, reason);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const orders = getStoredOrders();
+  const index = orders.findIndex((o) => o.id === orderId);
+  if (index === -1) {
+    throw new Error(`Order #${orderId} not found.`);
+  }
+
+  const existing = orders[index];
+  if (existing.status !== "pending" && existing.status !== "accepted") {
+    throw new Error(`Orders in "${existing.status}" status cannot be cancelled online.`);
+  }
+
+  const updated: Order = {
+    ...existing,
+    cancel_requested: true,
+    cancel_reason: reason || "Customer requested cancellation",
+    cancel_requested_at: new Date().toISOString(),
+    cancel_rejected_reason: null,
+  };
+
+  orders[index] = updated;
+  saveStoredOrders(orders);
+  return updated;
+}
+
+export async function approveOrderCancellation(
+  orderId: string,
+  reason?: string
+): Promise<{ success: boolean; order?: Order; error?: string }> {
+  if (isSupabaseEnabled()) {
+    return approveOrderCancellationSupabase(orderId, reason);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const orders = getStoredOrders();
+  const index = orders.findIndex((o) => o.id === orderId);
+  if (index === -1) {
+    return { success: false, error: `Order #${orderId} not found.` };
+  }
+
+  const existing = orders[index];
+  if (!canCancelOrder(existing.status)) {
+    return {
+      success: false,
+      error: `Orders in "${existing.status}" status cannot be cancelled.`,
+    };
+  }
+
+  const cancellationReason =
+    reason || existing.cancel_reason || "Cancellation approved by maker";
+
+  const isOnlinePaid =
+    existing.payment_method === "upi" || Boolean(existing.gateway);
+
+  if (isOnlinePaid) {
+    const refundRes = await refundOrder(orderId, { reason: cancellationReason });
+    if (!refundRes.success) {
+      return { success: false, error: refundRes.error || "Failed to process refund." };
+    }
+    const currentOrders = getStoredOrders();
+    const curIdx = currentOrders.findIndex((o) => o.id === orderId);
+    if (curIdx !== -1) {
+      currentOrders[curIdx] = {
+        ...currentOrders[curIdx],
+        cancel_requested: false,
+        cancel_reason: cancellationReason,
+      };
+      saveStoredOrders(currentOrders);
+      return { success: true, order: currentOrders[curIdx] };
+    }
+  } else {
+    // Restore stock
+    const products = getStoredProducts();
+    const prodIdx = products.findIndex((p) => p.id === existing.product_id);
+    if (prodIdx !== -1) {
+      products[prodIdx].stock += existing.quantity;
+      products[prodIdx].is_available = true;
+      saveStoredProducts(products);
+    }
+  }
+
+  const currentOrders = getStoredOrders();
+  const curIdx = currentOrders.findIndex((o) => o.id === orderId);
+  const updatedOrder: Order = {
+    ...(curIdx !== -1 ? currentOrders[curIdx] : existing),
+    status: "cancelled",
+    cancel_requested: false,
+    cancel_reason: cancellationReason,
+  };
+
+  if (curIdx !== -1) {
+    currentOrders[curIdx] = updatedOrder;
+    saveStoredOrders(currentOrders);
+  }
+
+  return { success: true, order: updatedOrder };
+}
+
+export async function rejectOrderCancellation(
+  orderId: string,
+  reason?: string
+): Promise<Order> {
+  if (isSupabaseEnabled()) {
+    return rejectOrderCancellationSupabase(orderId, reason);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const orders = getStoredOrders();
+  const index = orders.findIndex((o) => o.id === orderId);
+  if (index === -1) {
+    throw new Error(`Order #${orderId} not found.`);
+  }
+
+  const updated: Order = {
+    ...orders[index],
+    cancel_requested: false,
+    cancel_rejected_reason:
+      reason || "Cancellation request was declined by the maker.",
+  };
+
+  orders[index] = updated;
+  saveStoredOrders(orders);
+  return updated;
 }
 
 // ---------------------------------------------------------------------------
@@ -1447,6 +1618,139 @@ export async function syncSettlements(
     success: true,
     count: summary.settlements.length,
     summary,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Notification Delivery Logs & Retries (Phase 7 Step 6)
+// ---------------------------------------------------------------------------
+
+function getStoredNotificationLogs(): NotificationLog[] {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("madetrue_notification_logs");
+    if (stored) {
+      try {
+        return JSON.parse(stored) as NotificationLog[];
+      } catch {
+        // Fall back to seed
+      }
+    }
+
+    // Honest seed logs for mock testing
+    const sampleLogs: NotificationLog[] = [
+      {
+        id: "log_mock_1",
+        order_id: "MT-8B3F21C9",
+        recipient_phone: "919876543210",
+        recipient_role: "buyer",
+        event: "accepted",
+        channel: "whatsapp",
+        provider: "twilio",
+        status: "delivered",
+        provider_ref: "SM8f3b2a9e102b",
+        retry_count: 0,
+        last_attempt_at: new Date(Date.now() - 3600000).toISOString(),
+        created_at: new Date(Date.now() - 3600000).toISOString(),
+        body: "Hi Ananya — good news! Meenachil Apiaries accepted your order #MT-8B3F21C9 and is preparing it now. Track updates on My Orders.",
+      },
+      {
+        id: "log_mock_2",
+        order_id: "MT-4C1A98D2",
+        recipient_phone: "919876543211",
+        recipient_role: "maker",
+        event: "makerPlaced",
+        channel: "whatsapp",
+        provider: "none",
+        status: "fallback",
+        error_message: "No WhatsApp provider configured — fell back to wa.me click-to-chat.",
+        retry_count: 0,
+        last_attempt_at: new Date(Date.now() - 1800000).toISOString(),
+        created_at: new Date(Date.now() - 1800000).toISOString(),
+        body: "Hello Sreedevi's Traditional Kitchen! You have 1 new MADETRUE order waiting. Open your maker dashboard to accept.",
+      },
+      {
+        id: "log_mock_3",
+        order_id: "MT-2F9E54B1",
+        recipient_phone: "919876543212",
+        recipient_role: "buyer",
+        event: "cancelled",
+        channel: "whatsapp",
+        provider: "wati",
+        status: "failed",
+        error_message: "Gateway timeout (8000ms exceeded). Recipient carrier network busy.",
+        retry_count: 1,
+        last_attempt_at: new Date(Date.now() - 600000).toISOString(),
+        created_at: new Date(Date.now() - 900000).toISOString(),
+        body: "Hi Devaki — your MADETRUE order #MT-2F9E54B1 was cancelled and a refund of ₹450 has been processed via payment gateway.",
+      },
+    ];
+
+    localStorage.setItem("madetrue_notification_logs", JSON.stringify(sampleLogs));
+    return sampleLogs;
+  }
+  return [];
+}
+
+export async function getNotificationLogs(limit = 50): Promise<NotificationLog[]> {
+  if (isSupabaseEnabled()) {
+    return fetchNotificationLogsSupabase(limit);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const logs = getStoredNotificationLogs();
+  return logs
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, limit);
+}
+
+export async function retryNotification(
+  logId: string
+): Promise<{ success: boolean; log: NotificationLog; error?: string }> {
+  if (isSupabaseEnabled()) {
+    return retryNotificationLogSupabase(logId);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const logs = getStoredNotificationLogs();
+  const idx = logs.findIndex((l) => l.id === logId);
+  if (idx === -1) {
+    return {
+      success: false,
+      error: `Notification log "${logId}" not found.`,
+      log: null as unknown as NotificationLog,
+    };
+  }
+
+  const existing = logs[idx];
+  const newRetryCount = (existing.retry_count ?? 0) + 1;
+  const updatedLog: NotificationLog = {
+    ...existing,
+    status: "delivered",
+    provider: existing.provider === "none" ? "mock" : existing.provider,
+    provider_ref: `mock_ref_${Date.now()}`,
+    error_message: null,
+    retry_count: newRetryCount,
+    last_attempt_at: new Date().toISOString(),
+  };
+
+  logs[idx] = updatedLog;
+  if (typeof window !== "undefined") {
+    localStorage.setItem("madetrue_notification_logs", JSON.stringify(logs));
+  }
+
+  recordAudit({
+    actor_name: "Console Admin",
+    actor_email: "support@madetrue.local",
+    entity_type: "order",
+    entity_id: existing.order_id || logId,
+    entity_label: `Notification ${existing.event}`,
+    action: "notification_retry",
+    summary: `Retried notification attempt #${newRetryCount} to ${existing.recipient_phone} via ${updatedLog.provider}. Marked delivered.`,
+  });
+
+  return {
+    success: true,
+    log: updatedLog,
   };
 }
 

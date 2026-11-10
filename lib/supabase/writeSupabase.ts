@@ -17,6 +17,7 @@ import type {
   Transaction,
   PlatformCommissionReport,
   SettlementSummary,
+  NotificationLog,
 } from "../../types";
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
@@ -60,6 +61,51 @@ export async function saveOrdersSupabase(orders: Order[]): Promise<Order[]> {
 export async function fetchOrdersForSellerSupabase(sellerId: string): Promise<Order[]> {
   return requestJson<Order[]>(`/api/orders?seller_id=${encodeURIComponent(sellerId)}`, {
     method: "GET",
+  });
+}
+
+// Buyer history (Phase 7 Step 2): `mine=1` asks the route for the session
+// user's own purchases, whatever their role — the isolation decision stays
+// on the route, never on a client-supplied buyer id.
+export async function fetchOrdersForBuyerSupabase(): Promise<Order[]> {
+  return requestJson<Order[]>("/api/orders?mine=1", { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp templates (Phase 7 Step 4): provider status + sandbox sends for
+// the admin console. The route owns every honesty call — the browser only
+// ever carries an event name and a phone number.
+// ---------------------------------------------------------------------------
+
+export interface WhatsAppProviderStatus {
+  /** Resolved adapter name: "none" | "twilio" | "wati". */
+  provider: string;
+  /** What `.env.local` asked for, when it asked for anything. */
+  envProvider: string | null;
+  configured: boolean;
+  mockMode: boolean;
+}
+
+export interface WhatsAppSandboxSendResult {
+  sent: boolean;
+  provider: string;
+  providerRef?: string;
+  reason?: string;
+  /** The exact template text that went out (or would go out). */
+  message: string;
+}
+
+export async function fetchWhatsAppProviderStatusSupabase(): Promise<WhatsAppProviderStatus> {
+  return requestJson<WhatsAppProviderStatus>("/api/whatsapp", { method: "GET" });
+}
+
+export async function sendWhatsAppSandboxSendSupabase(
+  event: string,
+  to: string
+): Promise<WhatsAppSandboxSendResult> {
+  return requestJson<WhatsAppSandboxSendResult>("/api/whatsapp", {
+    method: "POST",
+    body: JSON.stringify({ event, to }),
   });
 }
 
@@ -460,6 +506,78 @@ export async function syncSettlementsSupabase(
     method: "POST",
   });
 }
+
+// ---------------------------------------------------------------------------
+// Order Cancellations (Phase 7 Step 5): request → approve → refund
+// ---------------------------------------------------------------------------
+
+export async function requestOrderCancellationSupabase(
+  orderId: string,
+  reason: string
+): Promise<Order> {
+  const res = await requestJson<{ success: boolean; order: Order }>(
+    `/api/orders/${encodeURIComponent(orderId)}/cancel`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action: "request", reason }),
+    }
+  );
+  return res.order;
+}
+
+export async function approveOrderCancellationSupabase(
+  orderId: string,
+  reason?: string
+): Promise<{ success: boolean; order?: Order; error?: string }> {
+  return requestJson<{ success: boolean; order?: Order; error?: string }>(
+    `/api/orders/${encodeURIComponent(orderId)}/cancel`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action: "approve", reason }),
+    }
+  );
+}
+
+export async function rejectOrderCancellationSupabase(
+  orderId: string,
+  reason?: string
+): Promise<Order> {
+  const res = await requestJson<{ success: boolean; order: Order }>(
+    `/api/orders/${encodeURIComponent(orderId)}/cancel`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action: "reject", reason }),
+    }
+  );
+  return res.order;
+}
+
+// ---------------------------------------------------------------------------
+// Notification Delivery Logs & Retries (Phase 7 Step 6)
+// ---------------------------------------------------------------------------
+
+export async function fetchNotificationLogsSupabase(
+  limit = 50
+): Promise<NotificationLog[]> {
+  return requestJson<NotificationLog[]>(
+    `/api/whatsapp/delivery-log?limit=${encodeURIComponent(limit)}`,
+    { method: "GET" }
+  );
+}
+
+export async function retryNotificationLogSupabase(
+  logId: string
+): Promise<{ success: boolean; log: NotificationLog; error?: string }> {
+  return requestJson<{ success: boolean; log: NotificationLog; error?: string }>(
+    "/api/whatsapp/delivery-log",
+    {
+      method: "POST",
+      body: JSON.stringify({ logId }),
+    }
+  );
+}
+
+
 
 
 

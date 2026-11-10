@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
@@ -18,29 +18,43 @@ import {
   updateOrderStatus, 
   updateOrderWhatsappStatus,
   refundOrder,
+  approveOrderCancellation,
+  rejectOrderCancellation,
   getSettlementData,
   syncSettlements,
   addCategory,
   updateCategory,
   deleteCategory,
   getAuditLog,
-  recordAudit
+  recordAudit,
+  fetchWhatsAppProviderStatusSupabase,
+  sendWhatsAppSandboxSendSupabase,
+  getNotificationLogs,
+  retryNotification,
 } from "@/lib/supabase/client";
-import type { SellerApplicationAction, SellerPayoutDetails, SettlementsResponse } from "@/lib/supabase/client";
-import { Order, Product, Seller, Category, AuditEntry, AuditEntityType } from "@/types";
+import type { SellerApplicationAction, SellerPayoutDetails, SettlementsResponse, WhatsAppProviderStatus } from "@/lib/supabase/client";
+import { Order, Product, Seller, Category, AuditEntry, AuditEntityType, NotificationLog } from "@/types";
 import { DELIVERY_FEE } from "@/lib/utils/constants";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { CATEGORY_ICONS, DEFAULT_CATEGORY_ICON, slugifyName, isValidSlug, type CategoryIcon } from "@/lib/utils/categories";
 import { computeAdminAnalytics, type MakerLeaderRow } from "@/lib/utils/adminAnalytics";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { buildRefundWhatsAppUrl } from "@/lib/utils/whatsapp";
+import { TEMPLATE_EVENTS, TEMPLATE_LABELS, buildSampleTemplate, type TemplateEvent } from "@/lib/whatsapp/templates";
+import {
+  ORDER_STATUSES,
+  type OrderFilter,
+  getOrderActionLabel,
+  getOrderStatusLabel,
+  isTerminalOrderStatus,
+} from "@/lib/utils/orderStatus";
 import { 
   ShieldCheck, LogOut, Check, X, Clock, Eye, Store, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
   ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
   Users, Send, Award, ShieldAlert, Calendar, CreditCard, RotateCcw, Landmark,
   Search, Trash2, EyeOff, ArrowDownUp, Layers, PenLine, ChartColumn, RefreshCw, History,
-  Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower
+  Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower, AlertCircle, Loader2
 } from "lucide-react";
 
 // Pre-seed three demo orders the first time the admin console runs.
@@ -97,7 +111,7 @@ const MOCK_SEEDED_ORDERS = [
     product_name: "Homemade Malabar Garlic Pickle",
     price: 150,
     quantity: 1,
-    status: "completed",
+    status: "delivered",
     delivery_type: "delivery",
     address: "Thrikkakara, Kochi, Ernakulam, Kerala",
     payment_method: "cod",
@@ -144,7 +158,7 @@ export default function AdminPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Main navigation sections: products, sellers, orders
-  const [currentSection, setCurrentSection] = useState<"products" | "sellers" | "categories" | "analytics" | "audit" | "orders">("products");
+  const [currentSection, setCurrentSection] = useState<"products" | "sellers" | "categories" | "analytics" | "audit" | "orders" | "whatsapp">("products");
 
   // Data State
   const [products, setProducts] = useState<Product[]>([]);
@@ -174,7 +188,7 @@ export default function AdminPage() {
   // Sub-tabs filters
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [sellerFilter, setSellerFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
-  const [orderFilter, setOrderFilter] = useState<"all" | "pending" | "accepted" | "completed" | "cancelled">("all");
+  const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
 
   // Order book (Step 4): search, fulfillment/payment filters, sort
   // direction, and which order's detail view is open. All purely
@@ -194,6 +208,23 @@ export default function AdminPage() {
   // Settlement & Commission state (Phase 6 Step 6)
   const [settlementData, setSettlementData] = useState<SettlementsResponse | null>(null);
   const [syncingSettlements, setSyncingSettlements] = useState(false);
+
+  // WhatsApp templates (Phase 7 Step 4) — provider status + sandbox sends.
+  const [waStatus, setWaStatus] = useState<WhatsAppProviderStatus | null>(null);
+  const [waStatusError, setWaStatusError] = useState<string | null>(null);
+  const [waStatusLoading, setWaStatusLoading] = useState(false);
+  const [waPreview, setWaPreview] = useState<TemplateEvent>("placed");
+  const [waSendEvent, setWaSendEvent] = useState<TemplateEvent>("placed");
+  const [waTarget, setWaTarget] = useState("");
+  const [waSending, setWaSending] = useState(false);
+  const [waResult, setWaResult] = useState<string | null>(null);
+
+  // Delivery logs & retry hub (Phase 7 Step 6)
+  const [deliveryLogs, setDeliveryLogs] = useState<NotificationLog[]>([]);
+  const [deliveryLogsLoading, setDeliveryLogsLoading] = useState(false);
+  const [deliveryLogFilter, setDeliveryLogFilter] = useState<"all" | "delivered" | "fallback" | "failed">("all");
+  const [retryingLogId, setRetryingLogId] = useState<string | null>(null);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   // Payout display fields per maker store, hydrated from the private
   // seller_payout_kyc table (mock: inline on the seller row) by the
@@ -548,12 +579,15 @@ export default function AdminPage() {
     }
   };
 
-  const handleUpdateOrderStatus = async (orderId: string, newStatus: 'pending' | 'accepted' | 'completed' | 'cancelled') => {
+  const handleUpdateOrderStatus = async (orderId: string, newStatus: Order["status"]) => {
     try {
       const before = orders.find((o) => o.id === orderId);
       const updated = await updateOrderStatus(orderId, newStatus);
       if (updated) {
-        showToast(`Order status updated to "${newStatus}"`, "success");
+        showToast(
+          `Order marked ${getOrderStatusLabel(newStatus, updated.delivery_type)}`,
+          "success"
+        );
         logConsoleAction({
           entity_type: "order",
           entity_id: updated.id,
@@ -565,6 +599,44 @@ export default function AdminPage() {
       }
     } catch {
       showToast("Failed to update order status.", "error");
+    }
+  };
+
+  const handleApproveOrderCancellation = async (orderId: string) => {
+    try {
+      const res = await approveOrderCancellation(orderId);
+      if (res.success && res.order) {
+        showToast("Cancellation approved, customer refunded, and stock restored.", "success");
+        logConsoleAction({
+          entity_type: "order",
+          entity_id: orderId,
+          entity_label: res.order.product_name ?? orderId,
+          action: "order_cancellation_approved",
+          summary: `Admin approved cancellation for order #${orderId}. Refund and stock restoration processed.`,
+        });
+        loadModerationData();
+      } else {
+        showToast(res.error || "Failed to approve cancellation.", "error");
+      }
+    } catch {
+      showToast("Failed to approve order cancellation.", "error");
+    }
+  };
+
+  const handleRejectOrderCancellation = async (orderId: string, reason?: string) => {
+    try {
+      const updated = await rejectOrderCancellation(orderId, reason);
+      showToast("Cancellation request declined. Order remains active.", "success");
+      logConsoleAction({
+        entity_type: "order",
+        entity_id: orderId,
+        entity_label: updated.product_name ?? orderId,
+        action: "order_cancellation_declined",
+        summary: `Admin declined cancellation request for order #${orderId}.`,
+      });
+      loadModerationData();
+    } catch {
+      showToast("Failed to decline cancellation request.", "error");
     }
   };
 
@@ -864,7 +936,7 @@ export default function AdminPage() {
     return sellersList.filter((s) => getApplicationStatus(s) === tab).length;
   };
 
-  const getOrderCount = (tab: "all" | "pending" | "accepted" | "completed" | "cancelled") => {
+  const getOrderCount = (tab: OrderFilter) => {
     if (tab === "all") return orders.length;
     return orders.filter(o => o.status === tab).length;
   };
@@ -883,6 +955,122 @@ export default function AdminPage() {
     if (!lat || !lng) return false;
     return lat >= 9.77 && lat <= 10.30 && lng >= 76.16 && lng <= 77.09;
   };
+
+  // ---------------------------------------------------------------------------
+  // WhatsApp templates (Phase 7 Step 4) — provider status + sandbox sends.
+  // ---------------------------------------------------------------------------
+
+  const loadWhatsAppStatus = useCallback(async () => {
+    setWaStatusLoading(true);
+    setWaStatusError(null);
+    try {
+      const status = await fetchWhatsAppProviderStatusSupabase();
+      setWaStatus(status);
+    } catch (err: unknown) {
+      setWaStatus(null);
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Could not read the WhatsApp provider status.";
+      setWaStatusError(message);
+      showToast(message, "error");
+    } finally {
+      setWaStatusLoading(false);
+    }
+  }, [showToast]);
+
+  // Ref-indirection loader: the tab-entry effect and the Recheck button call
+  // through a ref so the React compiler does not see synchronous setState
+  // inside an effect (same convention as the maker dashboard).
+  const loadWhatsAppStatusRef = useRef<() => Promise<void>>(null);
+
+  useEffect(() => {
+    loadWhatsAppStatusRef.current = loadWhatsAppStatus;
+  }, [loadWhatsAppStatus]);
+
+  const loadDeliveryLogs = useCallback(async () => {
+    setDeliveryLogsLoading(true);
+    try {
+      const logs = await getNotificationLogs(50);
+      setDeliveryLogs(logs);
+    } catch (err: unknown) {
+      console.warn("Could not load delivery logs:", err);
+    } finally {
+      setDeliveryLogsLoading(false);
+    }
+  }, []);
+
+  const handleRetryDelivery = async (logId: string) => {
+    setRetryingLogId(logId);
+    try {
+      const res = await retryNotification(logId);
+      if (res.success && res.log) {
+        showToast("Notification retried successfully.", "success");
+        setDeliveryLogs((prev) =>
+          prev.map((item) => (item.id === logId ? res.log : item))
+        );
+      } else {
+        showToast(res.error || "Retry attempt reported failure.", "error");
+        if (res.log) {
+          setDeliveryLogs((prev) =>
+            prev.map((item) => (item.id === logId ? res.log : item))
+          );
+        }
+      }
+    } catch {
+      showToast("Failed to retry notification delivery.", "error");
+    } finally {
+      setRetryingLogId(null);
+    }
+  };
+
+  const loadDeliveryLogsRef = useRef<() => Promise<void>>(null);
+
+  useEffect(() => {
+    loadDeliveryLogsRef.current = loadDeliveryLogs;
+  }, [loadDeliveryLogs]);
+
+  useEffect(() => {
+    if (currentSection === "whatsapp") {
+      void loadWhatsAppStatusRef.current?.();
+      void loadDeliveryLogsRef.current?.();
+    }
+  }, [currentSection]);
+
+  const handleWhatsAppSandboxSend = useCallback(async () => {
+    if (!waTarget.trim()) {
+      showToast("Enter a destination WhatsApp phone number.", "error");
+      return;
+    }
+    setWaSending(true);
+    setWaResult(null);
+    try {
+      const result = await sendWhatsAppSandboxSendSupabase(
+        waSendEvent,
+        waTarget.trim()
+      );
+      setWaResult(
+        result.sent
+          ? `Sent via ${result.provider}${result.providerRef ? ` (ref ${result.providerRef})` : ""}. Rendered copy shown below.`
+          : `Not sent — ${result.reason ?? "no reason given"}. Rendered copy shown below.`
+      );
+      showToast(
+        result.sent
+          ? "Sandbox message sent."
+          : "Sandbox send reported honestly — see the result card.",
+        result.sent ? "success" : "error"
+      );
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "The sandbox send failed. Try again.";
+      setWaResult(`Not sent — ${message}`);
+      showToast(message, "error");
+    } finally {
+      setWaSending(false);
+    }
+  }, [waSendEvent, waTarget, showToast]);
 
   if (checkingAuth || authLoading) {
     return (
@@ -964,7 +1152,7 @@ export default function AdminPage() {
         </div>
 
         {/* Primary Dashboard Navigation Tabs */}
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 bg-[#FAF7F2] p-2.5 rounded-2xl border border-warm-brown/10 shadow-sm max-w-3xl">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 bg-[#FAF7F2] p-2.5 rounded-2xl border border-warm-brown/10 shadow-sm max-w-4xl">
           <button
             onClick={() => setCurrentSection("products")}
             className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2 cursor-pointer font-sans ${
@@ -1024,6 +1212,16 @@ export default function AdminPage() {
             }`}
           >
             <History className="h-4 w-4" /> Audit
+          </button>
+          <button
+            onClick={() => setCurrentSection("whatsapp")}
+            className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2 cursor-pointer font-sans ${
+              currentSection === "whatsapp"
+                ? "bg-primary-green text-cream-bg shadow-sm"
+                : "bg-white text-text-dark/70 border border-warm-brown/10 hover:border-warm-brown/30"
+            }`}
+          >
+            <Send className="h-4 w-4" /> WhatsApp
           </button>
         </div>
 
@@ -1872,7 +2070,7 @@ export default function AdminPage() {
               <div className="bg-[#FAF7F2] p-5 rounded-2xl border border-warm-brown/10 shadow-sm space-y-1">
                 <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block font-sans">Awaiting Action</span>
                 <p className="text-2xl font-serif font-bold text-amber-600">{analytics.pendingOrders}</p>
-                <span className="text-[9px] text-text-dark/40 font-sans font-semibold block">{analytics.acceptedOrders} accepted in progress</span>
+                <span className="text-[9px] text-text-dark/40 font-sans font-semibold block">{analytics.acceptedOrders} accepted · {analytics.readyOrders} ready to fulfil</span>
               </div>
               <div className="bg-[#FAF7F2] p-5 rounded-2xl border border-warm-brown/10 shadow-sm space-y-1">
                 <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block font-sans">Listings In Review</span>
@@ -1891,7 +2089,7 @@ export default function AdminPage() {
               <span className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5 text-primary-green" /> {analytics.approvedMakers} approved makers</span>
               <span className="flex items-center gap-1.5"><Tag className="h-3.5 w-3.5 text-primary-green" /> {analytics.totalListings} listings registered</span>
               <span className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5 text-primary-green" /> {analytics.categories} categories live</span>
-              <span className="flex items-center gap-1.5"><ShoppingBag className="h-3.5 w-3.5 text-primary-green" /> {analytics.totalOrders} orders on file ({analytics.completedOrders} completed · {analytics.cancelledOrders} cancelled)</span>
+              <span className="flex items-center gap-1.5"><ShoppingBag className="h-3.5 w-3.5 text-primary-green" /> {analytics.totalOrders} orders on file ({analytics.deliveredOrders} delivered · {analytics.cancelledOrders} cancelled)</span>
             </div>
 
             {/* Top makers */}
@@ -2044,7 +2242,7 @@ export default function AdminPage() {
           <div className="space-y-6">
             {/* Sub Tabs */}
             <div className="flex border-b border-warm-brown/10 overflow-x-auto whitespace-nowrap scrollbar-none">
-              {(["all", "pending", "accepted", "completed", "cancelled"] as const).map((tab) => (
+              {(["all", ...ORDER_STATUSES] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setOrderFilter(tab)}
@@ -2127,7 +2325,8 @@ export default function AdminPage() {
                   const statusColors = {
                     pending: "bg-amber-100 text-amber-800 border-amber-200",
                     accepted: "bg-blue-100 text-blue-800 border-blue-200",
-                    completed: "bg-primary-green/15 text-primary-green border-primary-green/20",
+                    ready: "bg-accent-gold/15 text-[#8a5a12] border-accent-gold/30",
+                    delivered: "bg-primary-green/15 text-primary-green border-primary-green/20",
                     cancelled: "bg-red-50 text-red-600 border-red-100"
                   };
                   return (
@@ -2271,6 +2470,35 @@ export default function AdminPage() {
                         </div>
                       </div>
 
+                      {/* Buyer Cancellation Request Review (Phase 7 Step 5) */}
+                      {order.cancel_requested && order.status !== "cancelled" && (
+                        <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-sans">
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                              <AlertCircle className="h-3.5 w-3.5 text-amber-700" />
+                              Buyer Requested Cancellation
+                            </span>
+                            <p className="text-xs text-text-dark/80 pl-5">
+                              Reason: &ldquo;{order.cancel_reason || "Customer requested cancellation"}&rdquo;
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 pl-5 sm:pl-0">
+                            <button
+                              onClick={() => handleApproveOrderCancellation(order.id)}
+                              className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition cursor-pointer uppercase tracking-wider shadow-xs"
+                            >
+                              Approve & Refund
+                            </button>
+                            <button
+                              onClick={() => handleRejectOrderCancellation(order.id)}
+                              className="px-2.5 py-1 border border-warm-brown/20 hover:bg-warm-brown/10 text-warm-brown text-[10px] font-bold rounded-lg transition cursor-pointer uppercase tracking-wider"
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Bottom row: status changes and WhatsApp notifier */}
                       <div className="pt-3 border-t border-warm-brown/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-sans">
                         {/* WhatsApp dispatch toggle */}
@@ -2338,13 +2566,21 @@ export default function AdminPage() {
                               </button>
                             </>
                           )}
-                          {order.status === "accepted" && (
+                          {(order.status === "accepted" || order.status === "ready") && (
                             <>
                               <button
-                                onClick={() => handleUpdateOrderStatus(order.id, "completed")}
+                                onClick={() =>
+                                  handleUpdateOrderStatus(
+                                    order.id,
+                                    order.status === "accepted" ? "ready" : "delivered"
+                                  )
+                                }
                                 className="px-3.5 py-1.5 bg-primary-green hover:bg-[#224f3b] text-cream-bg text-[10px] font-bold rounded-lg transition cursor-pointer uppercase tracking-wider"
                               >
-                                Mark Completed
+                                {getOrderActionLabel(
+                                  order.status === "accepted" ? "ready" : "delivered",
+                                  order.delivery_type
+                                )}
                               </button>
                               <button
                                 onClick={() => handleUpdateOrderStatus(order.id, "cancelled")}
@@ -2354,7 +2590,7 @@ export default function AdminPage() {
                               </button>
                             </>
                           )}
-                          {(order.status === "completed" || order.status === "cancelled") && (
+                          {isTerminalOrderStatus(order.status) && (
                             <span className="text-[10px] font-bold text-text-dark/40 uppercase tracking-widest bg-warm-brown/5 px-2.5 py-1 rounded-md border border-warm-brown/10">Fulfillment Archived</span>
                           )}
                         </div>
@@ -2612,6 +2848,427 @@ export default function AdminPage() {
                 </div>
               );
             })()}
+          </div>
+        )}
+
+        {/* SECTION 7: WHATSAPP TEMPLATES (Phase 7 Step 4) */}
+        {currentSection === "whatsapp" && (
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="bg-[#FAF7F2] p-6 rounded-3xl border border-warm-brown/10 shadow-sm">
+              <h2 className="font-serif text-xl font-bold text-text-dark flex items-center gap-2">
+                <Send className="h-5 w-5 text-primary-green" /> WhatsApp Order Notifications
+              </h2>
+              <p className="text-xs text-text-dark/70 mt-1 leading-relaxed max-w-2xl">
+                Every automated order update, word for word. Previews show the exact copy rendered by
+                MADETRUE builders; sandbox sends test them end-to-end to any phone once a provider is
+                configured. Until then, the platform honestly stays on wa.me click-to-chat links.
+              </p>
+            </div>
+
+            {/* Provider status card */}
+            <div className="bg-[#FAF7F2] p-5 rounded-2xl border border-warm-brown/10 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider font-sans">
+                    Gateway Provider:
+                  </span>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full font-sans ${
+                    waStatusLoading && !waStatus
+                      ? "bg-warm-brown/10 text-warm-brown"
+                      : waStatus?.configured
+                      ? "bg-primary-green/15 text-primary-green"
+                      : "bg-amber-100 text-amber-800"
+                  }`}>
+                    {waStatusLoading && !waStatus
+                      ? "Checking…"
+                      : waStatus
+                      ? waStatus.mockMode
+                        ? "Mock Mode"
+                        : waStatus.provider === "none"
+                        ? "None (wa.me fallback)"
+                        : waStatus.provider
+                      : waStatusError
+                      ? "Unavailable"
+                      : "Checking…"}
+                  </span>
+                </div>
+                <p className="text-xs text-text-dark/70 leading-relaxed font-sans">
+                  {waStatusError
+                    ? waStatusError
+                    : waStatus?.mockMode
+                    ? "Supabase mode is off — in mock mode, buyer and maker order links open via wa.me click-to-chat."
+                    : waStatus?.provider === "none" && waStatus?.envProvider
+                    ? `Environment requested "${waStatus.envProvider}" but credentials are incomplete in .env.local — falling back to wa.me links.`
+                    : waStatus?.provider === "none"
+                    ? "No WhatsApp provider configured in .env.local. Direct wa.me links remain the live behavior."
+                    : waStatus?.configured
+                    ? `Live via ${waStatus.provider}. Real order state transitions and sandbox sends will reach WhatsApp.`
+                    : "Provider configured but credentials could not be verified."}
+                </p>
+              </div>
+
+              <button
+                onClick={() => void loadWhatsAppStatusRef.current?.()}
+                disabled={waStatusLoading}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-warm-brown/20 hover:border-warm-brown/40 text-xs font-bold text-warm-brown rounded-xl transition cursor-pointer font-sans shrink-0 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${waStatusLoading ? "animate-spin" : ""}`} />
+                Recheck Provider
+              </button>
+            </div>
+
+            {/* Template previews card */}
+            <div className="bg-white p-6 rounded-3xl border border-warm-brown/10 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-warm-brown/10 pb-3">
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-text-dark">Template Previews</h3>
+                  <p className="text-xs text-text-dark/60 mt-0.5">
+                    Rendered with sample order MT-8B3F21C9 (Wild Forest Honey, 350g · Meenachil Apiaries)
+                  </p>
+                </div>
+              </div>
+
+              {/* Event selector tabs */}
+              <div className="flex flex-wrap gap-2">
+                {TEMPLATE_EVENTS.map((ev) => (
+                  <button
+                    key={ev}
+                    onClick={() => setWaPreview(ev)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer font-sans ${
+                      waPreview === ev
+                        ? "bg-primary-green text-cream-bg shadow-xs"
+                        : "bg-[#FAF7F2] text-text-dark/70 border border-warm-brown/10 hover:border-warm-brown/30"
+                    }`}
+                  >
+                    {TEMPLATE_LABELS[ev]}
+                  </button>
+                ))}
+              </div>
+
+              {/* Message bubble preview */}
+              <div className="bg-[#FAF7F2] p-4 sm:p-5 rounded-2xl border border-warm-brown/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-warm-brown/70 font-sans">
+                    Rendered Message ({TEMPLATE_LABELS[waPreview]})
+                  </span>
+                  <span className="text-[10px] text-text-dark/40 font-mono">
+                    {buildSampleTemplate(waPreview).length} characters
+                  </span>
+                </div>
+
+                <div className="max-w-lg bg-[#DCF8C6]/40 border border-[#25D366]/30 rounded-2xl p-4 text-xs font-sans text-text-dark leading-relaxed whitespace-pre-line shadow-xs">
+                  {buildSampleTemplate(waPreview)}
+                </div>
+              </div>
+            </div>
+
+            {/* Sandbox test send */}
+            <div className="bg-[#FAF7F2] p-6 rounded-3xl border border-warm-brown/10 shadow-sm space-y-4">
+              <div>
+                <h3 className="font-serif text-lg font-bold text-text-dark">Sandbox Test Send</h3>
+                <p className="text-xs text-text-dark/60 mt-0.5 max-w-xl">
+                  Sends the selected template to any WhatsApp phone number using the active provider adapter.
+                  If no provider is configured, the test honestly reports the fallback without pretending.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                <div className="sm:col-span-5 space-y-1">
+                  <label className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block font-sans">
+                    Destination Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="e.g. 919876543210 (with country code)"
+                    value={waTarget}
+                    onChange={(e) => setWaTarget(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-white border border-warm-brown/15 rounded-xl text-xs text-text-dark focus:outline-none focus:border-primary-green transition font-sans shadow-xs"
+                  />
+                </div>
+
+                <div className="sm:col-span-4 space-y-1">
+                  <label className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block font-sans">
+                    Template Event
+                  </label>
+                  <select
+                    value={waSendEvent}
+                    onChange={(e) => setWaSendEvent(e.target.value as TemplateEvent)}
+                    className="w-full px-3 py-2.5 bg-white border border-warm-brown/15 rounded-xl text-xs text-text-dark focus:outline-none focus:border-primary-green transition font-sans shadow-xs"
+                  >
+                    {TEMPLATE_EVENTS.map((ev) => (
+                      <option key={ev} value={ev}>
+                        {TEMPLATE_LABELS[ev]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="sm:col-span-3">
+                  <button
+                    onClick={handleWhatsAppSandboxSend}
+                    disabled={waSending || !waTarget.trim()}
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-green hover:bg-[#224f3b] disabled:opacity-50 text-cream-bg text-xs font-bold rounded-xl transition cursor-pointer font-sans shadow-xs"
+                  >
+                    <Send className={`h-3.5 w-3.5 ${waSending ? "animate-pulse" : ""}`} />
+                    {waSending ? "Sending…" : "Send Test"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Sandbox result banner */}
+              {waResult && (
+                <div className="bg-white p-4 rounded-2xl border border-warm-brown/15 space-y-2 mt-3 font-sans">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-warm-brown font-sans">
+                      Test Result:
+                    </span>
+                    <span className="text-xs font-semibold text-text-dark">
+                      {waResult}
+                    </span>
+                  </div>
+                  <div className="bg-[#FAF7F2] p-3 rounded-xl border border-warm-brown/10 text-xs text-text-dark/80 font-mono leading-relaxed whitespace-pre-line">
+                    {buildSampleTemplate(waSendEvent)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Notification Delivery Log & Retry Hub (Phase 7 Step 6) */}
+            <div className="bg-[#FAF7F2] p-6 rounded-3xl border border-warm-brown/10 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-warm-brown/10 pb-4">
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-text-dark flex items-center gap-2">
+                    <History className="h-5 w-5 text-primary-green" /> Notification Delivery Log
+                  </h3>
+                  <p className="text-xs text-text-dark/60 mt-0.5">
+                    Live audit of every customer update and maker alert. Distinguishes delivered messages, honest wa.me fallbacks, and delivery failures.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadDeliveryLogs()}
+                  disabled={deliveryLogsLoading}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-warm-brown/15 hover:border-primary-green/30 hover:text-primary-green text-warm-brown rounded-xl text-xs font-bold transition cursor-pointer self-start sm:self-auto font-sans shadow-2xs disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${deliveryLogsLoading ? "animate-spin" : ""}`} />
+                  Refresh Log
+                </button>
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: "all", label: "All Logs", count: deliveryLogs.length },
+                  {
+                    id: "delivered",
+                    label: "Delivered",
+                    count: deliveryLogs.filter((l) => l.status === "delivered").length,
+                  },
+                  {
+                    id: "fallback",
+                    label: "Fallback (wa.me)",
+                    count: deliveryLogs.filter((l) => l.status === "fallback").length,
+                  },
+                  {
+                    id: "failed",
+                    label: "Failed",
+                    count: deliveryLogs.filter((l) => l.status === "failed").length,
+                  },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() =>
+                      setDeliveryLogFilter(
+                        tab.id as "all" | "delivered" | "fallback" | "failed"
+                      )
+                    }
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold font-sans transition cursor-pointer flex items-center gap-1.5 ${
+                      deliveryLogFilter === tab.id
+                        ? "bg-primary-green text-cream-bg shadow-2xs"
+                        : "bg-white text-text-dark/70 border border-warm-brown/10 hover:border-warm-brown/30"
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                        deliveryLogFilter === tab.id
+                          ? "bg-white/20 text-cream-bg"
+                          : "bg-warm-brown/10 text-warm-brown"
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Log Entries List */}
+              {(() => {
+                const filtered = deliveryLogs.filter(
+                  (l) => deliveryLogFilter === "all" || l.status === deliveryLogFilter
+                );
+
+                if (deliveryLogsLoading && deliveryLogs.length === 0) {
+                  return (
+                    <div className="py-12 text-center space-y-2">
+                      <Loader2 className="h-6 w-6 text-warm-brown/50 animate-spin mx-auto" />
+                      <p className="text-xs text-text-dark/60 font-medium font-sans">
+                        Loading notification delivery logs…
+                      </p>
+                    </div>
+                  );
+                }
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-12 text-center bg-white rounded-2xl border border-warm-brown/10 space-y-2">
+                      <Inbox className="h-8 w-8 text-warm-brown/40 mx-auto" />
+                      <p className="text-xs text-text-dark/70 font-bold font-sans">
+                        No delivery logs found
+                      </p>
+                      <p className="text-[11px] text-text-dark/50 max-w-sm mx-auto font-sans">
+                        {deliveryLogFilter === "all"
+                          ? "When customer orders move through their lifecycle, delivery attempts will log here automatically."
+                          : `There are currently no logs matching the "${deliveryLogFilter}" filter.`}
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-3 font-sans">
+                    {filtered.map((log) => {
+                      const isExpanded = expandedLogId === log.id;
+                      const isRetrying = retryingLogId === log.id;
+                      const dateObj = new Date(log.created_at);
+                      const timeStr = !Number.isNaN(dateObj.getTime())
+                        ? dateObj.toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : log.created_at;
+
+                      return (
+                        <div
+                          key={log.id}
+                          className="bg-white rounded-2xl border border-warm-brown/10 p-4 shadow-2xs hover:border-primary-green/20 transition space-y-3"
+                        >
+                          {/* Top Row: Event + Meta + Status Badge */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-warm-brown/5 text-xs">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-[10px] text-text-dark/40 font-semibold">
+                                {timeStr}
+                              </span>
+                              <span className="font-bold text-text-dark uppercase tracking-wider text-[10px] bg-warm-brown/5 px-2 py-0.5 rounded-md border border-warm-brown/10">
+                                {log.event}
+                              </span>
+                              {log.order_id && (
+                                <span className="font-mono text-[10px] text-primary-green font-bold bg-primary-green/10 px-2 py-0.5 rounded-md">
+                                  #{log.order_id}
+                                </span>
+                              )}
+                              <span className="text-[10px] font-semibold text-text-dark/60">
+                                to {log.recipient_phone} ({log.recipient_role})
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {/* Status Chip */}
+                              {log.status === "delivered" && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-primary-green bg-primary-green/15 border border-primary-green/25 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                  <CheckCircle className="h-3 w-3" /> Delivered
+                                </span>
+                              )}
+                              {log.status === "fallback" && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                  <Clock className="h-3 w-3" /> Fallback (wa.me)
+                                </span>
+                              )}
+                              {log.status === "failed" && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 border border-red-200 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                  <X className="h-3 w-3" /> Failed
+                                </span>
+                              )}
+
+                              {/* Provider Badge */}
+                              <span className="text-[10px] font-mono text-text-dark/50 bg-warm-brown/5 px-2 py-0.5 rounded border border-warm-brown/10">
+                                {log.provider}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Middle: Details & Error Note if any */}
+                          <div className="text-xs space-y-1.5">
+                            {log.error_message && (
+                              <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/70 text-[11px] text-amber-900 leading-relaxed">
+                                <strong>Reason / Provider Note:</strong> {log.error_message}
+                              </div>
+                            )}
+
+                            {log.provider_ref && (
+                              <p className="text-[11px] text-text-dark/50 font-mono">
+                                Provider Ref: <span className="text-text-dark font-semibold">{log.provider_ref}</span>
+                              </p>
+                            )}
+
+                            {log.retry_count > 0 && (
+                              <p className="text-[10px] text-warm-brown font-semibold">
+                                Retried {log.retry_count} {log.retry_count === 1 ? "time" : "times"}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Message Body (collapsible) */}
+                          <div className="text-xs pt-1">
+                            {isExpanded ? (
+                              <div className="p-3 bg-[#DCF8C6]/30 border border-[#25D366]/20 rounded-xl text-text-dark font-sans text-xs leading-relaxed whitespace-pre-line space-y-2">
+                                <p>{log.body}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedLogId(null)}
+                                  className="text-[10px] font-bold text-primary-green hover:underline cursor-pointer block"
+                                >
+                                  Collapse message ▲
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-between text-text-dark/70 text-xs">
+                                <span className="truncate max-w-md text-[11px] text-text-dark/60 italic">
+                                  &ldquo;{log.body.slice(0, 90)}…&rdquo;
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedLogId(log.id)}
+                                  className="text-[10px] font-bold text-primary-green hover:underline cursor-pointer ml-2 shrink-0"
+                                >
+                                  View message ▼
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action Footer: Retry */}
+                          <div className="flex items-center justify-end gap-2 pt-2 border-t border-warm-brown/5">
+                            <button
+                              type="button"
+                              onClick={() => void handleRetryDelivery(log.id)}
+                              disabled={isRetrying}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-warm-brown/10 hover:bg-warm-brown/20 text-warm-brown rounded-lg text-xs font-bold font-sans transition cursor-pointer disabled:opacity-50"
+                            >
+                              <RefreshCw className={`h-3 w-3 ${isRetrying ? "animate-spin" : ""}`} />
+                              {isRetrying ? "Retrying…" : "Retry Send"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         )}
 
