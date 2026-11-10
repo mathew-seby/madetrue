@@ -574,13 +574,22 @@ export async function PATCH(request: Request) {
     }
   }
 
-  // Phase 7 Step 3 — best-effort buyer WhatsApp update. The provider is
-  // chosen by the environment; with none configured the notice honestly
-  // reports it and nothing sends (wa.me links stay the fallback). Whatever
-  // the outcome, the status change is already saved — WhatsApp can never
-  // fail an order.
+  // Phase 7 Step 3 → Step 4 — best-effort buyer WhatsApp update. The maker's
+  // business name is fetched so the template reads human; the provider is
+  // chosen by the environment, with none configured the notice honestly
+  // reports it (wa.me links stay the fallback). Whatever the outcome, the
+  // status change is already saved — WhatsApp can never fail an order.
   const orderResult = mapOrderRow(updated);
-  const whatsappNotice = await sendBuyerStatusUpdate(orderResult);
+  const { data: makerNameRow } = await supabase
+    .from("sellers")
+    .select("business_name")
+    .eq("id", orderResult.seller_id)
+    .maybeSingle();
+  const whatsappNotice = await sendBuyerStatusUpdate(
+    orderResult,
+    (makerNameRow as { business_name: string | null } | null)?.business_name ??
+      null
+  );
 
   return NextResponse.json({ ...orderResult, whatsappNotice });
 }

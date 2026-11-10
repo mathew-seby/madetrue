@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
@@ -24,9 +24,11 @@ import {
   updateCategory,
   deleteCategory,
   getAuditLog,
-  recordAudit
+  recordAudit,
+  fetchWhatsAppProviderStatusSupabase,
+  sendWhatsAppSandboxSendSupabase
 } from "@/lib/supabase/client";
-import type { SellerApplicationAction, SellerPayoutDetails, SettlementsResponse } from "@/lib/supabase/client";
+import type { SellerApplicationAction, SellerPayoutDetails, SettlementsResponse, WhatsAppProviderStatus } from "@/lib/supabase/client";
 import { Order, Product, Seller, Category, AuditEntry, AuditEntityType } from "@/types";
 import { DELIVERY_FEE } from "@/lib/utils/constants";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
@@ -34,6 +36,7 @@ import { CATEGORY_ICONS, DEFAULT_CATEGORY_ICON, slugifyName, isValidSlug, type C
 import { computeAdminAnalytics, type MakerLeaderRow } from "@/lib/utils/adminAnalytics";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { buildRefundWhatsAppUrl } from "@/lib/utils/whatsapp";
+import { TEMPLATE_EVENTS, TEMPLATE_LABELS, buildSampleTemplate, type TemplateEvent } from "@/lib/whatsapp/templates";
 import {
   ORDER_STATUSES,
   type OrderFilter,
@@ -151,7 +154,7 @@ export default function AdminPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Main navigation sections: products, sellers, orders
-  const [currentSection, setCurrentSection] = useState<"products" | "sellers" | "categories" | "analytics" | "audit" | "orders">("products");
+  const [currentSection, setCurrentSection] = useState<"products" | "sellers" | "categories" | "analytics" | "audit" | "orders" | "whatsapp">("products");
 
   // Data State
   const [products, setProducts] = useState<Product[]>([]);
@@ -201,6 +204,16 @@ export default function AdminPage() {
   // Settlement & Commission state (Phase 6 Step 6)
   const [settlementData, setSettlementData] = useState<SettlementsResponse | null>(null);
   const [syncingSettlements, setSyncingSettlements] = useState(false);
+
+  // WhatsApp templates (Phase 7 Step 4) — provider status + sandbox sends.
+  const [waStatus, setWaStatus] = useState<WhatsAppProviderStatus | null>(null);
+  const [waStatusError, setWaStatusError] = useState<string | null>(null);
+  const [waStatusLoading, setWaStatusLoading] = useState(false);
+  const [waPreview, setWaPreview] = useState<TemplateEvent>("placed");
+  const [waSendEvent, setWaSendEvent] = useState<TemplateEvent>("placed");
+  const [waTarget, setWaTarget] = useState("");
+  const [waSending, setWaSending] = useState(false);
+  const [waResult, setWaResult] = useState<string | null>(null);
 
   // Payout display fields per maker store, hydrated from the private
   // seller_payout_kyc table (mock: inline on the seller row) by the
@@ -894,6 +907,79 @@ export default function AdminPage() {
     return lat >= 9.77 && lat <= 10.30 && lng >= 76.16 && lng <= 77.09;
   };
 
+  // ---------------------------------------------------------------------------
+  // WhatsApp templates (Phase 7 Step 4) — provider status + sandbox sends.
+  // ---------------------------------------------------------------------------
+
+  const loadWhatsAppStatus = useCallback(async () => {
+    setWaStatusLoading(true);
+    setWaStatusError(null);
+    try {
+      const status = await fetchWhatsAppProviderStatusSupabase();
+      setWaStatus(status);
+    } catch (err: unknown) {
+      setWaStatus(null);
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Could not read the WhatsApp provider status.";
+      setWaStatusError(message);
+      showToast(message, "error");
+    } finally {
+      setWaStatusLoading(false);
+    }
+  }, [showToast]);
+
+  // Ref-indirection loader: the tab-entry effect and the Recheck button call
+  // through a ref so the React compiler does not see synchronous setState
+  // inside an effect (same convention as the maker dashboard).
+  const loadWhatsAppStatusRef = useRef<() => Promise<void>>(null);
+
+  useEffect(() => {
+    loadWhatsAppStatusRef.current = loadWhatsAppStatus;
+  }, [loadWhatsAppStatus]);
+
+  useEffect(() => {
+    if (currentSection === "whatsapp") {
+      void loadWhatsAppStatusRef.current?.();
+    }
+  }, [currentSection]);
+
+  const handleWhatsAppSandboxSend = useCallback(async () => {
+    if (!waTarget.trim()) {
+      showToast("Enter a destination WhatsApp phone number.", "error");
+      return;
+    }
+    setWaSending(true);
+    setWaResult(null);
+    try {
+      const result = await sendWhatsAppSandboxSendSupabase(
+        waSendEvent,
+        waTarget.trim()
+      );
+      setWaResult(
+        result.sent
+          ? `Sent via ${result.provider}${result.providerRef ? ` (ref ${result.providerRef})` : ""}. Rendered copy shown below.`
+          : `Not sent — ${result.reason ?? "no reason given"}. Rendered copy shown below.`
+      );
+      showToast(
+        result.sent
+          ? "Sandbox message sent."
+          : "Sandbox send reported honestly — see the result card.",
+        result.sent ? "success" : "error"
+      );
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "The sandbox send failed. Try again.";
+      setWaResult(`Not sent — ${message}`);
+      showToast(message, "error");
+    } finally {
+      setWaSending(false);
+    }
+  }, [waSendEvent, waTarget, showToast]);
+
   if (checkingAuth || authLoading) {
     return (
       <div className="max-w-md mx-auto py-32 text-center space-y-4">
@@ -974,7 +1060,7 @@ export default function AdminPage() {
         </div>
 
         {/* Primary Dashboard Navigation Tabs */}
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 bg-[#FAF7F2] p-2.5 rounded-2xl border border-warm-brown/10 shadow-sm max-w-3xl">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 bg-[#FAF7F2] p-2.5 rounded-2xl border border-warm-brown/10 shadow-sm max-w-4xl">
           <button
             onClick={() => setCurrentSection("products")}
             className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2 cursor-pointer font-sans ${
@@ -1034,6 +1120,16 @@ export default function AdminPage() {
             }`}
           >
             <History className="h-4 w-4" /> Audit
+          </button>
+          <button
+            onClick={() => setCurrentSection("whatsapp")}
+            className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-2 cursor-pointer font-sans ${
+              currentSection === "whatsapp"
+                ? "bg-primary-green text-cream-bg shadow-sm"
+                : "bg-white text-text-dark/70 border border-warm-brown/10 hover:border-warm-brown/30"
+            }`}
+          >
+            <Send className="h-4 w-4" /> WhatsApp
           </button>
         </div>
 
@@ -2631,6 +2727,191 @@ export default function AdminPage() {
                 </div>
               );
             })()}
+          </div>
+        )}
+
+        {/* SECTION 7: WHATSAPP TEMPLATES (Phase 7 Step 4) */}
+        {currentSection === "whatsapp" && (
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="bg-[#FAF7F2] p-6 rounded-3xl border border-warm-brown/10 shadow-sm">
+              <h2 className="font-serif text-xl font-bold text-text-dark flex items-center gap-2">
+                <Send className="h-5 w-5 text-primary-green" /> WhatsApp Order Notifications
+              </h2>
+              <p className="text-xs text-text-dark/70 mt-1 leading-relaxed max-w-2xl">
+                Every automated order update, word for word. Previews show the exact copy rendered by
+                MADETRUE builders; sandbox sends test them end-to-end to any phone once a provider is
+                configured. Until then, the platform honestly stays on wa.me click-to-chat links.
+              </p>
+            </div>
+
+            {/* Provider status card */}
+            <div className="bg-[#FAF7F2] p-5 rounded-2xl border border-warm-brown/10 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider font-sans">
+                    Gateway Provider:
+                  </span>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full font-sans ${
+                    waStatusLoading && !waStatus
+                      ? "bg-warm-brown/10 text-warm-brown"
+                      : waStatus?.configured
+                      ? "bg-primary-green/15 text-primary-green"
+                      : "bg-amber-100 text-amber-800"
+                  }`}>
+                    {waStatusLoading && !waStatus
+                      ? "Checking…"
+                      : waStatus
+                      ? waStatus.mockMode
+                        ? "Mock Mode"
+                        : waStatus.provider === "none"
+                        ? "None (wa.me fallback)"
+                        : waStatus.provider
+                      : waStatusError
+                      ? "Unavailable"
+                      : "Checking…"}
+                  </span>
+                </div>
+                <p className="text-xs text-text-dark/70 leading-relaxed font-sans">
+                  {waStatusError
+                    ? waStatusError
+                    : waStatus?.mockMode
+                    ? "Supabase mode is off — in mock mode, buyer and maker order links open via wa.me click-to-chat."
+                    : waStatus?.provider === "none" && waStatus?.envProvider
+                    ? `Environment requested "${waStatus.envProvider}" but credentials are incomplete in .env.local — falling back to wa.me links.`
+                    : waStatus?.provider === "none"
+                    ? "No WhatsApp provider configured in .env.local. Direct wa.me links remain the live behavior."
+                    : waStatus?.configured
+                    ? `Live via ${waStatus.provider}. Real order state transitions and sandbox sends will reach WhatsApp.`
+                    : "Provider configured but credentials could not be verified."}
+                </p>
+              </div>
+
+              <button
+                onClick={() => void loadWhatsAppStatusRef.current?.()}
+                disabled={waStatusLoading}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-warm-brown/20 hover:border-warm-brown/40 text-xs font-bold text-warm-brown rounded-xl transition cursor-pointer font-sans shrink-0 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${waStatusLoading ? "animate-spin" : ""}`} />
+                Recheck Provider
+              </button>
+            </div>
+
+            {/* Template previews card */}
+            <div className="bg-white p-6 rounded-3xl border border-warm-brown/10 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-warm-brown/10 pb-3">
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-text-dark">Template Previews</h3>
+                  <p className="text-xs text-text-dark/60 mt-0.5">
+                    Rendered with sample order MT-8B3F21C9 (Wild Forest Honey, 350g · Meenachil Apiaries)
+                  </p>
+                </div>
+              </div>
+
+              {/* Event selector tabs */}
+              <div className="flex flex-wrap gap-2">
+                {TEMPLATE_EVENTS.map((ev) => (
+                  <button
+                    key={ev}
+                    onClick={() => setWaPreview(ev)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer font-sans ${
+                      waPreview === ev
+                        ? "bg-primary-green text-cream-bg shadow-xs"
+                        : "bg-[#FAF7F2] text-text-dark/70 border border-warm-brown/10 hover:border-warm-brown/30"
+                    }`}
+                  >
+                    {TEMPLATE_LABELS[ev]}
+                  </button>
+                ))}
+              </div>
+
+              {/* Message bubble preview */}
+              <div className="bg-[#FAF7F2] p-4 sm:p-5 rounded-2xl border border-warm-brown/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-warm-brown/70 font-sans">
+                    Rendered Message ({TEMPLATE_LABELS[waPreview]})
+                  </span>
+                  <span className="text-[10px] text-text-dark/40 font-mono">
+                    {buildSampleTemplate(waPreview).length} characters
+                  </span>
+                </div>
+
+                <div className="max-w-lg bg-[#DCF8C6]/40 border border-[#25D366]/30 rounded-2xl p-4 text-xs font-sans text-text-dark leading-relaxed whitespace-pre-line shadow-xs">
+                  {buildSampleTemplate(waPreview)}
+                </div>
+              </div>
+            </div>
+
+            {/* Sandbox test send */}
+            <div className="bg-[#FAF7F2] p-6 rounded-3xl border border-warm-brown/10 shadow-sm space-y-4">
+              <div>
+                <h3 className="font-serif text-lg font-bold text-text-dark">Sandbox Test Send</h3>
+                <p className="text-xs text-text-dark/60 mt-0.5 max-w-xl">
+                  Sends the selected template to any WhatsApp phone number using the active provider adapter.
+                  If no provider is configured, the test honestly reports the fallback without pretending.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                <div className="sm:col-span-5 space-y-1">
+                  <label className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block font-sans">
+                    Destination Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="e.g. 919876543210 (with country code)"
+                    value={waTarget}
+                    onChange={(e) => setWaTarget(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-white border border-warm-brown/15 rounded-xl text-xs text-text-dark focus:outline-none focus:border-primary-green transition font-sans shadow-xs"
+                  />
+                </div>
+
+                <div className="sm:col-span-4 space-y-1">
+                  <label className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block font-sans">
+                    Template Event
+                  </label>
+                  <select
+                    value={waSendEvent}
+                    onChange={(e) => setWaSendEvent(e.target.value as TemplateEvent)}
+                    className="w-full px-3 py-2.5 bg-white border border-warm-brown/15 rounded-xl text-xs text-text-dark focus:outline-none focus:border-primary-green transition font-sans shadow-xs"
+                  >
+                    {TEMPLATE_EVENTS.map((ev) => (
+                      <option key={ev} value={ev}>
+                        {TEMPLATE_LABELS[ev]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="sm:col-span-3">
+                  <button
+                    onClick={handleWhatsAppSandboxSend}
+                    disabled={waSending || !waTarget.trim()}
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-green hover:bg-[#224f3b] disabled:opacity-50 text-cream-bg text-xs font-bold rounded-xl transition cursor-pointer font-sans shadow-xs"
+                  >
+                    <Send className={`h-3.5 w-3.5 ${waSending ? "animate-pulse" : ""}`} />
+                    {waSending ? "Sending…" : "Send Test"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Sandbox result banner */}
+              {waResult && (
+                <div className="bg-white p-4 rounded-2xl border border-warm-brown/15 space-y-2 mt-3 font-sans">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-warm-brown font-sans">
+                      Test Result:
+                    </span>
+                    <span className="text-xs font-semibold text-text-dark">
+                      {waResult}
+                    </span>
+                  </div>
+                  <div className="bg-[#FAF7F2] p-3 rounded-xl border border-warm-brown/10 text-xs text-text-dark/80 font-mono leading-relaxed whitespace-pre-line">
+                    {buildSampleTemplate(waSendEvent)}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

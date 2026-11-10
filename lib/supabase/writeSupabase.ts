@@ -70,6 +70,44 @@ export async function fetchOrdersForBuyerSupabase(): Promise<Order[]> {
   return requestJson<Order[]>("/api/orders?mine=1", { method: "GET" });
 }
 
+// ---------------------------------------------------------------------------
+// WhatsApp templates (Phase 7 Step 4): provider status + sandbox sends for
+// the admin console. The route owns every honesty call — the browser only
+// ever carries an event name and a phone number.
+// ---------------------------------------------------------------------------
+
+export interface WhatsAppProviderStatus {
+  /** Resolved adapter name: "none" | "twilio" | "wati". */
+  provider: string;
+  /** What `.env.local` asked for, when it asked for anything. */
+  envProvider: string | null;
+  configured: boolean;
+  mockMode: boolean;
+}
+
+export interface WhatsAppSandboxSendResult {
+  sent: boolean;
+  provider: string;
+  providerRef?: string;
+  reason?: string;
+  /** The exact template text that went out (or would go out). */
+  message: string;
+}
+
+export async function fetchWhatsAppProviderStatusSupabase(): Promise<WhatsAppProviderStatus> {
+  return requestJson<WhatsAppProviderStatus>("/api/whatsapp", { method: "GET" });
+}
+
+export async function sendWhatsAppSandboxSendSupabase(
+  event: string,
+  to: string
+): Promise<WhatsAppSandboxSendResult> {
+  return requestJson<WhatsAppSandboxSendResult>("/api/whatsapp", {
+    method: "POST",
+    body: JSON.stringify({ event, to }),
+  });
+}
+
 // Admin console: the unfiltered global order book. GET /api/orders with no
 // query filters returns every order when the session role is admin —
 // isolation guards live on the route, not here.

@@ -65,6 +65,11 @@ export type {
   RefundOrderResponse,
   SettlementsResponse,
 } from "./writeSupabase";
+export type { WhatsAppProviderStatus, WhatsAppSandboxSendResult } from "./writeSupabase";
+export {
+  fetchWhatsAppProviderStatusSupabase,
+  sendWhatsAppSandboxSendSupabase,
+} from "./writeSupabase";
 export type { OrderRefundDetailsResponse } from "./writeSupabase";
 import {
   isValidOrderTransition,

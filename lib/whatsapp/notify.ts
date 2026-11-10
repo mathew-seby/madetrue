@@ -1,6 +1,6 @@
 /**
- * Order event sends (Phase 7 Step 3) — the only place order routes talk to
- * the WhatsApp provider.
+ * Order event sends (Phase 7 Step 3, copy upgraded in Step 4) — the only
+ * interpreter order routes may use, and it never throws.
  *
  * Rules:
  *   * Never throws — a send (or its absence) is reported, not raised, so an
@@ -8,13 +8,18 @@
  *   * With no provider configured, results say so honestly (provider
  *     "none") and the app keeps its wa.me click-to-chat fallback.
  *
- * Copy is intentionally minimal for now — Phase 7 Step 4 introduces real
- * templates with previews + sandbox sends, and Step 6 adds delivery
- * logging with retries.
+ * All message copy comes from `./templates` (Step 4) — the same builders
+ * the admin previews and sandbox sends render, so there is exactly one
+ * wording. Delivery logging + retries arrive in Step 6.
  */
 import type { Order } from "@/types";
-import { getOrderBuyerStatusSummary } from "@/lib/utils/orderStatus";
 import { normalizeWhatsAppPhone } from "@/lib/utils/whatsapp";
+import {
+  buildMakerPlacedTemplate,
+  buildTemplate,
+  STATUS_TO_TEMPLATE,
+  type TemplateEventByStatus,
+} from "./templates";
 import { getWhatsAppProvider } from "./index";
 import type { SendWhatsAppResult } from "./types";
 
@@ -42,32 +47,43 @@ export async function sendOrderWhatsApp(params: {
 }
 
 /**
- * Buyer-facing update for accepted / ready / delivered / cancelled.
- * Reads the NEW status off the already-updated order row, so the line
- * always describes where the order stands now (delivery-aware via the
- * Step 2 status copy).
+ * Buyer-facing update for a live status change. Reads the NEW status off
+ * the already-updated order row and renders the SAME template the admin
+ * previews show (Step 4). `storeName` (the maker's business name, fetched
+ * by the route) personalises the line; templates degrade warmly without.
  */
-export function buildBuyerStatusMessage(order: Order): string {
-  const buyer = order.buyer_name ? `Hi ${order.buyer_name}` : "Hi";
-  const item = order.product_name ?? "your order";
-  const summary = getOrderBuyerStatusSummary(order.status, order.delivery_type);
-  return `${buyer} — an update on your MADETRUE order #${order.id} (${item} × ${order.quantity}): ${summary}.`;
-}
-
-export async function sendBuyerStatusUpdate(
-  order: Order
-): Promise<SendWhatsAppResult> {
-  return sendOrderWhatsApp({
-    to: order.buyer_phone ?? null,
-    body: buildBuyerStatusMessage(order),
+export function buildBuyerStatusMessage(
+  order: Order,
+  storeName?: string | null
+): string {
+  const event: TemplateEventByStatus = STATUS_TO_TEMPLATE[order.status];
+  return buildTemplate(event, {
+    orderId: order.id,
+    buyerName: order.buyer_name ?? null,
+    productName: order.product_name ?? null,
+    quantity: order.quantity,
+    storeName: storeName ?? null,
+    deliveryType: order.delivery_type,
   });
 }
 
-/** Maker alert for a fresh basket — one message per maker, not per line. */
+export async function sendBuyerStatusUpdate(
+  order: Order,
+  storeName?: string | null
+): Promise<SendWhatsAppResult> {
+  return sendOrderWhatsApp({
+    to: order.buyer_phone ?? null,
+    body: buildBuyerStatusMessage(order, storeName),
+  });
+}
+
+/**
+ * Maker alert for a fresh basket — one message per maker, not per line.
+ * Delegates to the Step 4 template so previews and real sends agree.
+ */
 export function buildMakerPlacedMessage(
   businessName: string,
   count: number
 ): string {
-  const orders = `new MADETRUE order${count === 1 ? "" : "s"}`;
-  return `Hello ${businessName}! You have ${count} ${orders} waiting. Open your maker dashboard to accept.`;
+  return buildMakerPlacedTemplate(businessName, count);
 }
