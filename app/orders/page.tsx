@@ -15,13 +15,22 @@ import {
   MapPin,
   Store,
   ChevronDown,
+  AlertCircle,
+  X,
+  RotateCcw,
+  Info,
 } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
-import { getOrdersForBuyer, getSellers } from "@/lib/supabase/client";
+import {
+  getOrdersForBuyer,
+  getSellers,
+  requestOrderCancellation,
+} from "@/lib/supabase/client";
 import { Order, Seller } from "@/types";
 import {
   getOrderBuyerStatusSummary,
   getOrderStatusLabel,
+  canBuyerRequestCancellation,
 } from "@/lib/utils/orderStatus";
 import { buildWhatsAppUrl } from "@/lib/utils/whatsapp";
 
@@ -60,6 +69,47 @@ export default function OrdersPage() {
   // restarts when the order book actually changed (login switches, a new
   // basket), never because a poll returned the same list.
   const prevOrderCount = useRef<number | null>(null);
+
+  // Cancellation request state (Phase 7 Step 5)
+  const [cancelModalOrder, setCancelModalOrder] = useState<Order | null>(null);
+  const [cancelReasonPreset, setCancelReasonPreset] = useState("Ordered by mistake");
+  const [cancelCustomReason, setCancelCustomReason] = useState("");
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+  const [cancelActionNotice, setCancelActionNotice] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  const handleRequestCancellation = async () => {
+    if (!cancelModalOrder) return;
+    const finalReason =
+      cancelReasonPreset === "Other"
+        ? cancelCustomReason.trim() || "Customer requested cancellation"
+        : cancelReasonPreset;
+
+    setCancelSubmitting(true);
+    setCancelActionNotice(null);
+    try {
+      const updated = await requestOrderCancellation(cancelModalOrder.id, finalReason);
+      setOrders((prev) =>
+        prev.map((o) => (o.id === cancelModalOrder.id ? updated : o))
+      );
+      setCancelActionNotice({
+        kind: "success",
+        text: `Cancellation requested for order #${cancelModalOrder.id}. The maker has been notified.`,
+      });
+      setCancelModalOrder(null);
+      setCancelCustomReason("");
+      setTimeout(() => setCancelActionNotice(null), 5000);
+    } catch (err: unknown) {
+      setCancelActionNotice({
+        kind: "error",
+        text: err instanceof Error ? err.message : "Failed to submit cancellation request.",
+      });
+    } finally {
+      setCancelSubmitting(false);
+    }
+  };
 
   // Latest loader behind a ref so the mount effect and the poll interval can
   // call it without the React-compiler lint rule tracing a synchronous
@@ -203,6 +253,33 @@ export default function OrdersPage() {
             </button>
           </div>
         </div>
+
+        {/* Cancellation action toast / notice (Phase 7 Step 5) */}
+        {cancelActionNotice && (
+          <div
+            className={`p-4 rounded-2xl flex items-center justify-between gap-3 text-xs font-bold ${
+              cancelActionNotice.kind === "success"
+                ? "bg-primary-green/10 border border-primary-green/20 text-primary-green"
+                : "bg-red-50 border border-red-200 text-red-700"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {cancelActionNotice.kind === "success" ? (
+                <CheckCircle className="h-4 w-4 shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 shrink-0" />
+              )}
+              <span>{cancelActionNotice.text}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCancelActionNotice(null)}
+              className="text-text-dark/40 hover:text-text-dark transition cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         {/* Loading state */}
         {loading && orders.length === 0 && (
@@ -399,6 +476,63 @@ export default function OrdersPage() {
                     )}
                     {getOrderBuyerStatusSummary(order.status, order.delivery_type)}
                   </div>
+
+                  {/* Cancellation state displays (Phase 7 Step 5) */}
+                  {order.cancel_requested && order.status !== "cancelled" && (
+                    <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl space-y-1">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                        <AlertCircle className="h-3.5 w-3.5 text-amber-700 shrink-0" />
+                        <span>Cancellation requested · Waiting for maker to review</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800/80 pl-5">
+                        Reason: &ldquo;{order.cancel_reason || "Customer requested cancellation"}&rdquo;
+                      </p>
+                    </div>
+                  )}
+
+                  {order.cancel_rejected_reason && order.status !== "cancelled" && (
+                    <div className="p-2.5 bg-warm-brown/5 border border-warm-brown/15 rounded-xl flex items-start gap-2 text-[11px] text-text-dark/80">
+                      <Info className="h-3.5 w-3.5 text-warm-brown shrink-0 mt-0.5" />
+                      <span>
+                        <strong>Maker update:</strong> &ldquo;{order.cancel_rejected_reason}&rdquo; — Fulfillment is continuing.
+                      </span>
+                    </div>
+                  )}
+
+                  {order.status === "cancelled" && (
+                    <div className="p-3 bg-red-50/70 border border-red-200/60 rounded-xl space-y-1 text-xs">
+                      <p className="font-bold text-red-800">
+                        Order Cancelled{order.cancel_reason ? ` · ${order.cancel_reason}` : ""}
+                      </p>
+                      {isOnlinePaid ? (
+                        <p className="text-[11px] text-red-700/90 font-medium">
+                          Full refund of ₹{lineTotal} processed via {order.gateway || "payment gateway"} to your original payment method.
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-red-700/80 font-medium">
+                          Cash on Delivery order — no payment was collected.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Buyer action: Request cancellation if eligible */}
+                  {canBuyerRequestCancellation(order.status, order.cancel_requested) && (
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCancelModalOrder(order);
+                          setCancelReasonPreset("Ordered by mistake");
+                          setCancelCustomReason("");
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-warm-brown/20 hover:border-red-300 hover:bg-red-50 hover:text-red-700 text-warm-brown rounded-lg text-xs font-bold transition cursor-pointer"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Request Cancellation
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -419,6 +553,107 @@ export default function OrdersPage() {
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Request Cancellation Modal (Phase 7 Step 5) */}
+        {cancelModalOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+            <div className="bg-[#FAF7F2] rounded-2xl border border-warm-brown/20 p-6 max-w-md w-full shadow-xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-start justify-between gap-3 pb-3 border-b border-warm-brown/10">
+                <div className="space-y-0.5">
+                  <h3 className="font-serif text-lg font-bold text-text-dark">
+                    Request Cancellation
+                  </h3>
+                  <p className="text-xs text-text-dark/60">
+                    Order #{cancelModalOrder.id} ({cancelModalOrder.product_name ?? "item"} × {cancelModalOrder.quantity})
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCancelModalOrder(null)}
+                  disabled={cancelSubmitting}
+                  className="text-text-dark/40 hover:text-text-dark transition cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs text-text-dark/80 leading-relaxed">
+                  Let the maker know why you need to cancel. When the maker approves, any online payment is automatically refunded back to your original payment method.
+                </p>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-warm-brown block">
+                    Reason for cancellation
+                  </label>
+                  <div className="space-y-2">
+                    {[
+                      "Ordered by mistake",
+                      "Need to change delivery address or details",
+                      "Change of plans / no longer needed",
+                      "Found an alternative",
+                      "Other",
+                    ].map((preset) => (
+                      <label
+                        key={preset}
+                        className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition ${
+                          cancelReasonPreset === preset
+                            ? "bg-primary-green/10 border-primary-green text-primary-green"
+                            : "bg-white/60 border-warm-brown/10 text-text-dark hover:border-warm-brown/25"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="cancelReason"
+                          value={preset}
+                          checked={cancelReasonPreset === preset}
+                          onChange={(e) => setCancelReasonPreset(e.target.value)}
+                          className="text-primary-green focus:ring-primary-green"
+                        />
+                        <span>{preset}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {cancelReasonPreset === "Other" && (
+                  <div className="space-y-1 pt-1">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-warm-brown block">
+                      Specific details
+                    </label>
+                    <textarea
+                      value={cancelCustomReason}
+                      onChange={(e) => setCancelCustomReason(e.target.value)}
+                      placeholder="Please share any helpful details for the maker…"
+                      rows={3}
+                      className="w-full text-xs p-2.5 bg-white border border-warm-brown/20 rounded-xl focus:outline-none focus:border-primary-green"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-warm-brown/10">
+                <button
+                  type="button"
+                  onClick={() => setCancelModalOrder(null)}
+                  disabled={cancelSubmitting}
+                  className="px-4 py-2 border border-warm-brown/20 hover:bg-warm-brown/5 text-warm-brown rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  Keep Order
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRequestCancellation}
+                  disabled={cancelSubmitting}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-60"
+                >
+                  {cancelSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Submit Request
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

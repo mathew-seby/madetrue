@@ -621,5 +621,9 @@ function mapOrderRow(row: Record<string, unknown>): Order {
     gateway_order_ref: (row.gateway_order_ref as string | null) ?? undefined,
     gateway_payment_ref: (row.gateway_payment_ref as string | null) ?? undefined,
     split_status: (row.split_status as Order["split_status"]) ?? undefined,
+    cancel_requested: (row.cancel_requested as boolean | null) ?? false,
+    cancel_reason: (row.cancel_reason as string | null) ?? undefined,
+    cancel_requested_at: (row.cancel_requested_at as string | null) ?? undefined,
+    cancel_rejected_reason: (row.cancel_rejected_reason as string | null) ?? undefined,
   };
 }

@@ -96,6 +96,9 @@ export function buildTemplate(
         ? `${buyer} — order #${ctx.orderId} was picked up. Enjoy, and thank you for supporting ${store}!`
         : `${buyer} — order #${ctx.orderId} was delivered. Enjoy, and thank you for supporting ${store}!`;
     case "cancelled":
+      if (ctx.refundedAmount && ctx.refundedAmount > 0) {
+        return `${buyer} — your MADETRUE order #${ctx.orderId} (${item}) was cancelled and a refund of ₹${ctx.refundedAmount} has been processed via ${ctx.gateway || "payment gateway"}.`;
+      }
       return `${buyer} — order #${ctx.orderId} (${item}) was cancelled. If any money was involved, MADETRUE support is just a message away.`;
     case "refunded":
       return buildRefundWhatsAppMessage({
@@ -116,6 +119,17 @@ export function buildMakerPlacedTemplate(
 ): string {
   const orders = `new MADETRUE order${count === 1 ? "" : "s"}`;
   return `Hello ${storeName}! You have ${count} ${orders} waiting. Open your maker dashboard to accept.`;
+}
+
+/** Maker alert when a customer requests cancellation on an active order. */
+export function buildMakerCancellationRequestTemplate(
+  storeName: string,
+  orderId: string,
+  item: string,
+  reason?: string
+): string {
+  const reasonText = reason ? ` Reason: "${reason}".` : "";
+  return `Hello ${storeName}! A customer requested cancellation for order #${orderId} (${item}).${reasonText} Please open your maker dashboard to review and approve or decline.`;
 }
 
 /** Preview helper: the sample context, rendered for any event. */

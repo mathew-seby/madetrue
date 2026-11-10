@@ -49,6 +49,9 @@ import {
   fetchOrderRefundDetailsSupabase,
   fetchSettlementsSupabase,
   syncSettlementsSupabase,
+  requestOrderCancellationSupabase,
+  approveOrderCancellationSupabase,
+  rejectOrderCancellationSupabase,
   type RefundOrderResponse,
   type SettlementsResponse,
   type SellerApplicationAction,
@@ -1350,6 +1353,143 @@ export async function refundOrder(
     status: refundResult.status,
     order: updatedOrder,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Order Cancellations (Phase 7 Step 5): request → approve → refund
+// ---------------------------------------------------------------------------
+
+export async function requestOrderCancellation(
+  orderId: string,
+  reason: string
+): Promise<Order> {
+  if (isSupabaseEnabled()) {
+    return requestOrderCancellationSupabase(orderId, reason);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const orders = getStoredOrders();
+  const index = orders.findIndex((o) => o.id === orderId);
+  if (index === -1) {
+    throw new Error(`Order #${orderId} not found.`);
+  }
+
+  const existing = orders[index];
+  if (existing.status !== "pending" && existing.status !== "accepted") {
+    throw new Error(`Orders in "${existing.status}" status cannot be cancelled online.`);
+  }
+
+  const updated: Order = {
+    ...existing,
+    cancel_requested: true,
+    cancel_reason: reason || "Customer requested cancellation",
+    cancel_requested_at: new Date().toISOString(),
+    cancel_rejected_reason: null,
+  };
+
+  orders[index] = updated;
+  saveStoredOrders(orders);
+  return updated;
+}
+
+export async function approveOrderCancellation(
+  orderId: string,
+  reason?: string
+): Promise<{ success: boolean; order?: Order; error?: string }> {
+  if (isSupabaseEnabled()) {
+    return approveOrderCancellationSupabase(orderId, reason);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const orders = getStoredOrders();
+  const index = orders.findIndex((o) => o.id === orderId);
+  if (index === -1) {
+    return { success: false, error: `Order #${orderId} not found.` };
+  }
+
+  const existing = orders[index];
+  if (!canCancelOrder(existing.status)) {
+    return {
+      success: false,
+      error: `Orders in "${existing.status}" status cannot be cancelled.`,
+    };
+  }
+
+  const cancellationReason =
+    reason || existing.cancel_reason || "Cancellation approved by maker";
+
+  const isOnlinePaid =
+    existing.payment_method === "upi" || Boolean(existing.gateway);
+
+  if (isOnlinePaid) {
+    const refundRes = await refundOrder(orderId, { reason: cancellationReason });
+    if (!refundRes.success) {
+      return { success: false, error: refundRes.error || "Failed to process refund." };
+    }
+    const currentOrders = getStoredOrders();
+    const curIdx = currentOrders.findIndex((o) => o.id === orderId);
+    if (curIdx !== -1) {
+      currentOrders[curIdx] = {
+        ...currentOrders[curIdx],
+        cancel_requested: false,
+        cancel_reason: cancellationReason,
+      };
+      saveStoredOrders(currentOrders);
+      return { success: true, order: currentOrders[curIdx] };
+    }
+  } else {
+    // Restore stock
+    const products = getStoredProducts();
+    const prodIdx = products.findIndex((p) => p.id === existing.product_id);
+    if (prodIdx !== -1) {
+      products[prodIdx].stock += existing.quantity;
+      products[prodIdx].is_available = true;
+      saveStoredProducts(products);
+    }
+  }
+
+  const currentOrders = getStoredOrders();
+  const curIdx = currentOrders.findIndex((o) => o.id === orderId);
+  const updatedOrder: Order = {
+    ...(curIdx !== -1 ? currentOrders[curIdx] : existing),
+    status: "cancelled",
+    cancel_requested: false,
+    cancel_reason: cancellationReason,
+  };
+
+  if (curIdx !== -1) {
+    currentOrders[curIdx] = updatedOrder;
+    saveStoredOrders(currentOrders);
+  }
+
+  return { success: true, order: updatedOrder };
+}
+
+export async function rejectOrderCancellation(
+  orderId: string,
+  reason?: string
+): Promise<Order> {
+  if (isSupabaseEnabled()) {
+    return rejectOrderCancellationSupabase(orderId, reason);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const orders = getStoredOrders();
+  const index = orders.findIndex((o) => o.id === orderId);
+  if (index === -1) {
+    throw new Error(`Order #${orderId} not found.`);
+  }
+
+  const updated: Order = {
+    ...orders[index],
+    cancel_requested: false,
+    cancel_rejected_reason:
+      reason || "Cancellation request was declined by the maker.",
+  };
+
+  orders[index] = updated;
+  saveStoredOrders(orders);
+  return updated;
 }
 
 // ---------------------------------------------------------------------------

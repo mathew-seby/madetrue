@@ -5,9 +5,9 @@ import StatsCard from '@/components/dashboard/StatsCard';
 import { computeDashboardStats } from '@/lib/utils/dashboardStats';
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus, updateSellerProfile, registerSellerVendor, refundOrder, getSettlementData, syncSettlements, type SettlementsResponse } from "@/lib/supabase/client";
+import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus, updateSellerProfile, registerSellerVendor, refundOrder, approveOrderCancellation, rejectOrderCancellation, getSettlementData, syncSettlements, type SettlementsResponse } from "@/lib/supabase/client";
 import { Seller, Category, Product, ProductBadgeTag, Order } from "@/types";
-import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package, Truck, Landmark, RefreshCw } from "lucide-react";
+import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package, Truck, Landmark, RefreshCw, AlertCircle } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { RoleGuard } from "@/components/shared/RoleGuard";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
@@ -125,6 +125,56 @@ export default function DashboardPage() {
           ? err.message
           : "Failed to update order status. Please try again.";
       setOrderActionError(message);
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
+  const handleApproveCancellation = async (orderId: string) => {
+    setOrderActionError(null);
+    setOrderActionSuccess(null);
+    setUpdatingOrderId(orderId);
+    try {
+      const res = await approveOrderCancellation(orderId);
+      if (!res.success || !res.order) {
+        throw new Error(res.error || "Failed to approve cancellation.");
+      }
+      setMyOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? res.order! : o))
+      );
+      setOrderActionSuccess(
+        "Cancellation approved, customer refunded via gateway, and stock restored."
+      );
+      setTimeout(() => setOrderActionSuccess(null), 4000);
+      if (selectedSellerId) {
+        getProductsForSeller(selectedSellerId).then(setMyProducts).catch(() => {});
+      }
+    } catch (err: unknown) {
+      setOrderActionError(
+        err instanceof Error ? err.message : "Failed to approve cancellation."
+      );
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
+  const handleRejectCancellation = async (orderId: string, reason?: string) => {
+    setOrderActionError(null);
+    setOrderActionSuccess(null);
+    setUpdatingOrderId(orderId);
+    try {
+      const updated = await rejectOrderCancellation(orderId, reason);
+      setMyOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? updated : o))
+      );
+      setOrderActionSuccess(
+        "Cancellation request declined. Order remains active for fulfillment."
+      );
+      setTimeout(() => setOrderActionSuccess(null), 4000);
+    } catch (err: unknown) {
+      setOrderActionError(
+        err instanceof Error ? err.message : "Failed to decline cancellation request."
+      );
     } finally {
       setUpdatingOrderId(null);
     }
@@ -1264,6 +1314,41 @@ export default function DashboardPage() {
                           )}
                         </div>
                       </div>
+
+                      {/* Buyer Cancellation Request Review (Phase 7 Step 5) */}
+                      {order.cancel_requested && order.status !== "cancelled" && (
+                        <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in duration-150">
+                          <div className="space-y-0.5">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                              <AlertCircle className="h-4 w-4 text-amber-700 shrink-0" />
+                              Buyer requested cancellation
+                            </span>
+                            <p className="text-xs text-text-dark/80 pl-5.5">
+                              Reason: &ldquo;{order.cancel_reason || "Customer requested cancellation"}&rdquo;
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 pl-5.5 sm:pl-0">
+                            <button
+                              type="button"
+                              disabled={updatingOrderId === order.id}
+                              onClick={() => handleApproveCancellation(order.id)}
+                              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold font-sans transition cursor-pointer disabled:opacity-60 shadow-xs"
+                            >
+                              {order.payment_method === "upi" || order.gateway
+                                ? "Approve & Refund"
+                                : "Approve Cancellation"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={updatingOrderId === order.id}
+                              onClick={() => handleRejectCancellation(order.id)}
+                              className="px-3 py-1.5 border border-warm-brown/20 hover:bg-warm-brown/10 text-warm-brown rounded-lg text-xs font-bold font-sans transition cursor-pointer disabled:opacity-60"
+                            >
+                              Decline Request
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Order Status Action Bar */}
                       <div className="pt-3 border-t border-warm-brown/10 flex flex-wrap items-center justify-between gap-3">

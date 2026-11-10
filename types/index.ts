@@ -96,6 +96,11 @@ export interface Order {
   gateway_order_ref?: string | null;
   gateway_payment_ref?: string | null;
   split_status?: 'not_applicable' | 'pending' | 'completed' | 'failed';
+  // Cancellation fields (Phase 7 Step 5):
+  cancel_requested?: boolean;
+  cancel_reason?: string | null;
+  cancel_requested_at?: string | null;
+  cancel_rejected_reason?: string | null;
 }
 
 export interface Category {

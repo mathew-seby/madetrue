@@ -18,6 +18,8 @@ import {
   updateOrderStatus, 
   updateOrderWhatsappStatus,
   refundOrder,
+  approveOrderCancellation,
+  rejectOrderCancellation,
   getSettlementData,
   syncSettlements,
   addCategory,
@@ -50,7 +52,7 @@ import {
   ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
   Users, Send, Award, ShieldAlert, Calendar, CreditCard, RotateCcw, Landmark,
   Search, Trash2, EyeOff, ArrowDownUp, Layers, PenLine, ChartColumn, RefreshCw, History,
-  Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower
+  Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower, AlertCircle
 } from "lucide-react";
 
 // Pre-seed three demo orders the first time the admin console runs.
@@ -588,6 +590,44 @@ export default function AdminPage() {
       }
     } catch {
       showToast("Failed to update order status.", "error");
+    }
+  };
+
+  const handleApproveOrderCancellation = async (orderId: string) => {
+    try {
+      const res = await approveOrderCancellation(orderId);
+      if (res.success && res.order) {
+        showToast("Cancellation approved, customer refunded, and stock restored.", "success");
+        logConsoleAction({
+          entity_type: "order",
+          entity_id: orderId,
+          entity_label: res.order.product_name ?? orderId,
+          action: "order_cancellation_approved",
+          summary: `Admin approved cancellation for order #${orderId}. Refund and stock restoration processed.`,
+        });
+        loadModerationData();
+      } else {
+        showToast(res.error || "Failed to approve cancellation.", "error");
+      }
+    } catch {
+      showToast("Failed to approve order cancellation.", "error");
+    }
+  };
+
+  const handleRejectOrderCancellation = async (orderId: string, reason?: string) => {
+    try {
+      const updated = await rejectOrderCancellation(orderId, reason);
+      showToast("Cancellation request declined. Order remains active.", "success");
+      logConsoleAction({
+        entity_type: "order",
+        entity_id: orderId,
+        entity_label: updated.product_name ?? orderId,
+        action: "order_cancellation_declined",
+        summary: `Admin declined cancellation request for order #${orderId}.`,
+      });
+      loadModerationData();
+    } catch {
+      showToast("Failed to decline cancellation request.", "error");
     }
   };
 
@@ -2377,6 +2417,35 @@ export default function AdminPage() {
                           )}
                         </div>
                       </div>
+
+                      {/* Buyer Cancellation Request Review (Phase 7 Step 5) */}
+                      {order.cancel_requested && order.status !== "cancelled" && (
+                        <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-sans">
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                              <AlertCircle className="h-3.5 w-3.5 text-amber-700" />
+                              Buyer Requested Cancellation
+                            </span>
+                            <p className="text-xs text-text-dark/80 pl-5">
+                              Reason: &ldquo;{order.cancel_reason || "Customer requested cancellation"}&rdquo;
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 pl-5 sm:pl-0">
+                            <button
+                              onClick={() => handleApproveOrderCancellation(order.id)}
+                              className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition cursor-pointer uppercase tracking-wider shadow-xs"
+                            >
+                              Approve & Refund
+                            </button>
+                            <button
+                              onClick={() => handleRejectOrderCancellation(order.id)}
+                              className="px-2.5 py-1 border border-warm-brown/20 hover:bg-warm-brown/10 text-warm-brown text-[10px] font-bold rounded-lg transition cursor-pointer uppercase tracking-wider"
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Bottom row: status changes and WhatsApp notifier */}
                       <div className="pt-3 border-t border-warm-brown/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-sans">

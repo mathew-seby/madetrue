@@ -506,5 +506,51 @@ export async function syncSettlementsSupabase(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Order Cancellations (Phase 7 Step 5): request → approve → refund
+// ---------------------------------------------------------------------------
+
+export async function requestOrderCancellationSupabase(
+  orderId: string,
+  reason: string
+): Promise<Order> {
+  const res = await requestJson<{ success: boolean; order: Order }>(
+    `/api/orders/${encodeURIComponent(orderId)}/cancel`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action: "request", reason }),
+    }
+  );
+  return res.order;
+}
+
+export async function approveOrderCancellationSupabase(
+  orderId: string,
+  reason?: string
+): Promise<{ success: boolean; order?: Order; error?: string }> {
+  return requestJson<{ success: boolean; order?: Order; error?: string }>(
+    `/api/orders/${encodeURIComponent(orderId)}/cancel`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action: "approve", reason }),
+    }
+  );
+}
+
+export async function rejectOrderCancellationSupabase(
+  orderId: string,
+  reason?: string
+): Promise<Order> {
+  const res = await requestJson<{ success: boolean; order: Order }>(
+    `/api/orders/${encodeURIComponent(orderId)}/cancel`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action: "reject", reason }),
+    }
+  );
+  return res.order;
+}
+
+
 
 

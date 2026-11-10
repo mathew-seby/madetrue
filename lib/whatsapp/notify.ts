@@ -57,6 +57,12 @@ export function buildBuyerStatusMessage(
   storeName?: string | null
 ): string {
   const event: TemplateEventByStatus = STATUS_TO_TEMPLATE[order.status];
+  const isOnlinePaid =
+    order.payment_method === "upi" || Boolean(order.gateway);
+  const total =
+    Number(order.price ?? 0) * Number(order.quantity ?? 1) +
+    Number(order.delivery_fee ?? 0);
+
   return buildTemplate(event, {
     orderId: order.id,
     buyerName: order.buyer_name ?? null,
@@ -64,6 +70,8 @@ export function buildBuyerStatusMessage(
     quantity: order.quantity,
     storeName: storeName ?? null,
     deliveryType: order.delivery_type,
+    refundedAmount: order.status === "cancelled" && isOnlinePaid ? total : undefined,
+    gateway: order.gateway ?? null,
   });
 }
 

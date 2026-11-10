@@ -87,6 +87,19 @@ export function canCancelOrder(status: OrderStatus): boolean {
   return (CANCELLABLE_ORDER_STATUSES as readonly string[]).includes(status);
 }
 
+/**
+ * Whether a buyer can initiate a cancellation request on this order.
+ * Only orders still in 'pending' or 'accepted' state are eligible,
+ * provided no active request is already awaiting maker review.
+ */
+export function canBuyerRequestCancellation(
+  status: OrderStatus,
+  cancelRequested?: boolean
+): boolean {
+  if (cancelRequested) return false;
+  return status === "pending" || status === "accepted";
+}
+
 /** Human status line for the maker dashboard / admin order book. */
 export function getOrderStatusSummary(
   status: OrderStatus,
