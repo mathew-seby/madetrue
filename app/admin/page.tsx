@@ -34,6 +34,13 @@ import { CATEGORY_ICONS, DEFAULT_CATEGORY_ICON, slugifyName, isValidSlug, type C
 import { computeAdminAnalytics, type MakerLeaderRow } from "@/lib/utils/adminAnalytics";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { buildRefundWhatsAppUrl } from "@/lib/utils/whatsapp";
+import {
+  ORDER_STATUSES,
+  type OrderFilter,
+  getOrderActionLabel,
+  getOrderStatusLabel,
+  isTerminalOrderStatus,
+} from "@/lib/utils/orderStatus";
 import { 
   ShieldCheck, LogOut, Check, X, Clock, Eye, Store, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
@@ -97,7 +104,7 @@ const MOCK_SEEDED_ORDERS = [
     product_name: "Homemade Malabar Garlic Pickle",
     price: 150,
     quantity: 1,
-    status: "completed",
+    status: "delivered",
     delivery_type: "delivery",
     address: "Thrikkakara, Kochi, Ernakulam, Kerala",
     payment_method: "cod",
@@ -174,7 +181,7 @@ export default function AdminPage() {
   // Sub-tabs filters
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [sellerFilter, setSellerFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
-  const [orderFilter, setOrderFilter] = useState<"all" | "pending" | "accepted" | "completed" | "cancelled">("all");
+  const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
 
   // Order book (Step 4): search, fulfillment/payment filters, sort
   // direction, and which order's detail view is open. All purely
@@ -548,12 +555,15 @@ export default function AdminPage() {
     }
   };
 
-  const handleUpdateOrderStatus = async (orderId: string, newStatus: 'pending' | 'accepted' | 'completed' | 'cancelled') => {
+  const handleUpdateOrderStatus = async (orderId: string, newStatus: Order["status"]) => {
     try {
       const before = orders.find((o) => o.id === orderId);
       const updated = await updateOrderStatus(orderId, newStatus);
       if (updated) {
-        showToast(`Order status updated to "${newStatus}"`, "success");
+        showToast(
+          `Order marked ${getOrderStatusLabel(newStatus, updated.delivery_type)}`,
+          "success"
+        );
         logConsoleAction({
           entity_type: "order",
           entity_id: updated.id,
@@ -864,7 +874,7 @@ export default function AdminPage() {
     return sellersList.filter((s) => getApplicationStatus(s) === tab).length;
   };
 
-  const getOrderCount = (tab: "all" | "pending" | "accepted" | "completed" | "cancelled") => {
+  const getOrderCount = (tab: OrderFilter) => {
     if (tab === "all") return orders.length;
     return orders.filter(o => o.status === tab).length;
   };
@@ -1872,7 +1882,7 @@ export default function AdminPage() {
               <div className="bg-[#FAF7F2] p-5 rounded-2xl border border-warm-brown/10 shadow-sm space-y-1">
                 <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block font-sans">Awaiting Action</span>
                 <p className="text-2xl font-serif font-bold text-amber-600">{analytics.pendingOrders}</p>
-                <span className="text-[9px] text-text-dark/40 font-sans font-semibold block">{analytics.acceptedOrders} accepted in progress</span>
+                <span className="text-[9px] text-text-dark/40 font-sans font-semibold block">{analytics.acceptedOrders} accepted · {analytics.readyOrders} ready to fulfil</span>
               </div>
               <div className="bg-[#FAF7F2] p-5 rounded-2xl border border-warm-brown/10 shadow-sm space-y-1">
                 <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block font-sans">Listings In Review</span>
@@ -1891,7 +1901,7 @@ export default function AdminPage() {
               <span className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5 text-primary-green" /> {analytics.approvedMakers} approved makers</span>
               <span className="flex items-center gap-1.5"><Tag className="h-3.5 w-3.5 text-primary-green" /> {analytics.totalListings} listings registered</span>
               <span className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5 text-primary-green" /> {analytics.categories} categories live</span>
-              <span className="flex items-center gap-1.5"><ShoppingBag className="h-3.5 w-3.5 text-primary-green" /> {analytics.totalOrders} orders on file ({analytics.completedOrders} completed · {analytics.cancelledOrders} cancelled)</span>
+              <span className="flex items-center gap-1.5"><ShoppingBag className="h-3.5 w-3.5 text-primary-green" /> {analytics.totalOrders} orders on file ({analytics.deliveredOrders} delivered · {analytics.cancelledOrders} cancelled)</span>
             </div>
 
             {/* Top makers */}
@@ -2044,7 +2054,7 @@ export default function AdminPage() {
           <div className="space-y-6">
             {/* Sub Tabs */}
             <div className="flex border-b border-warm-brown/10 overflow-x-auto whitespace-nowrap scrollbar-none">
-              {(["all", "pending", "accepted", "completed", "cancelled"] as const).map((tab) => (
+              {(["all", ...ORDER_STATUSES] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setOrderFilter(tab)}
@@ -2127,7 +2137,8 @@ export default function AdminPage() {
                   const statusColors = {
                     pending: "bg-amber-100 text-amber-800 border-amber-200",
                     accepted: "bg-blue-100 text-blue-800 border-blue-200",
-                    completed: "bg-primary-green/15 text-primary-green border-primary-green/20",
+                    ready: "bg-accent-gold/15 text-[#8a5a12] border-accent-gold/30",
+                    delivered: "bg-primary-green/15 text-primary-green border-primary-green/20",
                     cancelled: "bg-red-50 text-red-600 border-red-100"
                   };
                   return (
@@ -2338,13 +2349,21 @@ export default function AdminPage() {
                               </button>
                             </>
                           )}
-                          {order.status === "accepted" && (
+                          {(order.status === "accepted" || order.status === "ready") && (
                             <>
                               <button
-                                onClick={() => handleUpdateOrderStatus(order.id, "completed")}
+                                onClick={() =>
+                                  handleUpdateOrderStatus(
+                                    order.id,
+                                    order.status === "accepted" ? "ready" : "delivered"
+                                  )
+                                }
                                 className="px-3.5 py-1.5 bg-primary-green hover:bg-[#224f3b] text-cream-bg text-[10px] font-bold rounded-lg transition cursor-pointer uppercase tracking-wider"
                               >
-                                Mark Completed
+                                {getOrderActionLabel(
+                                  order.status === "accepted" ? "ready" : "delivered",
+                                  order.delivery_type
+                                )}
                               </button>
                               <button
                                 onClick={() => handleUpdateOrderStatus(order.id, "cancelled")}
@@ -2354,7 +2373,7 @@ export default function AdminPage() {
                               </button>
                             </>
                           )}
-                          {(order.status === "completed" || order.status === "cancelled") && (
+                          {isTerminalOrderStatus(order.status) && (
                             <span className="text-[10px] font-bold text-text-dark/40 uppercase tracking-widest bg-warm-brown/5 px-2.5 py-1 rounded-md border border-warm-brown/10">Fulfillment Archived</span>
                           )}
                         </div>

@@ -11,10 +11,10 @@
 > completion, per master prompt §10b. If they disagree with this tracker,
 > tracker + git win.
 
-**Current position:** Phase 6 · Step 7/7 — Go-live — ⬜ pending. Next: **Phase 6 · Step 7/7**
-**Last completed:** Phase 6 · Step 6/7 — Settlements — commit "feat(phase6): settlement reports synced, seller paid/pending/settled view, and commission report" — 2026-11-09
-**Baseline gates (this step):** tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (28 routes)
-**Open owner note:** (1) Apply migration 0009_admin_audit.sql in the Supabase SQL editor; (2) Cashfree sandbox credentials can be added to `.env.local` whenever ready (all steps operate deterministically on `MockPaymentAdapter` meanwhile).
+**Current position:** Phase 7 · Step 2/7 — Buyer history — ⬜ pending. Next: **Phase 7 · Step 2/7**
+**Last completed:** Phase 7 · Step 1/7 — Status machine — commit "feat(phase7): order lifecycle state machine" (owner commit pending) — 2026-11-10
+**Baseline gates (this step):** tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (28 routes) · smoke 11/11 on :4010
+**Open owner note:** (1) Apply migration `0009_admin_audit.sql`, then `0010_order_lifecycle.sql` and `0011_order_status_backfill.sql` (0010 then 0011 in **separate** executions) in the Supabase SQL editor; (2) Cashfree sandbox credentials can be added to `.env.local` whenever ready — Phase 6 · Step 7 stays 🔑 owner-blocked; (3) Phase 0 web tasks remain.
 
 ---
 
@@ -102,7 +102,9 @@
 | 4 | Webhooks & payment states | verified idempotent webhooks; orders + ledger reflect states; abandoned payments expire | ✅ done | feat(phase6): verified idempotent webhooks, ledger reflection, and abandoned order expiration | 2026-11-09 |
 | 5 | Refunds | full/partial via gateway API; states/ledger/UI/WhatsApp reflect | ✅ done | feat(phase6): full and partial refunds via gateway adapter with ledger and whatsapp reflection | 2026-11-09 |
 | 6 | Settlements | settlement reports synced; seller paid/pending/settled view; commission report | ✅ done | feat(phase6): settlement reports synced, seller paid/pending/settled view, and commission report | 2026-11-09 |
-| 7 | Go-live | sandbox E2E pass; legal pages live; activation checklist; production keys | ⬜ pending | — | — |
+| 7 | Go-live | sandbox E2E pass; legal pages live; activation checklist; production keys | 🔑 owner-blocked | — | 2026-11-10 |
+
+**Step 7 status (owner decision, 2026-11-10):** 🔑 owner-blocked — no Cashfree merchant account/sandbox keys in `.env.local` (all four `CASHFREE_*` values empty), and the legal pages have not been built. Phase 7 started ahead of it by owner choice; Phase 6 stays open at 6/7 and must not be reported as complete.
 
 **Phase done when:** a sandbox split order (UPI + card), a refund, and a vendor onboarding all pass end-to-end — and the owner has written pricing quotes + activation approval.
 
@@ -110,7 +112,7 @@
 
 | # | Step | Milestone (short) | Status | Commit | Date |
 |---|---|---|---|---|---|
-| 1 | Status machine | allowed transitions enforced; invalid rejected; documented | ⬜ pending | — | — |
+| 1 | Status machine | allowed transitions enforced; invalid rejected; documented | ✅ done | feat(phase7): order lifecycle state machine | 2026-11-10 |
 | 2 | Buyer history | my-orders page with live statuses; pagination-ready | ⬜ pending | — | — |
 | 3 | WhatsApp adapter | provider behind env; `wa.me` fallback; never blocks orders | ⬜ pending | — | — |
 | 4 | Templates | placed/accepted/ready/delivered/refunded previews + sandbox sends | ⬜ pending | — | — |
@@ -154,6 +156,7 @@
 
 | Date | Step | Outcome |
 |---|---|---|
+| 2026-11-10 | Phase 7 Step 1 ✔ | Status machine: **five-state lifecycle** `pending → accepted → ready → delivered` (`cancelled` from any pre-delivery state; `delivered`/`cancelled` terminal), with `completed` retired to a read-time alias. **`lib/utils/orderStatus.ts` rewritten as the single source of truth** — `ORDER_STATUSES`, `ALLOWED_ORDER_TRANSITIONS`, `isValidOrderTransition`, `normalizeOrderStatus` (legacy `completed` → `delivered`), `canCancelOrder`, and delivery-aware copy helpers (`getOrderStatusSummary` / `getOrderStatusLabel` / `getOrderActionLabel` / `getOrderSuccessMessage`); `types/index.ts` order union updated. **DB enforcement**: new `0010_order_lifecycle.sql` adds the `ready`/`delivered` enum values + `guard_order_status_transition` trigger (closes the raw-REST gap left by 0002's `guard_order_write`, which pins maker-editable fields but deliberately leaves `status` to the app; the trigger refuses skipped stages, moves out of terminal states, and any write into `completed`) + function revokes; `0011_order_status_backfill.sql` rewrites legacy `completed` rows to `delivered` (**owner runs 0010 then 0011 in separate executions** — Postgres won't use a new enum value in the transaction that adds it). **`PATCH /api/orders`** now validates against `ORDER_STATUSES` and normalises DB reads; **maker dashboard** gains Ready/Delivered tabs, badge colours, a single delivery-aware status line, and the two-step actions ("Mark Ready to Deliver/Pickup" → "Mark Delivered/Picked Up"); **admin console** mirrors the tabs/actions and analytics (`readyOrders` added, `completedOrders` renamed `deliveredOrders`, pulse/snapshot copy updated). **Refund rule tightened:** a full refund only cancels an order that is still pre-delivery; a `delivered` order keeps its status (the ledger records the refund, and stock is not restored a second time) — API + mock parity. Mock store normalises legacy rows on read; canonical machine documented in **`docs/order-lifecycle.md`**. Phase 6 Step 7 set 🔑 owner-blocked by owner decision (no Cashfree keys/legal pages) so Phase 7 could start; Phase 6 remains 6/7. Gates: tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (28 routes) · smoke 11/11 on :4010. Owner commit pending. |
 | 2026-11-09 | Phase 6 Step 6 ✔ | Settlements: new server route `GET`/`POST /api/settlements` connects `PaymentAdapter.getSettlements` with session-guarded seller isolation and admin-wide aggregation; calculates real-time commission report (gross GMV, maker share, 10% platform commissions, delivery fees); `lib/supabase/client.ts` extended with `getSettlementData` and `syncSettlements` with mock-mode parity; Maker dashboard adds dedicated "Payouts & Settlements" tab with paid/pending/commission KPI cards, Easy Split vendor details, and batch transfer history; Admin console adds live Marketplace Settlements & Commission Report with maker-by-maker ledger table and one-click gateway sync; tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (28 routes). Owner commit pending. |
 | 2026-11-09 | Phase 6 Step 5 ✔ | Refunds: new route `POST /api/orders/[id]/refund` + `GET` for full/partial refunds via universal `PaymentAdapter.createRefund` (with proportional vendor split reversals for Cashfree Easy Split); ledger transactions recorded with status & amount; `PATCH /api/orders` triggers auto-refund on cancellation of paid online orders; `lib/supabase/client.ts` extended with `refundOrder` and `getOrderTransactions` with mock-mode parity; Admin console order details gain gateway & split badges, one-click "Issue Refund" modal, and "WhatsApp Refund Receipt" click-to-chat; Maker dashboard cancellation prompts "Cancel & Refund" with `buildRefundWhatsAppUrl` integration; tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (27 routes). Owner commit pending. |
 | 2026-11-09 | Phase 6 Step 4 ✔ | Webhooks & payment states: `POST /api/webhooks/cashfree` verifies HMAC-SHA256 signatures via adapter, enforces DB-level idempotency via `transactions.gateway_event_id` unique constraint, transitions order `split_status = 'completed'` / updates `gateway_payment_ref` on SUCCESS, cancels & restores inventory on FAILED/USER_DROPPED, and records double-entry payments/commissions in the ledger; `POST /api/orders/expire-abandoned` safely sweeps pending online sessions older than threshold (30m), restoring product stock honestly; `lib/supabase/client.ts` extended with `processMockWebhook` and `expireAbandonedOrders` for mock parity; tsc ✅ · eslint ✅ (0 errors / 32 warnings) · build ✅ (26 routes). Owner commit pending. |

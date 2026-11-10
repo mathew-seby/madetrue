@@ -24,8 +24,10 @@ import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
 import { getServerUser, getOwnSellerId } from "@/lib/supabase/server-auth";
 import {
+  ORDER_STATUSES,
   isValidOrderTransition,
   getInvalidTransitionMessage,
+  normalizeOrderStatus,
 } from "@/lib/utils/orderStatus";
 import { getPaymentAdapter } from "@/lib/payments";
 
@@ -393,13 +395,8 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const validStatuses: Order["status"][] = [
-    "pending",
-    "accepted",
-    "completed",
-    "cancelled",
-  ];
-  if (!validStatuses.includes(newStatus)) {
+  const validStatuses = ORDER_STATUSES;
+  if (!(validStatuses as readonly string[]).includes(newStatus)) {
     return NextResponse.json(
       {
         error: `Invalid status "${newStatus}". Must be one of: ${validStatuses.join(
@@ -546,7 +543,8 @@ function mapOrderRow(row: Record<string, unknown>): Order {
     seller_id: row.seller_id as string,
     product_id: row.product_id as string,
     quantity: row.quantity as number,
-    status: row.status as Order["status"],
+    // Legacy rows may still say "completed"; the app calls it "delivered".
+    status: normalizeOrderStatus(row.status as string),
     delivery_type: row.delivery_type as Order["delivery_type"],
     address: row.address as string,
     payment_method: row.payment_method as Order["payment_method"],

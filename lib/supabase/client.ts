@@ -68,6 +68,8 @@ export type { OrderRefundDetailsResponse } from "./writeSupabase";
 import {
   isValidOrderTransition,
   getInvalidTransitionMessage,
+  normalizeOrderStatus,
+  canCancelOrder,
 } from "@/lib/utils/orderStatus";
 import { DEFAULT_CATEGORY_ICON } from "@/lib/utils/categories";
 
@@ -729,7 +731,13 @@ function getStoredOrders(): Order[] {
     const stored = localStorage.getItem("madetrue_orders");
     if (stored) {
       try {
-        return JSON.parse(stored) as Order[];
+        const parsed = JSON.parse(stored) as Order[];
+        // Legacy rows may still say "completed"; the live machine calls
+        // that state "delivered" (Phase 7 Step 1).
+        return parsed.map((order) => ({
+          ...order,
+          status: normalizeOrderStatus(order.status),
+        }));
       } catch (e) {
         console.error("Failed to parse stored orders", e);
       }
@@ -770,7 +778,7 @@ export async function getOrdersForSeller(sellerId: string): Promise<Order[]> {
 // Update the status of an order
 export async function updateOrderStatus(
   id: string,
-  status: 'pending' | 'accepted' | 'completed' | 'cancelled',
+  status: Order["status"],
   sellerId?: string
 ): Promise<Order | null> {
   if (isSupabaseEnabled()) {
@@ -1288,7 +1296,9 @@ export async function refundOrder(
   const isFullRefund = priorRefunded + refundAmount >= orderTotal;
   let updatedOrder = { ...order };
 
-  if (isFullRefund && order.status !== "cancelled") {
+  // A delivered order stays delivered: the refund is recorded in the
+  // ledger, but fulfilment already happened and the stock left the shop.
+  if (isFullRefund && canCancelOrder(order.status)) {
     updatedOrder = { ...order, status: "cancelled" };
     orders[index] = updatedOrder;
     saveStoredOrders(orders);

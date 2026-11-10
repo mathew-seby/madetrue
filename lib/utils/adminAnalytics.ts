@@ -34,7 +34,8 @@ export interface MakerLeaderRow {
 
 export interface AdminAnalytics {
   totalOrders: number;
-  completedOrders: number;
+  deliveredOrders: number;
+  readyOrders: number;
   acceptedOrders: number;
   pendingOrders: number;
   cancelledOrders: number;
@@ -66,7 +67,8 @@ export function computeAdminAnalytics(
 ): AdminAnalytics {
   const todayKey = new Date().toDateString();
 
-  let completedOrders = 0;
+  let deliveredOrders = 0;
+  let readyOrders = 0;
   let acceptedOrders = 0;
   let pendingOrders = 0;
   let cancelledOrders = 0;
@@ -83,8 +85,11 @@ export function computeAdminAnalytics(
       todayOrders += 1;
     }
     switch (order.status) {
-      case "completed":
-        completedOrders += 1;
+      case "delivered":
+        deliveredOrders += 1;
+        break;
+      case "ready":
+        readyOrders += 1;
         break;
       case "accepted":
         acceptedOrders += 1;
@@ -188,7 +193,8 @@ export function computeAdminAnalytics(
 
   return {
     totalOrders: orders.length,
-    completedOrders,
+    deliveredOrders,
+    readyOrders,
     acceptedOrders,
     pendingOrders,
     cancelledOrders,

@@ -3,6 +3,7 @@ import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
 import { getServerUser, getOwnSellerId } from "@/lib/supabase/server-auth";
 import { getPaymentAdapter } from "@/lib/payments";
+import { canCancelOrder, normalizeOrderStatus } from "@/lib/utils/orderStatus";
 import type { Order, SplitRecipient } from "@/types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -262,9 +263,11 @@ export async function POST(
 
   const isFullRefund = priorRefunded + refundAmount >= orderTotal;
 
-  // 8. If full refund, cancel order and restore stock
+  // 8. If full refund, cancel the order and restore stock — but only while
+  // it is still before delivery. A delivered order keeps its status (the
+  // goods already left the shop); the refund is recorded in the ledger.
   let updatedOrder: Order = order as unknown as Order;
-  if (isFullRefund && order.status !== "cancelled") {
+  if (isFullRefund && canCancelOrder(normalizeOrderStatus(String(order.status)))) {
     const { data: updated } = await supabase
       .from("orders")
       .update({ status: "cancelled" })

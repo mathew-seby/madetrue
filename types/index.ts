@@ -73,7 +73,7 @@ export interface Order {
   seller_id: string;
   product_id: string;
   quantity: number;
-  status: 'pending' | 'accepted' | 'completed' | 'cancelled';
+  status: 'pending' | 'accepted' | 'ready' | 'delivered' | 'cancelled';
   delivery_type: 'delivery' | 'pickup';
   address: string;
   payment_method: 'upi' | 'cod';
