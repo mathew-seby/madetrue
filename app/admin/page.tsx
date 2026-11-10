@@ -28,10 +28,12 @@ import {
   getAuditLog,
   recordAudit,
   fetchWhatsAppProviderStatusSupabase,
-  sendWhatsAppSandboxSendSupabase
+  sendWhatsAppSandboxSendSupabase,
+  getNotificationLogs,
+  retryNotification,
 } from "@/lib/supabase/client";
 import type { SellerApplicationAction, SellerPayoutDetails, SettlementsResponse, WhatsAppProviderStatus } from "@/lib/supabase/client";
-import { Order, Product, Seller, Category, AuditEntry, AuditEntityType } from "@/types";
+import { Order, Product, Seller, Category, AuditEntry, AuditEntityType, NotificationLog } from "@/types";
 import { DELIVERY_FEE } from "@/lib/utils/constants";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { CATEGORY_ICONS, DEFAULT_CATEGORY_ICON, slugifyName, isValidSlug, type CategoryIcon } from "@/lib/utils/categories";
@@ -52,7 +54,7 @@ import {
   ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
   Users, Send, Award, ShieldAlert, Calendar, CreditCard, RotateCcw, Landmark,
   Search, Trash2, EyeOff, ArrowDownUp, Layers, PenLine, ChartColumn, RefreshCw, History,
-  Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower, AlertCircle
+  Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower, AlertCircle, Loader2
 } from "lucide-react";
 
 // Pre-seed three demo orders the first time the admin console runs.
@@ -216,6 +218,13 @@ export default function AdminPage() {
   const [waTarget, setWaTarget] = useState("");
   const [waSending, setWaSending] = useState(false);
   const [waResult, setWaResult] = useState<string | null>(null);
+
+  // Delivery logs & retry hub (Phase 7 Step 6)
+  const [deliveryLogs, setDeliveryLogs] = useState<NotificationLog[]>([]);
+  const [deliveryLogsLoading, setDeliveryLogsLoading] = useState(false);
+  const [deliveryLogFilter, setDeliveryLogFilter] = useState<"all" | "delivered" | "fallback" | "failed">("all");
+  const [retryingLogId, setRetryingLogId] = useState<string | null>(null);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   // Payout display fields per maker store, hydrated from the private
   // seller_payout_kyc table (mock: inline on the seller row) by the
@@ -979,9 +988,52 @@ export default function AdminPage() {
     loadWhatsAppStatusRef.current = loadWhatsAppStatus;
   }, [loadWhatsAppStatus]);
 
+  const loadDeliveryLogs = useCallback(async () => {
+    setDeliveryLogsLoading(true);
+    try {
+      const logs = await getNotificationLogs(50);
+      setDeliveryLogs(logs);
+    } catch (err: unknown) {
+      console.warn("Could not load delivery logs:", err);
+    } finally {
+      setDeliveryLogsLoading(false);
+    }
+  }, []);
+
+  const handleRetryDelivery = async (logId: string) => {
+    setRetryingLogId(logId);
+    try {
+      const res = await retryNotification(logId);
+      if (res.success && res.log) {
+        showToast("Notification retried successfully.", "success");
+        setDeliveryLogs((prev) =>
+          prev.map((item) => (item.id === logId ? res.log : item))
+        );
+      } else {
+        showToast(res.error || "Retry attempt reported failure.", "error");
+        if (res.log) {
+          setDeliveryLogs((prev) =>
+            prev.map((item) => (item.id === logId ? res.log : item))
+          );
+        }
+      }
+    } catch {
+      showToast("Failed to retry notification delivery.", "error");
+    } finally {
+      setRetryingLogId(null);
+    }
+  };
+
+  const loadDeliveryLogsRef = useRef<() => Promise<void>>(null);
+
+  useEffect(() => {
+    loadDeliveryLogsRef.current = loadDeliveryLogs;
+  }, [loadDeliveryLogs]);
+
   useEffect(() => {
     if (currentSection === "whatsapp") {
       void loadWhatsAppStatusRef.current?.();
+      void loadDeliveryLogsRef.current?.();
     }
   }, [currentSection]);
 
@@ -2980,6 +3032,242 @@ export default function AdminPage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Notification Delivery Log & Retry Hub (Phase 7 Step 6) */}
+            <div className="bg-[#FAF7F2] p-6 rounded-3xl border border-warm-brown/10 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-warm-brown/10 pb-4">
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-text-dark flex items-center gap-2">
+                    <History className="h-5 w-5 text-primary-green" /> Notification Delivery Log
+                  </h3>
+                  <p className="text-xs text-text-dark/60 mt-0.5">
+                    Live audit of every customer update and maker alert. Distinguishes delivered messages, honest wa.me fallbacks, and delivery failures.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadDeliveryLogs()}
+                  disabled={deliveryLogsLoading}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-warm-brown/15 hover:border-primary-green/30 hover:text-primary-green text-warm-brown rounded-xl text-xs font-bold transition cursor-pointer self-start sm:self-auto font-sans shadow-2xs disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${deliveryLogsLoading ? "animate-spin" : ""}`} />
+                  Refresh Log
+                </button>
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: "all", label: "All Logs", count: deliveryLogs.length },
+                  {
+                    id: "delivered",
+                    label: "Delivered",
+                    count: deliveryLogs.filter((l) => l.status === "delivered").length,
+                  },
+                  {
+                    id: "fallback",
+                    label: "Fallback (wa.me)",
+                    count: deliveryLogs.filter((l) => l.status === "fallback").length,
+                  },
+                  {
+                    id: "failed",
+                    label: "Failed",
+                    count: deliveryLogs.filter((l) => l.status === "failed").length,
+                  },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() =>
+                      setDeliveryLogFilter(
+                        tab.id as "all" | "delivered" | "fallback" | "failed"
+                      )
+                    }
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold font-sans transition cursor-pointer flex items-center gap-1.5 ${
+                      deliveryLogFilter === tab.id
+                        ? "bg-primary-green text-cream-bg shadow-2xs"
+                        : "bg-white text-text-dark/70 border border-warm-brown/10 hover:border-warm-brown/30"
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                        deliveryLogFilter === tab.id
+                          ? "bg-white/20 text-cream-bg"
+                          : "bg-warm-brown/10 text-warm-brown"
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Log Entries List */}
+              {(() => {
+                const filtered = deliveryLogs.filter(
+                  (l) => deliveryLogFilter === "all" || l.status === deliveryLogFilter
+                );
+
+                if (deliveryLogsLoading && deliveryLogs.length === 0) {
+                  return (
+                    <div className="py-12 text-center space-y-2">
+                      <Loader2 className="h-6 w-6 text-warm-brown/50 animate-spin mx-auto" />
+                      <p className="text-xs text-text-dark/60 font-medium font-sans">
+                        Loading notification delivery logs…
+                      </p>
+                    </div>
+                  );
+                }
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-12 text-center bg-white rounded-2xl border border-warm-brown/10 space-y-2">
+                      <Inbox className="h-8 w-8 text-warm-brown/40 mx-auto" />
+                      <p className="text-xs text-text-dark/70 font-bold font-sans">
+                        No delivery logs found
+                      </p>
+                      <p className="text-[11px] text-text-dark/50 max-w-sm mx-auto font-sans">
+                        {deliveryLogFilter === "all"
+                          ? "When customer orders move through their lifecycle, delivery attempts will log here automatically."
+                          : `There are currently no logs matching the "${deliveryLogFilter}" filter.`}
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-3 font-sans">
+                    {filtered.map((log) => {
+                      const isExpanded = expandedLogId === log.id;
+                      const isRetrying = retryingLogId === log.id;
+                      const dateObj = new Date(log.created_at);
+                      const timeStr = !Number.isNaN(dateObj.getTime())
+                        ? dateObj.toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : log.created_at;
+
+                      return (
+                        <div
+                          key={log.id}
+                          className="bg-white rounded-2xl border border-warm-brown/10 p-4 shadow-2xs hover:border-primary-green/20 transition space-y-3"
+                        >
+                          {/* Top Row: Event + Meta + Status Badge */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-warm-brown/5 text-xs">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-[10px] text-text-dark/40 font-semibold">
+                                {timeStr}
+                              </span>
+                              <span className="font-bold text-text-dark uppercase tracking-wider text-[10px] bg-warm-brown/5 px-2 py-0.5 rounded-md border border-warm-brown/10">
+                                {log.event}
+                              </span>
+                              {log.order_id && (
+                                <span className="font-mono text-[10px] text-primary-green font-bold bg-primary-green/10 px-2 py-0.5 rounded-md">
+                                  #{log.order_id}
+                                </span>
+                              )}
+                              <span className="text-[10px] font-semibold text-text-dark/60">
+                                to {log.recipient_phone} ({log.recipient_role})
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {/* Status Chip */}
+                              {log.status === "delivered" && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-primary-green bg-primary-green/15 border border-primary-green/25 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                  <CheckCircle className="h-3 w-3" /> Delivered
+                                </span>
+                              )}
+                              {log.status === "fallback" && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                  <Clock className="h-3 w-3" /> Fallback (wa.me)
+                                </span>
+                              )}
+                              {log.status === "failed" && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 border border-red-200 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                  <X className="h-3 w-3" /> Failed
+                                </span>
+                              )}
+
+                              {/* Provider Badge */}
+                              <span className="text-[10px] font-mono text-text-dark/50 bg-warm-brown/5 px-2 py-0.5 rounded border border-warm-brown/10">
+                                {log.provider}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Middle: Details & Error Note if any */}
+                          <div className="text-xs space-y-1.5">
+                            {log.error_message && (
+                              <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/70 text-[11px] text-amber-900 leading-relaxed">
+                                <strong>Reason / Provider Note:</strong> {log.error_message}
+                              </div>
+                            )}
+
+                            {log.provider_ref && (
+                              <p className="text-[11px] text-text-dark/50 font-mono">
+                                Provider Ref: <span className="text-text-dark font-semibold">{log.provider_ref}</span>
+                              </p>
+                            )}
+
+                            {log.retry_count > 0 && (
+                              <p className="text-[10px] text-warm-brown font-semibold">
+                                Retried {log.retry_count} {log.retry_count === 1 ? "time" : "times"}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Message Body (collapsible) */}
+                          <div className="text-xs pt-1">
+                            {isExpanded ? (
+                              <div className="p-3 bg-[#DCF8C6]/30 border border-[#25D366]/20 rounded-xl text-text-dark font-sans text-xs leading-relaxed whitespace-pre-line space-y-2">
+                                <p>{log.body}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedLogId(null)}
+                                  className="text-[10px] font-bold text-primary-green hover:underline cursor-pointer block"
+                                >
+                                  Collapse message ▲
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-between text-text-dark/70 text-xs">
+                                <span className="truncate max-w-md text-[11px] text-text-dark/60 italic">
+                                  &ldquo;{log.body.slice(0, 90)}…&rdquo;
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedLogId(log.id)}
+                                  className="text-[10px] font-bold text-primary-green hover:underline cursor-pointer ml-2 shrink-0"
+                                >
+                                  View message ▼
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action Footer: Retry */}
+                          <div className="flex items-center justify-end gap-2 pt-2 border-t border-warm-brown/5">
+                            <button
+                              type="button"
+                              onClick={() => void handleRetryDelivery(log.id)}
+                              disabled={isRetrying}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-warm-brown/10 hover:bg-warm-brown/20 text-warm-brown rounded-lg text-xs font-bold font-sans transition cursor-pointer disabled:opacity-50"
+                            >
+                              <RefreshCw className={`h-3 w-3 ${isRetrying ? "animate-spin" : ""}`} />
+                              {isRetrying ? "Retrying…" : "Retry Send"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}

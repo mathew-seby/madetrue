@@ -194,3 +194,23 @@ export type {
   RegisterVendorResult,
 } from "@/lib/payments/types";
 
+// Notification delivery log (Phase 7 Step 6)
+export type NotificationDeliveryStatus = 'delivered' | 'failed' | 'fallback';
+
+export interface NotificationLog {
+  id: string;
+  order_id?: string | null;
+  recipient_phone: string;
+  recipient_role: 'buyer' | 'maker' | 'admin' | 'sandbox';
+  event: string;
+  channel: 'whatsapp';
+  provider: string;
+  status: NotificationDeliveryStatus;
+  provider_ref?: string | null;
+  error_message?: string | null;
+  retry_count: number;
+  last_attempt_at: string;
+  created_at: string;
+  body: string;
+}
+

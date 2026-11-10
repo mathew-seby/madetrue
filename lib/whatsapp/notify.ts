@@ -22,28 +22,50 @@ import {
 } from "./templates";
 import { getWhatsAppProvider } from "./index";
 import type { SendWhatsAppResult } from "./types";
+import { recordNotificationLogServer } from "./deliveryLog";
 
 const NO_RECIPIENT = "No WhatsApp number on file for this update.";
 
 export async function sendOrderWhatsApp(params: {
   to?: string | null;
   body: string;
+  orderId?: string | null;
+  recipientRole?: "buyer" | "maker" | "admin" | "sandbox";
+  event?: string;
 }): Promise<SendWhatsAppResult> {
   const to = normalizeWhatsAppPhone(params.to ?? "");
+  let result: SendWhatsAppResult;
   if (!to) {
-    return { sent: false, provider: "none", reason: NO_RECIPIENT };
+    result = { sent: false, provider: "none", reason: NO_RECIPIENT };
+  } else {
+    try {
+      result = await getWhatsAppProvider().send({ to, body: params.body });
+    } catch (err: unknown) {
+      // Defensive: providers already guard internally, but an order must
+      // never fail over WhatsApp no matter what happens here.
+      result = {
+        sent: false,
+        provider: "none",
+        reason: err instanceof Error ? err.message : "WhatsApp send failed.",
+      };
+    }
   }
+
+  // Phase 7 Step 6: Log attempt to delivery log (never throws)
   try {
-    return await getWhatsAppProvider().send({ to, body: params.body });
-  } catch (err: unknown) {
-    // Defensive: providers already guard internally, but an order must
-    // never fail over WhatsApp no matter what happens here.
-    return {
-      sent: false,
-      provider: "none",
-      reason: err instanceof Error ? err.message : "WhatsApp send failed.",
-    };
+    void recordNotificationLogServer({
+      orderId: params.orderId,
+      recipientPhone: to || "no_number",
+      recipientRole: params.recipientRole || "buyer",
+      event: params.event || "order_notification",
+      body: params.body,
+      result,
+    }).catch(() => {});
+  } catch {
+    // Non-fatal
   }
+
+  return result;
 }
 
 /**
@@ -79,9 +101,13 @@ export async function sendBuyerStatusUpdate(
   order: Order,
   storeName?: string | null
 ): Promise<SendWhatsAppResult> {
+  const event: TemplateEventByStatus = STATUS_TO_TEMPLATE[order.status];
   return sendOrderWhatsApp({
     to: order.buyer_phone ?? null,
     body: buildBuyerStatusMessage(order, storeName),
+    orderId: order.id,
+    recipientRole: "buyer",
+    event,
   });
 }
 

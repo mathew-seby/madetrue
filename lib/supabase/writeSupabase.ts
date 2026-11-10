@@ -17,6 +17,7 @@ import type {
   Transaction,
   PlatformCommissionReport,
   SettlementSummary,
+  NotificationLog,
 } from "../../types";
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
@@ -550,6 +551,32 @@ export async function rejectOrderCancellationSupabase(
   );
   return res.order;
 }
+
+// ---------------------------------------------------------------------------
+// Notification Delivery Logs & Retries (Phase 7 Step 6)
+// ---------------------------------------------------------------------------
+
+export async function fetchNotificationLogsSupabase(
+  limit = 50
+): Promise<NotificationLog[]> {
+  return requestJson<NotificationLog[]>(
+    `/api/whatsapp/delivery-log?limit=${encodeURIComponent(limit)}`,
+    { method: "GET" }
+  );
+}
+
+export async function retryNotificationLogSupabase(
+  logId: string
+): Promise<{ success: boolean; log: NotificationLog; error?: string }> {
+  return requestJson<{ success: boolean; log: NotificationLog; error?: string }>(
+    "/api/whatsapp/delivery-log",
+    {
+      method: "POST",
+      body: JSON.stringify({ logId }),
+    }
+  );
+}
+
 
 
 

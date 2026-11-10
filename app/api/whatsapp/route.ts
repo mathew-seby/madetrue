@@ -136,7 +136,13 @@ export async function POST(request: Request) {
   const message = buildSampleTemplate(event);
 
   // The Step 3 notify layer never throws; every outcome is data.
-  const result = await sendOrderWhatsApp({ to, body: message });
+  const result = await sendOrderWhatsApp({
+    to,
+    body: message,
+    orderId: null,
+    recipientRole: "sandbox",
+    event: `sandbox_${event}`,
+  });
 
   // Audit the attempt (honest, non-fatal — server-side inserts only).
   try {

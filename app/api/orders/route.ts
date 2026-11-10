@@ -379,11 +379,15 @@ export async function POST(request: Request) {
           business_name: string | null;
           whatsapp_number: string | null;
         }>).map(async (maker) => {
-          const count = inserted.filter((o) => o.seller_id === maker.id).length;
+          const makerOrders = inserted.filter((o) => o.seller_id === maker.id);
+          const count = makerOrders.length;
           if (count === 0) return;
           await sendOrderWhatsApp({
             to: maker.whatsapp_number ?? null,
             body: buildMakerPlacedMessage(maker.business_name ?? "maker", count),
+            orderId: makerOrders[0]?.id ?? null,
+            recipientRole: "maker",
+            event: "makerPlaced",
           });
         })
       );

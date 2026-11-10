@@ -10,6 +10,7 @@ import {
   PlatformCommissionReport,
   SettlementSummary,
   MakerCommissionReportRow,
+  NotificationLog,
 } from "../../types";
 import { isSupabaseEnabled } from "./dataSource";
 import {
@@ -52,6 +53,8 @@ import {
   requestOrderCancellationSupabase,
   approveOrderCancellationSupabase,
   rejectOrderCancellationSupabase,
+  fetchNotificationLogsSupabase,
+  retryNotificationLogSupabase,
   type RefundOrderResponse,
   type SettlementsResponse,
   type SellerApplicationAction,
@@ -1615,6 +1618,139 @@ export async function syncSettlements(
     success: true,
     count: summary.settlements.length,
     summary,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Notification Delivery Logs & Retries (Phase 7 Step 6)
+// ---------------------------------------------------------------------------
+
+function getStoredNotificationLogs(): NotificationLog[] {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("madetrue_notification_logs");
+    if (stored) {
+      try {
+        return JSON.parse(stored) as NotificationLog[];
+      } catch {
+        // Fall back to seed
+      }
+    }
+
+    // Honest seed logs for mock testing
+    const sampleLogs: NotificationLog[] = [
+      {
+        id: "log_mock_1",
+        order_id: "MT-8B3F21C9",
+        recipient_phone: "919876543210",
+        recipient_role: "buyer",
+        event: "accepted",
+        channel: "whatsapp",
+        provider: "twilio",
+        status: "delivered",
+        provider_ref: "SM8f3b2a9e102b",
+        retry_count: 0,
+        last_attempt_at: new Date(Date.now() - 3600000).toISOString(),
+        created_at: new Date(Date.now() - 3600000).toISOString(),
+        body: "Hi Ananya — good news! Meenachil Apiaries accepted your order #MT-8B3F21C9 and is preparing it now. Track updates on My Orders.",
+      },
+      {
+        id: "log_mock_2",
+        order_id: "MT-4C1A98D2",
+        recipient_phone: "919876543211",
+        recipient_role: "maker",
+        event: "makerPlaced",
+        channel: "whatsapp",
+        provider: "none",
+        status: "fallback",
+        error_message: "No WhatsApp provider configured — fell back to wa.me click-to-chat.",
+        retry_count: 0,
+        last_attempt_at: new Date(Date.now() - 1800000).toISOString(),
+        created_at: new Date(Date.now() - 1800000).toISOString(),
+        body: "Hello Sreedevi's Traditional Kitchen! You have 1 new MADETRUE order waiting. Open your maker dashboard to accept.",
+      },
+      {
+        id: "log_mock_3",
+        order_id: "MT-2F9E54B1",
+        recipient_phone: "919876543212",
+        recipient_role: "buyer",
+        event: "cancelled",
+        channel: "whatsapp",
+        provider: "wati",
+        status: "failed",
+        error_message: "Gateway timeout (8000ms exceeded). Recipient carrier network busy.",
+        retry_count: 1,
+        last_attempt_at: new Date(Date.now() - 600000).toISOString(),
+        created_at: new Date(Date.now() - 900000).toISOString(),
+        body: "Hi Devaki — your MADETRUE order #MT-2F9E54B1 was cancelled and a refund of ₹450 has been processed via payment gateway.",
+      },
+    ];
+
+    localStorage.setItem("madetrue_notification_logs", JSON.stringify(sampleLogs));
+    return sampleLogs;
+  }
+  return [];
+}
+
+export async function getNotificationLogs(limit = 50): Promise<NotificationLog[]> {
+  if (isSupabaseEnabled()) {
+    return fetchNotificationLogsSupabase(limit);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const logs = getStoredNotificationLogs();
+  return logs
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, limit);
+}
+
+export async function retryNotification(
+  logId: string
+): Promise<{ success: boolean; log: NotificationLog; error?: string }> {
+  if (isSupabaseEnabled()) {
+    return retryNotificationLogSupabase(logId);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const logs = getStoredNotificationLogs();
+  const idx = logs.findIndex((l) => l.id === logId);
+  if (idx === -1) {
+    return {
+      success: false,
+      error: `Notification log "${logId}" not found.`,
+      log: null as unknown as NotificationLog,
+    };
+  }
+
+  const existing = logs[idx];
+  const newRetryCount = (existing.retry_count ?? 0) + 1;
+  const updatedLog: NotificationLog = {
+    ...existing,
+    status: "delivered",
+    provider: existing.provider === "none" ? "mock" : existing.provider,
+    provider_ref: `mock_ref_${Date.now()}`,
+    error_message: null,
+    retry_count: newRetryCount,
+    last_attempt_at: new Date().toISOString(),
+  };
+
+  logs[idx] = updatedLog;
+  if (typeof window !== "undefined") {
+    localStorage.setItem("madetrue_notification_logs", JSON.stringify(logs));
+  }
+
+  recordAudit({
+    actor_name: "Console Admin",
+    actor_email: "support@madetrue.local",
+    entity_type: "order",
+    entity_id: existing.order_id || logId,
+    entity_label: `Notification ${existing.event}`,
+    action: "notification_retry",
+    summary: `Retried notification attempt #${newRetryCount} to ${existing.recipient_phone} via ${updatedLog.provider}. Marked delivered.`,
+  });
+
+  return {
+    success: true,
+    log: updatedLog,
   };
 }
 

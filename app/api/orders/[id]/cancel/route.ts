@@ -172,6 +172,9 @@ export async function POST(
           order.product_name ?? "ordered item",
           cancelReason
         ),
+        orderId: order.id,
+        recipientRole: "maker",
+        event: "cancellation_requested",
       });
     }
 
