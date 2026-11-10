@@ -7,9 +7,21 @@ import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Product, Seller } from "@/types";
 import { ShoppingCart, Heart, Store, Check, X } from "lucide-react";
 
-export default function TrendingProducts() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [sellers, setSellers] = useState<{ [key: string]: Seller }>({});
+interface TrendingProductsProps {
+  initialProducts?: Product[];
+  initialSellers?: { [key: string]: Seller };
+}
+
+export default function TrendingProducts({
+  initialProducts,
+  initialSellers,
+}: TrendingProductsProps = {}) {
+  const [products, setProducts] = useState<Product[]>(
+    initialProducts ? initialProducts.slice(0, 4) : []
+  );
+  const [sellers, setSellers] = useState<{ [key: string]: Seller }>(
+    initialSellers ?? {}
+  );
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
   const [cappedProductId, setCappedProductId] = useState<string | null>(null);
 
@@ -31,6 +43,7 @@ export default function TrendingProducts() {
   };
 
   useEffect(() => {
+    if (initialProducts && initialProducts.length > 0 && initialSellers) return;
     async function load() {
       const prodData = await getProducts();
       const sellerData = await getSellers();
@@ -45,7 +58,7 @@ export default function TrendingProducts() {
       setSellers(sellerMap);
     }
     load();
-  }, []);
+  }, [initialProducts, initialSellers]);
 
   // Badge background color map
   const getBadgeStyle = (tag: string) => {

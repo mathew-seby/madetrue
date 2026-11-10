@@ -1,89 +1,35 @@
-"use client";
-
-import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { getProductById, getSellerById, getProductsBySellerId } from "@/lib/supabase/client";
-import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
-import { Product, Seller } from "@/types";
-import { calculateDistance } from "@/lib/utils/distance";
-import { useUserLocation } from "@/lib/hooks/useUserLocation";
 import SellerMap from "@/components/map/SellerMap";
-import DistanceBadge from "@/components/map/DistanceBadge";
-import { MapPin, Store, ArrowLeft, ShoppingBag, Heart, ShieldAlert, Sparkles, Zap, Navigation } from "lucide-react";
+import ProductOrderActions from "@/components/product/ProductOrderActions";
+import ProductDistanceBadge from "@/components/product/ProductDistanceBadge";
+import { MapPin, Store, ArrowLeft, ShieldAlert, Sparkles, Navigation } from "lucide-react";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export default function ProductDetailPage({ params }: PageProps) {
-  const { id } = use(params);
-
-  const [product, setProduct] = useState<Product | null>(null);
-  const [seller, setSeller] = useState<Seller | null>(null);
-  const [makerProducts, setMakerProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [quantity, setQuantity] = useState(1);
-  const [addedToCart, setAddedToCart] = useState(false);
-  const [basketFullCue, setBasketFullCue] = useState(false);
-
-  const router = useRouter();
-  const { addItem, items } = useCart();
-  const { userCoords, requestLocation } = useUserLocation();
-
-  const handleAddToBasket = () => {
-    if (!product) return;
-    // Honest feedback: the basket may already hold every unit in stock —
-    // the provider would no-op the add, so say so instead of "added".
-    if (isAtBasketCap(items, product)) {
-      setBasketFullCue(true);
-      setTimeout(() => setBasketFullCue(false), 2000);
-      return;
-    }
-    addItem(product, quantity);
-    setAddedToCart(true);
-    setTimeout(() => {
-      setAddedToCart(false);
-    }, 2000);
-  };
-
-  // Express route: basket the selection, then jump straight to checkout.
-  const handleBuyNow = () => {
-    if (!product) return;
-    addItem(product, quantity);
-    router.push("/checkout");
-  };
-
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-      const prod = await getProductById(id);
-      if (prod) {
-        setProduct(prod);
-        const sel = await getSellerById(prod.seller_id);
-        if (sel) {
-          setSeller(sel);
-          const others = await getProductsBySellerId(sel.id);
-          // Exclude current product
-          setMakerProducts(others.filter((p) => p.id !== prod.id).slice(0, 3));
-        }
-      }
-      setLoading(false);
-    }
-    loadData();
-
-    // Ask for location so the "km away" badge is real — on a refusal or
-    // failure the hook keeps userCoords null and the badge simply stays hidden.
-    requestLocation();
-  }, [id, requestLocation]);
-
-  if (loading) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 py-16 text-center text-sm font-semibold text-warm-brown">
-        Loading product details...
-      </div>
-    );
+function getBadgeStyle(tag: string) {
+  switch (tag) {
+    case "Same Day Delivery":
+      return "bg-primary-green/10 text-primary-green";
+    case "Pickup Available":
+      return "bg-warm-brown/10 text-warm-brown";
+    case "Fresh Today":
+      return "bg-accent-gold/20 text-warm-brown";
+    case "Locally Made":
+      return "bg-emerald-100 text-emerald-800";
+    case "Eco-Friendly":
+      return "bg-blue-50 text-blue-800";
+    default:
+      return "bg-gray-100 text-gray-800";
   }
+}
+
+export default async function ProductDetailPage({ params }: PageProps) {
+  const { id } = await params;
+
+  const product = await getProductById(id);
 
   if (!product) {
     return (
@@ -101,30 +47,15 @@ export default function ProductDetailPage({ params }: PageProps) {
     );
   }
 
-  // Distance only exists when the visitor actually shared location — the image
-  // badge and the maker strip stay silent instead of measuring from Kochi.
-  const distance = seller && userCoords
-    ? calculateDistance(userCoords.lat, userCoords.lng, seller.lat, seller.lng)
-    : null;
+  // Parallel fetch maker and sibling items
+  const [seller, siblingProducts] = await Promise.all([
+    getSellerById(product.seller_id),
+    getProductsBySellerId(product.seller_id),
+  ]);
 
-
-
-  const getBadgeStyle = (tag: string) => {
-    switch (tag) {
-      case "Same Day Delivery":
-        return "bg-primary-green/10 text-primary-green";
-      case "Pickup Available":
-        return "bg-warm-brown/10 text-warm-brown";
-      case "Fresh Today":
-        return "bg-accent-gold/20 text-warm-brown";
-      case "Locally Made":
-        return "bg-emerald-100 text-emerald-800";
-      case "Eco-Friendly":
-        return "bg-blue-50 text-blue-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
+  const makerProducts = siblingProducts
+    .filter((p) => p.id !== product.id && p.is_available && !p.is_hidden)
+    .slice(0, 3);
 
   return (
     <div className="bg-cream-bg min-h-screen pb-16">
@@ -151,10 +82,9 @@ export default function ProductDetailPage({ params }: PageProps) {
               alt={product.name}
               className="w-full h-full object-cover"
             />
-            {distance !== null && seller && (
+            {seller && (
               <div className="absolute top-4 left-4">
-                <DistanceBadge
-                  distance={distance}
+                <ProductDistanceBadge
                   lat={seller.lat}
                   lng={seller.lng}
                   address={seller.address}
@@ -207,7 +137,7 @@ export default function ProductDetailPage({ params }: PageProps) {
 
             {/* Origin Details Block */}
             <div className="p-4 rounded-xl bg-primary-green/5 border border-primary-green/10 flex items-start space-x-3">
-              <Sparkles className="h-5 w-5 text-primary-green flex-shrink-0 mt-0.5" />
+              <Sparkles className="h-5 w-5 text-primary-green shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-primary-green">
                   Origin & Raw Details
@@ -232,56 +162,9 @@ export default function ProductDetailPage({ params }: PageProps) {
               </div>
             )}
 
-            {/* Quantity and Order Panel */}
-            <div className="pt-4 border-t border-warm-brown/5 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-text-dark/65 uppercase tracking-wider">
-                  Quantity
-                </span>
-                <div className="flex items-center border border-warm-brown/20 rounded-xl overflow-hidden bg-cream-bg">
-                  <button
-                    disabled={product.stock === 0 || !product.is_available}
-                    onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                    className="px-3.5 py-1.5 hover:bg-warm-brown/5 text-text-dark font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    -
-                  </button>
-                  <span className="px-4 text-sm font-semibold text-text-dark">
-                    {product.stock === 0 || !product.is_available ? 0 : quantity}
-                  </span>
-                  <button
-                    disabled={product.stock === 0 || !product.is_available}
-                    onClick={() => setQuantity((q) => Math.min(product.stock, q + 1))}
-                    className="px-3.5 py-1.5 hover:bg-warm-brown/5 text-text-dark font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {/* Order Actions */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button
-                  disabled={product.stock === 0 || !product.is_available}
-                  onClick={handleAddToBasket}
-                  className="inline-flex items-center justify-center px-5 py-3 rounded-xl bg-primary-green text-cream-bg font-semibold text-sm hover:bg-[#224f3b] transition duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary-green"
-                >
-                  <ShoppingBag className="h-4.5 w-4.5 mr-2" />
-                  {addedToCart
-                    ? "Added to Basket! ✓"
-                    : basketFullCue
-                      ? "Basket is Full"
-                      : "Add to Basket"}
-                </button>
-                <button
-                  disabled={product.stock === 0 || !product.is_available}
-                  onClick={handleBuyNow}
-                  className="inline-flex items-center justify-center px-5 py-3 bg-warm-brown hover:bg-[#684a30] text-cream-bg font-semibold text-sm rounded-xl transition duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-warm-brown"
-                >
-                  <Zap className="h-4.5 w-4.5 mr-2 fill-cream-bg" />
-                  Buy Now
-                </button>
-              </div>
+            {/* Quantity and Order Panel Island */}
+            <div className="pt-4 border-t border-warm-brown/5">
+              <ProductOrderActions product={product} />
             </div>
           </div>
         </div>
@@ -335,7 +218,7 @@ export default function ProductDetailPage({ params }: PageProps) {
                   Where this comes from
                 </span>
                 <div className="flex items-start text-sm leading-relaxed text-text-dark/70">
-                  <MapPin className="h-4 w-4 mr-2 text-primary-green flex-shrink-0 mt-0.5" />
+                  <MapPin className="h-4 w-4 mr-2 text-primary-green shrink-0 mt-0.5" />
                   <span>{seller.address}</span>
                 </div>
                 <a

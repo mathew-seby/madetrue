@@ -1,22 +1,15 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getSellers } from "@/lib/supabase/client";
 import { Seller } from "@/types";
 import { MapPin, CheckCircle2, ArrowRight } from "lucide-react";
 
-export default function MeetMakers() {
-  const [makers, setMakers] = useState<Seller[]>([]);
+interface MeetMakersProps {
+  makers?: Seller[];
+}
 
-  useEffect(() => {
-    async function load() {
-      const data = await getSellers();
-      // Show first 3 makers on the homepage
-      setMakers(data.slice(0, 3));
-    }
-    load();
-  }, []);
+export default async function MeetMakers({ makers: initialMakers }: MeetMakersProps) {
+  const allMakers = initialMakers ?? (await getSellers());
+  const makers = allMakers.slice(0, 3);
 
   return (
     <section id="meet-makers" className="bg-[#FAF7F2] py-16 px-4 sm:px-6 lg:px-8 border-t border-warm-brown/5">
@@ -48,12 +41,12 @@ export default function MeetMakers() {
           {makers.map((maker) => (
             <div
               key={maker.id}
-              className="bg-cream-bg rounded-2xl border border-warm-brown/10 p-6 flex flex-col justify-between hover:shadow-lg transition duration-300"
+              className="bg-white rounded-3xl p-6 border border-warm-brown/10 hover:border-primary-green/30 hover:shadow-lg transition duration-300 flex flex-col justify-between space-y-6"
             >
+              {/* Top part: Image and Name */}
               <div className="space-y-4">
-                {/* Photo & Header */}
                 <div className="flex items-center space-x-4">
-                  <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-primary-green/20">
+                  <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-primary-green/20">
                     <img
                       src={maker.profile_photo_url}
                       alt={maker.business_name}
@@ -61,36 +54,33 @@ export default function MeetMakers() {
                     />
                   </div>
                   <div>
-                    <div className="flex items-center space-x-1.5">
-                      <h3 className="font-serif text-lg font-bold text-text-dark">
-                        {maker.business_name}
-                      </h3>
+                    <h3 className="font-serif text-lg font-bold text-text-dark flex items-center">
+                      <span>{maker.business_name}</span>
                       {maker.is_verified && (
-                        <span title="Verified Producer">
-                          <CheckCircle2 className="h-4.5 w-4.5 text-primary-green fill-primary-green/10" />
-                        </span>
+                        <CheckCircle2 className="h-4 w-4 ml-1.5 text-primary-green flex-shrink-0" />
                       )}
-                    </div>
-                    <div className="flex items-center text-xs text-warm-brown font-medium mt-0.5">
-                      <MapPin className="h-3 w-3 mr-1 text-primary-green" />
-                      <span>{maker.address.split(",")[maker.address.split(",").length - 3] || "Kerala"}</span>
+                    </h3>
+                    <div className="flex items-center text-xs text-text-dark/60 mt-0.5">
+                      <MapPin className="h-3.5 w-3.5 mr-1 text-warm-brown" />
+                      <span className="truncate max-w-[180px]">{maker.address}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Story */}
-                <p className="text-sm text-text-dark/85 italic leading-relaxed pl-2 border-l-2 border-accent-gold/40">
-                  &ldquo;{maker.story.substring(0, 180)}...&rdquo;
+                {/* Story Snippet */}
+                <p className="text-sm text-text-dark/80 italic leading-relaxed line-clamp-3">
+                  &ldquo;{maker.story}&rdquo;
                 </p>
               </div>
 
-              {/* Support CTA */}
-              <div className="mt-6 pt-4 border-t border-warm-brown/5">
+              {/* Action Button */}
+              <div className="pt-4 border-t border-warm-brown/5 flex items-center justify-between">
                 <Link
                   href={`/sellers/${maker.id}`}
-                  className="w-full inline-flex items-center justify-center px-4 py-2 border border-warm-brown/20 rounded-xl text-xs font-bold text-warm-brown hover:bg-warm-brown/5 hover:border-warm-brown/60 transition"
+                  className="inline-flex items-center text-xs font-bold uppercase tracking-wider text-primary-green hover:underline"
                 >
                   Meet the Maker
+                  <ArrowRight className="ml-1 h-3.5 w-3.5" />
                 </Link>
               </div>
             </div>
