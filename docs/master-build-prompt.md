@@ -116,10 +116,16 @@ with docs/build-progress.md or git log, the tracker + git win)
   category CRUD with unique slugs and live public navigation; platform analytics
   (GMV, commissions, fees, top makers leaderboard); durable moderation audit trail
   (migration 0009_admin_audit.sql, admin-guarded /api/audit, and console feed).
-- Phases 6,7,9,10 ⬜ PENDING. Canonical next: Phase 6 · Step 1 (Payment adapter & prerequisites).
-- Baseline gates: tsc clean · eslint 0 errors / 33 warnings · build ✅ (23 routes).
+- Phase 7 ✅ COMPLETE (7/7) — Order lifecycle & notifications: 5-state status machine
+  (pending→accepted→ready→delivered, cancelled); buyer history at /orders; universal
+  WhatsApp adapter (twilio/wati/none) with wa.me fallback; pure template family for all
+  7 lifecycle events; cancellation lifecycle (request→approve→refund) with Phase 6 adapter
+  refund and inventory restore; durable delivery log & retry hub in admin console;
+  automated E2E journey test (scripts/verifyPhase7Journey.ts).
+- Phase 6 is 6/7 (Step 7 🔑 owner-blocked pending live Cashfree credentials). Canonical next: Phase 9 · Step 1 (Legal pages).
+- Baseline gates: tsc clean · eslint 0 errors / 32 warnings · build ✅ (32 routes).
   Do NOT fix pre-existing warnings unless asked.
-- Snapshot date: 2026-11-09 (commit "feat(phase5): audit trail — actor, entity, and moderation history").
+- Snapshot date: 2026-11-10 (commit "feat(phase7): e2e journey verification and phase 7 closure").
 
 ## 6. CANONICAL ROADMAP — EXACTLY 7 STEPS PER PHASE (fixed numbering)
 Rules: one step = one session turn = one owner commit. Never renumber; if a
@@ -135,6 +141,7 @@ step must split, use 3a/3b under the same number. Statuses: ⬜ pending ·
 | 3 | Auth & roles | ✅ 7/7 |
 | 4 | Seller dashboard | ✅ 7/7 |
 | 5 | Admin console | ✅ 7/7 |
+| 7 | Order lifecycle & notifications | ✅ 7/7 |
 
 ### Phase 2 — Supabase foundation (7 steps)
 | # | Step | Done when |

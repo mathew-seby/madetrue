@@ -20,9 +20,12 @@ neighbors who love them. Story-driven, trust-first, and mobile-first at heart.
   ✅ **Phase 5** — Admin console (real admin session guard via role, seller
   verification with private payout KYC review, product moderation with search/hide/unhide
   and audit notes, global order overview, categories CRUD with live public nav,
-  platform analytics, and durable moderation audit trail)
-- ▶️ **Now: Phase 6 — Payments: Cashfree Easy Split first** (payment adapter & prerequisites,
-  seller vendor onboarding, split checkout, webhooks & states, refunds, settlements, go-live)
+  platform analytics, and durable moderation audit trail) ·
+  ✅ **Phase 7** — Order lifecycle & notifications (5-state machine, buyer order
+  history at `/orders`, universal WhatsApp adapter with wa.me fallback, 7-event
+  templates, cancellation request→approve→refund lifecycle, durable delivery log & retry hub)
+- ▶️ **Now: Phase 9 — Trust, legal & scale** (Phase 6 remains 6/7 pending live Cashfree credentials;
+  starting with Step 1: Legal pages)
 - Live tracker: [`docs/build-progress.md`](./docs/build-progress.md). The
   workflow and phase-completion status-sync rules live in
   [`docs/master-build-prompt.md`](./docs/master-build-prompt.md) (§10b).
