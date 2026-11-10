@@ -347,13 +347,12 @@ export default function SellerProfilePage({ params }: PageProps) {
                                   ? "Basket already holds every unit in stock"
                                   : "Add to Basket"
                               }
-                              className={`flex items-center justify-center p-2 rounded-xl transition duration-200 ${
-                                addedProductId === product.id
+                              className={`flex items-center justify-center p-2 rounded-xl transition duration-200 ${addedProductId === product.id
                                   ? "bg-emerald-600 text-white scale-105"
                                   : cappedProductId === product.id
                                     ? "bg-warm-brown text-cream-bg scale-105"
                                     : "bg-primary-green text-cream-bg hover:bg-[#224f3b]"
-                              }`}
+                                }`}
                             >
                               {addedProductId === product.id ? (
                                 <Check className="h-4 w-4" />

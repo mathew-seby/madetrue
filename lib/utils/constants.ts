@@ -6,6 +6,17 @@
 export const DELIVERY_FEE = 49;
 
 /**
+ * Canonical website URL for metadataBase, sitemap, and Open Graph.
+ */
+export const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "https://madetrue.in");
+
+/**
  * Official company and contact details for MADETRUE.
  * Referenced across legal policies, contact page, and footer links.
  */
