@@ -59,7 +59,12 @@ export async function GET(request: Request) {
   const supabase = createSupabaseServerClient();
   let query = supabase.from("orders").select("*");
 
-  if (user.role === "admin") {
+  // Phase 7 Step 2 — `mine=1`: "my own purchases" for any signed-in role.
+  // Buyer history uses this so an admin/maker reading from the buyer page
+  // sees their own orders instead of the admin order book or maker inbox.
+  if (searchParams.get("mine") === "1") {
+    query = query.eq("buyer_id", user.id);
+  } else if (user.role === "admin") {
     // Admin overview: filters (seller_id / buyer_id) stay available.
     const sellerId = searchParams.get("seller_id");
     const buyerId = searchParams.get("buyer_id");

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MapPin, ShoppingCart, Menu, X, Globe, LogOut, ShieldCheck } from "lucide-react";
+import { MapPin, ShoppingCart, Menu, X, Globe, LogOut, ShieldCheck, Package } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { useCart } from "@/components/shared/CartProvider";
 
@@ -103,6 +103,18 @@ export default function Navbar() {
                   <Globe className="h-3.5 w-3.5 mr-1.5" />
                   <span>{language === "EN" ? "മലയാളം" : "English"}</span>
                 </button>
+
+                {/* My Orders — the buyer's live order history (Phase 7 Step 2) */}
+                {currentUser && (
+                  <Link
+                    href="/orders"
+                    className="p-2 text-text-dark hover:text-primary-green transition"
+                    title="My Orders"
+                    aria-label="My Orders"
+                  >
+                    <Package className="h-5 w-5" />
+                  </Link>
+                )}
 
                 {/* Cart Icon */}
                 <Link href="/cart" className="relative p-2 text-text-dark hover:text-primary-green transition">
@@ -258,6 +270,13 @@ export default function Navbar() {
 
           {currentUser ? (
             <div className="border-t border-warm-brown/10 pt-2 mt-2 space-y-1">
+              <Link
+                href="/orders"
+                onClick={() => setIsOpen(false)}
+                className="block px-3 py-2 rounded-lg text-base font-medium text-text-dark hover:bg-primary-green/5 hover:text-primary-green transition"
+              >
+                My Orders
+              </Link>
               <Link
                 href="/profile"
                 onClick={() => setIsOpen(false)}

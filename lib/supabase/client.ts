@@ -23,6 +23,7 @@ import {
 import {
   saveOrdersSupabase,
   fetchOrdersForSellerSupabase,
+  fetchOrdersForBuyerSupabase,
   fetchOrdersAdminSupabase,
   submitCategorySupabase,
   updateCategorySupabase,
@@ -772,6 +773,18 @@ export async function getOrdersForSeller(sellerId: string): Promise<Order[]> {
   const orders = getStoredOrders();
   return orders
     .filter((o) => o.seller_id === sellerId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+// Buyer history (Phase 7 Step 2): the signed-in user's own purchases,
+// whatever their role. Mock mode filters the localStorage book by the
+// buyer id checkout stamped on every row; Supabase mode asks the
+// session-scoped route (`mine=1`) — the client never says who it is.
+export async function getOrdersForBuyer(userId: string): Promise<Order[]> {
+  if (isSupabaseEnabled()) return fetchOrdersForBuyerSupabase();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return getStoredOrders()
+    .filter((o) => o.buyer_id === userId)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 

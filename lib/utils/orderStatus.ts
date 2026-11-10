@@ -112,6 +112,27 @@ export function getOrderStatusSummary(
   }
 }
 
+/** Warm buyer-facing summary for the my-orders page (Phase 7 Step 2). */
+export function getOrderBuyerStatusSummary(
+  status: OrderStatus,
+  deliveryType?: OrderDeliveryType
+): string {
+  switch (status) {
+    case "pending":
+      return "Waiting for the maker to accept";
+    case "accepted":
+      return "The maker is preparing your order";
+    case "ready":
+      return deliveryType === "pickup"
+        ? "Ready — collect it from the maker"
+        : "Ready — on its way soon";
+    case "delivered":
+      return deliveryType === "pickup" ? "Picked up — enjoy!" : "Delivered — enjoy!";
+    case "cancelled":
+      return "Cancelled";
+  }
+}
+
 /** Short, human label for badges, tabs and toasts. */
 export function getOrderStatusLabel(
   status: OrderStatus,

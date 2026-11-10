@@ -63,6 +63,13 @@ export async function fetchOrdersForSellerSupabase(sellerId: string): Promise<Or
   });
 }
 
+// Buyer history (Phase 7 Step 2): `mine=1` asks the route for the session
+// user's own purchases, whatever their role — the isolation decision stays
+// on the route, never on a client-supplied buyer id.
+export async function fetchOrdersForBuyerSupabase(): Promise<Order[]> {
+  return requestJson<Order[]>("/api/orders?mine=1", { method: "GET" });
+}
+
 // Admin console: the unfiltered global order book. GET /api/orders with no
 // query filters returns every order when the session role is admin —
 // isolation guards live on the route, not here.
