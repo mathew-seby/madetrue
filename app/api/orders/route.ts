@@ -30,6 +30,11 @@ import {
   normalizeOrderStatus,
 } from "@/lib/utils/orderStatus";
 import { getPaymentAdapter } from "@/lib/payments";
+import {
+  buildMakerPlacedMessage,
+  sendBuyerStatusUpdate,
+  sendOrderWhatsApp,
+} from "@/lib/whatsapp/notify";
 
 const PRODUCT_COLUMNS =
   "id, seller_id, name, price, base_price, commission, status, is_available, stock";
@@ -354,6 +359,37 @@ export async function POST(request: Request) {
     }
   }
 
+  // Phase 7 Step 3 — best-effort "new order" alert to each maker with fresh
+  // lines (one message per maker, not per line). Any provider problem stays
+  // in the send result; the checkout's existing wa.me confirm remains the
+  // visible fallback until a provider is configured. Never fails the order.
+  const sellerIds = Array.from(new Set(inserted.map((o) => o.seller_id)));
+  if (sellerIds.length > 0) {
+    const { data: makers } = await supabase
+      .from("sellers")
+      .select("id, business_name, whatsapp_number")
+      .in("id", sellerIds);
+
+    if (makers) {
+      // Reads are independent — send in parallel, bounded by each
+      // provider's own timeout, so the basket response never drags.
+      await Promise.all(
+        (makers as Array<{
+          id: string;
+          business_name: string | null;
+          whatsapp_number: string | null;
+        }>).map(async (maker) => {
+          const count = inserted.filter((o) => o.seller_id === maker.id).length;
+          if (count === 0) return;
+          await sendOrderWhatsApp({
+            to: maker.whatsapp_number ?? null,
+            body: buildMakerPlacedMessage(maker.business_name ?? "maker", count),
+          });
+        })
+      );
+    }
+  }
+
   return NextResponse.json(inserted);
 }
 
@@ -538,7 +574,15 @@ export async function PATCH(request: Request) {
     }
   }
 
-  return NextResponse.json(mapOrderRow(updated));
+  // Phase 7 Step 3 — best-effort buyer WhatsApp update. The provider is
+  // chosen by the environment; with none configured the notice honestly
+  // reports it and nothing sends (wa.me links stay the fallback). Whatever
+  // the outcome, the status change is already saved — WhatsApp can never
+  // fail an order.
+  const orderResult = mapOrderRow(updated);
+  const whatsappNotice = await sendBuyerStatusUpdate(orderResult);
+
+  return NextResponse.json({ ...orderResult, whatsappNotice });
 }
 
 function mapOrderRow(row: Record<string, unknown>): Order {
