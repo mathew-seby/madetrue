@@ -80,10 +80,11 @@ export default function ContactForm() {
         <form onSubmit={handleSubmit} className="space-y-4 font-sans">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
+              <label htmlFor="contact-name" className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
                 Your Name *
               </label>
               <input
+                id="contact-name"
                 type="text"
                 required
                 value={name}
@@ -94,10 +95,11 @@ export default function ContactForm() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
+              <label htmlFor="contact-email" className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
                 Email Address *
               </label>
               <input
+                id="contact-email"
                 type="email"
                 required
                 value={email}
@@ -110,10 +112,11 @@ export default function ContactForm() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
+              <label htmlFor="contact-phone" className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
                 Phone Number (Optional)
               </label>
               <input
+                id="contact-phone"
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
@@ -123,10 +126,11 @@ export default function ContactForm() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
+              <label htmlFor="contact-category" className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
                 Inquiry Category
               </label>
               <select
+                id="contact-category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl border border-warm-brown/20 bg-[#FAF7F2]/50 text-xs text-text-dark focus:outline-hidden focus:ring-1 focus:ring-primary-green focus:border-primary-green cursor-pointer"
@@ -141,10 +145,11 @@ export default function ContactForm() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
+            <label htmlFor="contact-message" className="text-xs font-bold text-warm-brown uppercase tracking-wider block">
               Your Message *
             </label>
             <textarea
+              id="contact-message"
               required
               rows={4}
               value={message}

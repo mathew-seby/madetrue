@@ -55,6 +55,7 @@ export default function AddToCartButton({
       disabled={isSoldOut}
       onClick={handleClick}
       title={title}
+      aria-label={showText ? undefined : `${title}: ${product.name}`}
       className={`p-2.5 rounded-xl border border-primary-green/20 text-primary-green transition flex items-center justify-center cursor-pointer ${
         added
           ? "bg-primary-green text-cream-bg"

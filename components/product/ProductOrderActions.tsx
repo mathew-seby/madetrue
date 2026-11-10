@@ -51,17 +51,22 @@ export default function ProductOrderActions({ product }: ProductOrderActionsProp
             type="button"
             disabled={isSoldOut}
             onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+            aria-label="Decrease quantity"
             className="px-3.5 py-1.5 hover:bg-warm-brown/5 text-text-dark font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
           >
             -
           </button>
-          <span className="px-4 text-sm font-semibold text-text-dark">
+          <span
+            className="px-4 text-sm font-semibold text-text-dark"
+            aria-label={`Current quantity: ${isSoldOut ? 0 : quantity}`}
+          >
             {isSoldOut ? 0 : quantity}
           </span>
           <button
             type="button"
             disabled={isSoldOut}
             onClick={() => setQuantity((q) => Math.min(product.stock, q + 1))}
+            aria-label="Increase quantity"
             className="px-3.5 py-1.5 hover:bg-warm-brown/5 text-text-dark font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
           >
             +

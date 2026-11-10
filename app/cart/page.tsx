@@ -55,19 +55,21 @@ export default function CartPage() {
                         <button
                           type="button"
                           onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
-                          className="px-2 py-1 hover:bg-warm-brown/5 text-text-dark font-bold text-xs"
+                          className="px-2 py-1 hover:bg-warm-brown/5 text-text-dark font-bold text-xs cursor-pointer disabled:cursor-not-allowed"
                           disabled={item.quantity <= 1}
+                          aria-label={`Decrease quantity of ${item.product.name}`}
                         >
                           <Minus className="h-3 w-3" />
                         </button>
-                        <span className="px-3 text-xs font-semibold text-text-dark">
+                        <span className="px-3 text-xs font-semibold text-text-dark" aria-label={`Current quantity: ${item.quantity}`}>
                           {item.quantity}
                         </span>
                         <button
                           type="button"
                           onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                          className="px-2 py-1 hover:bg-warm-brown/5 text-text-dark font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="px-2 py-1 hover:bg-warm-brown/5 text-text-dark font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                           disabled={item.quantity >= item.product.stock || item.product.stock <= 0 || !item.product.is_available}
+                          aria-label={`Increase quantity of ${item.product.name}`}
                         >
                           <Plus className="h-3 w-3" />
                         </button>
@@ -76,8 +78,9 @@ export default function CartPage() {
                       <button
                         type="button"
                         onClick={() => removeItem(item.product.id)}
-                        className="p-1 rounded-lg text-red-600 hover:bg-red-50 transition"
+                        className="p-1 rounded-lg text-red-600 hover:bg-red-50 transition cursor-pointer"
                         title="Remove item"
+                        aria-label={`Remove ${item.product.name} from basket`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

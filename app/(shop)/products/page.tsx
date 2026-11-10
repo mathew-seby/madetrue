@@ -192,6 +192,7 @@ function ProductListingContent() {
             <Search className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-text-dark/50" />
             <input
               type="text"
+              aria-label="Search local products"
               placeholder="Search spices, homemade honey, clay pots..."
               value={search}
               onChange={(e) => handleSearchChange(e.target.value)}
@@ -202,6 +203,7 @@ function ProductListingContent() {
           {/* Sort */}
           <div className="relative md:col-span-3">
             <select
+              aria-label="Sort products"
               value={sortBy}
               onChange={(e) => handleSortChange(e.target.value as ProductFilters["sortBy"])}
               className="w-full px-4 py-3 rounded-xl border border-warm-brown/20 bg-cream-bg text-sm text-text-dark focus:border-primary-green focus:outline-none transition appearance-none cursor-pointer"
@@ -324,7 +326,11 @@ function ProductListingContent() {
                       </div>
                     )}
                     {/* Favorite */}
-                    <button className="absolute top-3 right-3 p-1.5 rounded-full bg-cream-bg/80 hover:bg-cream-bg text-text-dark hover:text-red-500 shadow-sm transition">
+                    <button
+                      type="button"
+                      aria-label={`Save ${product.name} to wishlist`}
+                      className="absolute top-3 right-3 p-1.5 rounded-full bg-cream-bg/80 hover:bg-cream-bg text-text-dark hover:text-red-500 shadow-sm transition cursor-pointer"
+                    >
                       <Heart className="h-4 w-4" />
                     </button>
                     {/* Tags */}
@@ -379,15 +385,25 @@ function ProductListingContent() {
                       </Link>
                       {product.stock === 0 || !product.is_available ? (
                         <button
+                          type="button"
                           disabled
                           className="flex items-center justify-center p-2 rounded-xl bg-gray-200 text-gray-400 cursor-not-allowed"
                           title="Sold Out"
+                          aria-label={`${product.name} is sold out`}
                         >
                           <X className="h-4 w-4" />
                         </button>
                       ) : (
                         <button
+                          type="button"
                           onClick={() => handleAddToCart(product)}
+                          aria-label={
+                            cappedProductId === product.id
+                              ? `Basket already holds max stock of ${product.name}`
+                              : addedProductId === product.id
+                                ? `Added ${product.name} to basket`
+                                : `Add ${product.name} to basket`
+                          }
                           title={
                             cappedProductId === product.id
                               ? "Basket already holds every unit in stock"
@@ -419,7 +435,10 @@ function ProductListingContent() {
 
           {/* Pagination Controls */}
           {totalPages > 1 && (
-            <div className="pt-6 border-t border-warm-brown/10 flex flex-col sm:flex-row items-center justify-between gap-4 font-sans">
+            <nav
+              aria-label="Product catalog pagination"
+              className="pt-6 border-t border-warm-brown/10 flex flex-col sm:flex-row items-center justify-between gap-4 font-sans"
+            >
               <span className="text-xs text-text-dark/60">
                 Page {currentPage} of {totalPages}
               </span>
@@ -428,18 +447,21 @@ function ProductListingContent() {
                   type="button"
                   disabled={currentPage <= 1}
                   onClick={() => handlePageChange(currentPage - 1)}
+                  aria-label="Go to previous page"
                   className="px-3.5 py-2 rounded-xl border border-warm-brown/20 bg-cream-bg text-xs font-semibold text-text-dark hover:bg-warm-brown/10 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 cursor-pointer"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                   Previous
                 </button>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1" role="group" aria-label="Page selection">
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
                     <button
                       key={pageNum}
                       type="button"
                       onClick={() => handlePageChange(pageNum)}
+                      aria-label={`Page ${pageNum}`}
+                      aria-current={pageNum === currentPage ? "page" : undefined}
                       className={`w-9 h-9 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ${
                         pageNum === currentPage
                           ? "bg-primary-green text-cream-bg shadow-sm"
@@ -455,13 +477,14 @@ function ProductListingContent() {
                   type="button"
                   disabled={currentPage >= totalPages}
                   onClick={() => handlePageChange(currentPage + 1)}
+                  aria-label="Go to next page"
                   className="px-3.5 py-2 rounded-xl border border-warm-brown/20 bg-cream-bg text-xs font-semibold text-text-dark hover:bg-warm-brown/10 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 cursor-pointer"
                 >
                   Next
                   <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
-            </div>
+            </nav>
           )}
         </div>
       ) : (

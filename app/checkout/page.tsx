@@ -518,10 +518,11 @@ export default function CheckoutPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Name */}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
+                    <label htmlFor="checkout-name" className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
                       <UserIcon className="h-3.5 w-3.5 mr-1" /> Buyer Name *
                     </label>
                     <input
+                      id="checkout-name"
                       type="text"
                       required
                       value={name}
@@ -533,10 +534,11 @@ export default function CheckoutPage() {
 
                   {/* Phone */}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
+                    <label htmlFor="checkout-phone" className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
                       <Phone className="h-3.5 w-3.5 mr-1" /> Phone Number *
                     </label>
                     <input
+                      id="checkout-phone"
                       type="tel"
                       required
                       value={phone}
@@ -596,8 +598,9 @@ export default function CheckoutPage() {
                   <div className="space-y-3">
                     {/* Street Address (always visible) */}
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-warm-brown uppercase">Street Address / Landmark *</label>
+                      <label htmlFor="checkout-address" className="text-[10px] font-bold text-warm-brown uppercase">Street Address / Landmark *</label>
                       <textarea
+                        id="checkout-address"
                         required
                         rows={2}
                         value={address}
@@ -637,8 +640,9 @@ export default function CheckoutPage() {
                       {/* Option 1: Paste Google Maps Link or Coordinates */}
                       {checkoutLocationOption === "paste" && (
                         <div className="space-y-2 animate-fadeIn">
-                          <label className="text-[10px] font-bold text-warm-brown uppercase">Paste Google Maps Link or Coordinates</label>
+                          <label htmlFor="checkout-gmaps" className="text-[10px] font-bold text-warm-brown uppercase">Paste Google Maps Link or Coordinates</label>
                           <input
+                            id="checkout-gmaps"
                             type="text"
                             value={gmapsInput}
                             onChange={(e) => handleCheckoutGmapsParse(e.target.value)}
