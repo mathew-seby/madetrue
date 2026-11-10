@@ -85,7 +85,8 @@ export async function fetchSellersSupabase(): Promise<Seller[]> {
   const { data, error } = await supabase
     .from("sellers")
     .select(SELLER_COLUMNS)
-    .order("id", { ascending: true });
+    .order("id", { ascending: true })
+    .limit(100);
 
   if (error) throw fail("sellers", error.message);
 
@@ -178,11 +179,42 @@ export async function fetchProductsSupabase(
   // Stable tiebreaker so the grid never shuffles between visits.
   query = query.order("id", { ascending: true });
 
+  // Query capping and pagination limits: public queries can never unbounded-dump the DB
+  const limit = Math.min(filters?.limit ?? 100, 100);
+  const offset = Math.max(0, filters?.offset ?? 0);
+  query = query.range(offset, offset + limit - 1);
+
   const { data, error } = await query;
 
   if (error) throw fail("products", error.message);
 
   return (data ?? []).map((row) => mapProduct(row));
+}
+
+export async function fetchProductsCountSupabase(
+  filters?: Omit<ProductFilters, "limit" | "offset">
+): Promise<number> {
+  const supabase = await getReadClient();
+  let query = supabase
+    .from("products")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "approved")
+    .eq("is_hidden", false);
+
+  if (filters?.category) {
+    query = query.eq("category", filters.category);
+  }
+
+  if (filters?.search) {
+    const search = filters.search.replace(/[%_,()]/g, " ").trim();
+    if (search) {
+      query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%`);
+    }
+  }
+
+  const { count, error } = await query;
+  if (error) throw fail("products count", error.message);
+  return count ?? 0;
 }
 
 export async function fetchProductByIdSupabase(
@@ -210,7 +242,8 @@ export async function fetchProductsBySellerIdSupabase(
     .eq("seller_id", sellerId)
     .eq("status", "approved")
     .eq("is_hidden", false)
-    .order("id", { ascending: true });
+    .order("id", { ascending: true })
+    .limit(50);
 
   if (error) throw fail("products by seller", error.message);
 

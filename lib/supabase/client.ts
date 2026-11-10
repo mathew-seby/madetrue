@@ -18,6 +18,7 @@ import {
   fetchSellersSupabase,
   fetchSellerByIdSupabase,
   fetchProductsSupabase,
+  fetchProductsCountSupabase,
   fetchProductByIdSupabase,
   fetchProductsBySellerIdSupabase,
 } from "./readSupabase";
@@ -274,6 +275,8 @@ export interface ProductFilters {
   maxDistance?: number;
   search?: string;
   sortBy?: "price-asc" | "price-desc" | "newest";
+  limit?: number;
+  offset?: number;
 }
 
 export async function getProducts(filters?: ProductFilters): Promise<Product[]> {
@@ -308,7 +311,34 @@ export async function getProducts(filters?: ProductFilters): Promise<Product[]> 
     }
   }
 
-  return products;
+  // Safe pagination limits and query capping
+  const offset = Math.max(0, filters?.offset ?? 0);
+  const limit = Math.min(filters?.limit ?? 100, 100);
+  return products.slice(offset, offset + limit);
+}
+
+export async function getProductsCount(
+  filters?: Omit<ProductFilters, "limit" | "offset">
+): Promise<number> {
+  if (isSupabaseEnabled()) return fetchProductsCountSupabase(filters);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const allProducts = getStoredProducts();
+  let products = allProducts.filter((p) => !p.status || (p.status === "approved" && !p.is_hidden));
+
+  if (filters?.category) {
+    products = products.filter((p) => p.category === filters.category);
+  }
+
+  if (filters?.search) {
+    const searchLower = filters.search.toLowerCase();
+    products = products.filter(
+      (p) =>
+        p.name.toLowerCase().includes(searchLower) ||
+        p.description.toLowerCase().includes(searchLower)
+    );
+  }
+
+  return products.length;
 }
 
 export async function getProductById(id: string): Promise<Product | null> {
