@@ -11,29 +11,34 @@ import {
   setProductHidden,
   deleteProduct,
   updateSellerApplication,
+  registerSellerVendor,
   getPayoutDetailsForSeller,
   getApplicationStatus,
   getOrdersAdmin, 
   updateOrderStatus, 
   updateOrderWhatsappStatus,
+  refundOrder,
+  getSettlementData,
+  syncSettlements,
   addCategory,
   updateCategory,
   deleteCategory,
   getAuditLog,
   recordAudit
 } from "@/lib/supabase/client";
-import type { SellerApplicationAction, SellerPayoutDetails } from "@/lib/supabase/client";
+import type { SellerApplicationAction, SellerPayoutDetails, SettlementsResponse } from "@/lib/supabase/client";
 import { Order, Product, Seller, Category, AuditEntry, AuditEntityType } from "@/types";
 import { DELIVERY_FEE } from "@/lib/utils/constants";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { CATEGORY_ICONS, DEFAULT_CATEGORY_ICON, slugifyName, isValidSlug, type CategoryIcon } from "@/lib/utils/categories";
 import { computeAdminAnalytics, type MakerLeaderRow } from "@/lib/utils/adminAnalytics";
 import { useAuth } from "@/components/shared/AuthProvider";
+import { buildRefundWhatsAppUrl } from "@/lib/utils/whatsapp";
 import { 
   ShieldCheck, LogOut, Check, X, Clock, Eye, Store, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
   ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
-  Users, Send, Award, ShieldAlert, Calendar, CreditCard,
+  Users, Send, Award, ShieldAlert, Calendar, CreditCard, RotateCcw, Landmark,
   Search, Trash2, EyeOff, ArrowDownUp, Layers, PenLine, ChartColumn, RefreshCw, History,
   Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower
 } from "lucide-react";
@@ -180,6 +185,16 @@ export default function AdminPage() {
   const [orderSortDir, setOrderSortDir] = useState<"newest" | "oldest">("newest");
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
+  // Refund state (Phase 6 Step 5)
+  const [refundingOrder, setRefundingOrder] = useState<Order | null>(null);
+  const [refundAmount, setRefundAmount] = useState<string>("");
+  const [refundReason, setRefundReason] = useState<string>("");
+  const [refundSubmitting, setRefundSubmitting] = useState<boolean>(false);
+
+  // Settlement & Commission state (Phase 6 Step 6)
+  const [settlementData, setSettlementData] = useState<SettlementsResponse | null>(null);
+  const [syncingSettlements, setSyncingSettlements] = useState(false);
+
   // Payout display fields per maker store, hydrated from the private
   // seller_payout_kyc table (mock: inline on the seller row) by the
   // admin-only /api/sellers/[id]/payout route. `{}` → the card loses
@@ -255,6 +270,14 @@ export default function AdminPage() {
     } catch (e) {
       console.warn("[madetrue] audit trail unavailable:", e);
       setAuditLog([]);
+    }
+
+    // Settlements and commission reports (Phase 6 Step 6)
+    try {
+      const sData = await getSettlementData();
+      setSettlementData(sData);
+    } catch (e) {
+      console.warn("[madetrue] settlement reports unavailable:", e);
     }
   }, [showToast]);
 
@@ -419,6 +442,37 @@ export default function AdminPage() {
     }
   };
 
+  const [registeringVendorId, setRegisteringVendorId] = useState<string | null>(null);
+
+  const handleRegisterVendor = async (sellerId: string) => {
+    setRegisteringVendorId(sellerId);
+    try {
+      const updated = await registerSellerVendor(sellerId);
+      if (updated) {
+        showToast(
+          `Onboarded "${updated.business_name}" as gateway vendor (${updated.payment_vendor_ref}).`,
+          "success"
+        );
+        logConsoleAction({
+          entity_type: "seller",
+          entity_id: updated.id,
+          entity_label: updated.business_name,
+          action: "vendor_onboarded",
+          summary: `Onboarded as gateway vendor: "${updated.payment_vendor_ref}" (KYC: ${updated.kyc_status}).`,
+        });
+        loadModerationData();
+      } else {
+        showToast("Vendor registration could not be completed.", "error");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Vendor registration failed.";
+      showToast(msg, "error");
+    } finally {
+      setRegisteringVendorId(null);
+    }
+  };
+
+
   // Hide/unhide — the moderation overlay (is_hidden + note). Explicit
   // cancel (prompt Escape) aborts the action; an empty note is fine.
   const handleSetProductHidden = async (productId: string, hideState: boolean) => {
@@ -538,6 +592,80 @@ export default function AdminPage() {
       }
     } catch {
       showToast("Failed to update WhatsApp notification status.", "error");
+    }
+  };
+
+  // --- Refund Handler (Phase 6 Step 5) ------------------------------------
+
+  const openRefundModal = (order: Order) => {
+    const money = orderMoney(order);
+    setRefundingOrder(order);
+    setRefundAmount(String(money.total));
+    setRefundReason("Order cancellation & refund");
+  };
+
+  const handleProcessRefund = async () => {
+    if (!refundingOrder) return;
+    const amountNum = parseFloat(refundAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      showToast("Please enter a valid refund amount above ₹0.", "error");
+      return;
+    }
+
+    setRefundSubmitting(true);
+    try {
+      const res = await refundOrder(refundingOrder.id, {
+        amount: amountNum,
+        reason: refundReason.trim() || "Admin initiated refund",
+      });
+
+      if (res.success) {
+        showToast(
+          `Refund of ₹${res.refundAmount} successfully processed!`,
+          "success"
+        );
+        logConsoleAction({
+          entity_type: "order",
+          entity_id: refundingOrder.id,
+          entity_label: refundingOrder.product_name ?? refundingOrder.id,
+          action: "order_refunded",
+          summary: `Refund of ₹${res.refundAmount} (${res.isFullRefund ? "full" : "partial"}) issued. Reason: ${refundReason}`,
+        });
+        setRefundingOrder(null);
+        await loadModerationData();
+      } else {
+        showToast(res.error || "Failed to process refund.", "error");
+      }
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Failed to process refund.", "error");
+    } finally {
+      setRefundSubmitting(false);
+    }
+  };
+
+  const handleSyncSettlements = async () => {
+    setSyncingSettlements(true);
+    try {
+      const res = await syncSettlements();
+      if (res.success) {
+        showToast(
+          `Synced ${res.count} settlement batches from payment gateway!`,
+          "success"
+        );
+        logConsoleAction({
+          entity_type: "seller",
+          entity_id: "all",
+          entity_label: "Settlement Reports",
+          action: "settlements_synced",
+          summary: `Settlement reports synced (${res.count} batches, ₹${res.summary.totalSettled} settled).`,
+        });
+        const fresh = await getSettlementData();
+        setSettlementData(fresh);
+      }
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Failed to sync settlements.", "error");
+    } finally {
+      setSyncingSettlements(false);
     }
   };
 
@@ -1417,16 +1545,38 @@ export default function AdminPage() {
                             </span>
                           </div>
                         </div>
+
+                        <div className="flex items-center justify-between text-[9px] pt-1.5 border-t border-warm-brown/5">
+                          <span className="text-warm-brown/70 font-semibold">Easy Split Vendor ID:</span>
+                          <span className="font-mono font-bold text-text-dark">
+                            {seller.payment_vendor_ref || "Not registered yet"}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="flex flex-wrap justify-end gap-2 pt-2.5">
                         {applicationStatus === "approved" && (
-                          <button
-                            onClick={() => handleSellerApplication(seller.id, "revoke")}
-                            className="px-4 py-2 border border-red-200 hover:bg-red-50 text-red-600 text-xs font-bold rounded-xl transition cursor-pointer font-sans"
-                          >
-                            Revoke Approval
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleRegisterVendor(seller.id)}
+                              disabled={registeringVendorId === seller.id}
+                              className="px-3.5 py-2 bg-warm-brown/10 hover:bg-warm-brown/15 text-warm-brown text-xs font-bold rounded-xl transition cursor-pointer font-sans disabled:opacity-50"
+                            >
+                              {registeringVendorId === seller.id
+                                ? "Registering..."
+                                : seller.kyc_status === "failed"
+                                  ? "Retry Gateway Onboarding"
+                                  : seller.payment_vendor_ref
+                                    ? "Sync Gateway Vendor"
+                                    : "Register Gateway Vendor"}
+                            </button>
+                            <button
+                              onClick={() => handleSellerApplication(seller.id, "revoke")}
+                              className="px-4 py-2 border border-red-200 hover:bg-red-50 text-red-600 text-xs font-bold rounded-xl transition cursor-pointer font-sans"
+                            >
+                              Revoke Approval
+                            </button>
+                          </>
                         )}
                         {applicationStatus === "rejected" && (
                           <button
@@ -1784,6 +1934,108 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+
+            {/* EASY SPLIT SETTLEMENTS & COMMISSION REPORT (Phase 6 Step 6) */}
+            <div className="bg-[#FAF7F2] p-6 rounded-3xl border border-warm-brown/10 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-warm-brown/10 pb-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-8 h-8 rounded-xl bg-primary-green/10 text-primary-green flex items-center justify-center">
+                      <Landmark className="h-4 w-4" />
+                    </span>
+                    <h3 className="font-serif text-lg font-bold text-text-dark">
+                      Marketplace Settlements & Commission Report
+                    </h3>
+                  </div>
+                  <p className="text-xs text-text-dark/60 leading-relaxed font-sans">
+                    Synced with Cashfree Easy Split platform gateway. Displays maker payouts, realized platform commissions, and pending banking clearances.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSyncSettlements}
+                  disabled={syncingSettlements}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary-green hover:bg-[#224f3b] disabled:opacity-50 text-cream-bg text-xs font-bold rounded-xl transition cursor-pointer font-sans shrink-0 self-start"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${syncingSettlements ? "animate-spin" : ""}`} />
+                  {syncingSettlements ? "Syncing..." : "Sync Gateway Settlements"}
+                </button>
+              </div>
+
+              {/* Settlement KPI strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-sans">
+                <div className="bg-white/80 p-4 rounded-2xl border border-warm-brown/10">
+                  <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">Total Settled to Makers</span>
+                  <p className="text-2xl font-serif font-bold text-primary-green mt-1">
+                    ₹{settlementData?.commissionReport.totalSettledToMakers ?? settlementData?.summary.totalSettled ?? 0}
+                  </p>
+                  <span className="text-[9px] text-text-dark/40 block">Credited directly to maker bank accounts</span>
+                </div>
+                <div className="bg-white/80 p-4 rounded-2xl border border-warm-brown/10">
+                  <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">Pending Settlement</span>
+                  <p className="text-2xl font-serif font-bold text-amber-700 mt-1">
+                    ₹{settlementData?.commissionReport.totalPendingSettlement ?? settlementData?.summary.pendingSettlement ?? 0}
+                  </p>
+                  <span className="text-[9px] text-text-dark/40 block">In clearance cycle (T+1 / T+2 days)</span>
+                </div>
+                <div className="bg-white/80 p-4 rounded-2xl border border-warm-brown/10">
+                  <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">Platform Commission Earned</span>
+                  <p className="text-2xl font-serif font-bold text-accent-gold mt-1">
+                    ₹{settlementData?.commissionReport.totalCommissionEarned ?? analytics.commission}
+                  </p>
+                  <span className="text-[9px] text-text-dark/40 block">Retained automatically by Easy Split</span>
+                </div>
+              </div>
+
+              {/* Maker Breakdown Commission Table */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-warm-brown uppercase tracking-wider font-sans">
+                  Maker-by-Maker Settlement & Commission Ledger
+                </h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs font-sans">
+                    <thead>
+                      <tr className="border-b border-warm-brown/10 text-[9px] font-bold uppercase tracking-wider text-warm-brown/60">
+                        <th className="py-2.5 px-3">Maker Store</th>
+                        <th className="py-2.5 px-3">Vendor Ref</th>
+                        <th className="py-2.5 px-3 text-right">Orders</th>
+                        <th className="py-2.5 px-3 text-right">Gross GMV</th>
+                        <th className="py-2.5 px-3 text-right">Maker Share</th>
+                        <th className="py-2.5 px-3 text-right">Settled</th>
+                        <th className="py-2.5 px-3 text-right">Pending</th>
+                        <th className="py-2.5 px-3 text-right">Commission</th>
+                        <th className="py-2.5 px-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-warm-brown/5">
+                      {(settlementData?.commissionReport.makerBreakdown ?? []).map((row) => (
+                        <tr key={row.sellerId} className="hover:bg-warm-brown/5 transition">
+                          <td className="py-3 px-3 font-bold text-text-dark font-serif">{row.businessName}</td>
+                          <td className="py-3 px-3 font-mono text-[10px] text-text-dark/60">{row.vendorRef || "Pending KYC"}</td>
+                          <td className="py-3 px-3 text-right text-text-dark font-semibold">{row.orderCount}</td>
+                          <td className="py-3 px-3 text-right text-text-dark font-semibold">₹{row.grossSales}</td>
+                          <td className="py-3 px-3 text-right font-bold text-primary-green">₹{row.makerShare}</td>
+                          <td className="py-3 px-3 text-right text-text-dark/70 font-mono">₹{row.settledAmount}</td>
+                          <td className="py-3 px-3 text-right text-amber-700 font-mono">₹{row.pendingSettlement}</td>
+                          <td className="py-3 px-3 text-right font-bold text-accent-gold">₹{row.commission}</td>
+                          <td className="py-3 px-3 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                              row.status === "settled"
+                                ? "bg-primary-green/10 text-primary-green"
+                                : row.status === "pending"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-warm-brown/10 text-warm-brown/60"
+                            }`}>
+                              {row.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1968,9 +2220,18 @@ export default function AdminPage() {
                           </div>
 
                           <div className="space-y-1 pt-1.5 border-t border-warm-brown/5">
-                            <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block font-sans">Fulfillment Parameters</span>
+                            <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block font-sans">Fulfillment & Payment</span>
                             <div className="text-xs font-bold text-text-dark capitalize font-sans font-semibold">Method: {order.delivery_type}</div>
-                            <div className="text-[11px] text-text-dark/60 font-sans">Method: {order.payment_method === "cod" ? "Cash on Delivery" : "UPI / Scan & Pay"}</div>
+                            <div className="text-[11px] text-text-dark/60 font-sans">
+                              Payment: {order.payment_method === "cod" ? "Cash on Delivery" : `Online (${order.gateway ? order.gateway.toUpperCase() : "UPI"})`}
+                            </div>
+                            {order.payment_method !== "cod" && (
+                              <div className="text-[10px] text-text-dark/60 font-sans space-y-0.5 pt-1 border-t border-dashed border-warm-brown/10">
+                                <div>Split Settlement: <span className="font-semibold text-primary-green">{order.split_status || "completed"}</span></div>
+                                {order.gateway_order_ref && <div className="font-mono text-[9px] truncate" title={order.gateway_order_ref}>Order: {order.gateway_order_ref}</div>}
+                                {order.gateway_payment_ref && <div className="font-mono text-[9px] truncate" title={order.gateway_payment_ref}>Ref: {order.gateway_payment_ref}</div>}
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -2035,7 +2296,32 @@ export default function AdminPage() {
                         </div>
 
                         {/* Status update buttons */}
-                        <div className="flex items-center space-x-2 shrink-0">
+                        <div className="flex items-center space-x-2 shrink-0 flex-wrap gap-y-2">
+                          {order.status !== "cancelled" && (
+                            <button
+                              onClick={() => openRefundModal(order)}
+                              className="px-3 py-1.5 border border-amber-300 hover:bg-amber-50 text-amber-800 text-[10px] font-bold rounded-lg transition cursor-pointer uppercase tracking-wider inline-flex items-center"
+                              title="Process a full or partial refund via gateway API"
+                            >
+                              <RotateCcw className="h-3 w-3 mr-1" /> Issue Refund
+                            </button>
+                          )}
+                          {order.status === "cancelled" && cleanPhone && (
+                            <a
+                              href={buildRefundWhatsAppUrl(cleanPhone, {
+                                buyerName: order.buyer_name,
+                                orderId: order.id,
+                                productName: order.product_name,
+                                refundAmount: money.total,
+                                gateway: order.gateway,
+                              })}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg hover:bg-amber-100 transition cursor-pointer font-sans"
+                            >
+                              <Send className="h-3 w-3 mr-1" /> WhatsApp Refund Receipt
+                            </a>
+                          )}
                           {order.status === "pending" && (
                             <>
                               <button
@@ -2089,6 +2375,101 @@ export default function AdminPage() {
                     ? "Try another buyer, item, maker, or widen the filters above — nothing in the order book matches right now."
                     : "No orders matched this status query."}
                 </p>
+              </div>
+            )}
+
+            {/* REFUND MODAL DIALOG (Phase 6 Step 5) */}
+            {refundingOrder && (
+              <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                <div className="bg-[#FAF7F2] rounded-3xl border border-warm-brown/20 p-6 max-w-md w-full space-y-5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between border-b border-warm-brown/10 pb-3">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                        <RotateCcw className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h3 className="font-serif text-base font-bold text-text-dark">Process Refund</h3>
+                        <p className="text-[10px] text-text-dark/50 font-mono">Order #{refundingOrder.id}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setRefundingOrder(null)}
+                      className="p-1 rounded-full text-warm-brown/60 hover:text-text-dark hover:bg-warm-brown/10 transition cursor-pointer"
+                      title="Close"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 font-sans text-xs">
+                    <div className="bg-white/70 p-3 rounded-2xl border border-warm-brown/10 space-y-1">
+                      <div className="flex justify-between text-text-dark/70">
+                        <span>Product</span>
+                        <span className="font-bold text-text-dark truncate max-w-[14rem]">{refundingOrder.product_name ?? "Order item"}</span>
+                      </div>
+                      <div className="flex justify-between text-text-dark/70">
+                        <span>Buyer</span>
+                        <span className="font-bold text-text-dark">{refundingOrder.buyer_name ?? "Buyer"}</span>
+                      </div>
+                      <div className="flex justify-between text-text-dark/70">
+                        <span>Payment Mode</span>
+                        <span className="font-bold uppercase text-primary-green">{refundingOrder.gateway || refundingOrder.payment_method}</span>
+                      </div>
+                      <div className="flex justify-between text-text-dark/70 pt-1 border-t border-warm-brown/5">
+                        <span className="font-bold">Total Order Value</span>
+                        <span className="font-serif text-sm font-bold text-primary-green">₹{orderMoney(refundingOrder).total}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">
+                        Refund Amount (₹)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max={orderMoney(refundingOrder).total}
+                        step="1"
+                        value={refundAmount}
+                        onChange={(e) => setRefundAmount(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-white border border-warm-brown/20 rounded-xl text-sm font-mono text-text-dark focus:border-primary-green focus:outline-none"
+                      />
+                      <span className="text-[9px] text-text-dark/50 block">Enter full amount or lesser amount for partial refund.</span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">
+                        Reason for Refund
+                      </label>
+                      <input
+                        type="text"
+                        value={refundReason}
+                        onChange={(e) => setRefundReason(e.target.value)}
+                        placeholder="e.g. Buyer cancellation, defective batch, out of stock"
+                        className="w-full px-4 py-2.5 bg-white border border-warm-brown/20 rounded-xl text-xs text-text-dark focus:border-primary-green focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end space-x-2 pt-2 border-t border-warm-brown/10">
+                    <button
+                      type="button"
+                      disabled={refundSubmitting}
+                      onClick={() => setRefundingOrder(null)}
+                      className="px-4 py-2 text-xs font-semibold text-warm-brown hover:bg-warm-brown/5 rounded-xl transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={refundSubmitting}
+                      onClick={handleProcessRefund}
+                      className="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm flex items-center"
+                    >
+                      {refundSubmitting ? "Processing..." : "Confirm & Issue Refund"}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

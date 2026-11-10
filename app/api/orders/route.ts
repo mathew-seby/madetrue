@@ -27,6 +27,7 @@ import {
   isValidOrderTransition,
   getInvalidTransitionMessage,
 } from "@/lib/utils/orderStatus";
+import { getPaymentAdapter } from "@/lib/payments";
 
 const PRODUCT_COLUMNS =
   "id, seller_id, name, price, base_price, commission, status, is_available, stock";
@@ -227,10 +228,14 @@ export async function POST(request: Request) {
           ? null
           : Number(incoming.lng),
       delivery_fee: Number(incoming.delivery_fee ?? 0),
-      gateway: null,
-      gateway_order_ref: null,
-      gateway_payment_ref: null,
-      split_status: "not_applicable" as const,
+      gateway: incoming.gateway ? String(incoming.gateway) : null,
+      gateway_order_ref: incoming.gateway_order_ref ? String(incoming.gateway_order_ref) : null,
+      gateway_payment_ref: incoming.gateway_payment_ref ? String(incoming.gateway_payment_ref) : null,
+      split_status: incoming.split_status
+        ? String(incoming.split_status)
+        : incoming.payment_method === "upi"
+        ? "pending"
+        : "not_applicable",
     };
 
     const { data, error: insertError } = await supabase
@@ -253,6 +258,25 @@ export async function POST(request: Request) {
         { error: `Saving your order failed: ${insertError.message}` },
         { status: 500 }
       );
+    }
+
+    // Ledger transaction record for online / gateway orders
+    if (row.gateway && data?.id) {
+      const eventId = `tx_${data.id}_${Date.now()}`;
+      try {
+        await supabase.from("transactions").insert({
+          order_id: data.id,
+          seller_id: row.seller_id,
+          gateway: row.gateway,
+          gateway_event_id: eventId,
+          type: "payment",
+          amount: Number(row.price) * Number(row.quantity),
+          currency: "INR",
+          status: row.split_status === "completed" ? "completed" : "pending",
+        });
+      } catch {
+        // Non-fatal if transactions insert fails in transitional dev
+      }
     }
 
     inserted.push(mapOrderRow(data));
@@ -459,7 +483,7 @@ export async function PATCH(request: Request) {
     );
   }
 
-  // 5) If order is cancelled, restore product stock
+  // 5) If order is cancelled, restore product stock & process refund for online orders
   if (newStatus === "cancelled" && currentStatus !== "cancelled") {
     const { data: product } = await supabase
       .from("products")
@@ -476,6 +500,39 @@ export async function PATCH(request: Request) {
         .from("products")
         .update({ stock: restored, is_available: true })
         .eq("id", order.product_id);
+    }
+
+    // If online order, issue refund via gateway adapter
+    if (order.payment_method === "upi" || order.gateway) {
+      const orderTotal =
+        Number(order.price ?? 0) * Number(order.quantity ?? 1) +
+        Number(order.delivery_fee ?? 0);
+
+      if (orderTotal > 0) {
+        try {
+          const adapter = getPaymentAdapter();
+          const refundRes = await adapter.createRefund({
+            orderId: order.id,
+            gatewayOrderId: order.gateway_order_ref || order.id,
+            refundId: `ref_cancel_${order.id}_${Date.now()}`,
+            refundAmount: orderTotal,
+            reason: "Order cancellation",
+          });
+
+          await supabase.from("transactions").insert({
+            order_id: order.id,
+            seller_id: order.seller_id,
+            gateway: order.gateway || (adapter.name === "cashfree" ? "cashfree" : "mock"),
+            gateway_event_id: refundRes.gatewayRefundId || `ref_cancel_${order.id}_${Date.now()}`,
+            type: "refund",
+            amount: orderTotal,
+            currency: "INR",
+            status: refundRes.status === "FAILED" ? "failed" : "completed",
+          });
+        } catch {
+          // Non-fatal if gateway refund or ledger insertion fails
+        }
+      }
     }
   }
 
@@ -504,5 +561,9 @@ function mapOrderRow(row: Record<string, unknown>): Order {
     buyer_phone: (row.buyer_phone as string | null) ?? undefined,
     product_name: (row.product_name as string | null) ?? undefined,
     price: (row.price as number | null) ?? undefined,
+    gateway: (row.gateway as Order["gateway"]) ?? undefined,
+    gateway_order_ref: (row.gateway_order_ref as string | null) ?? undefined,
+    gateway_payment_ref: (row.gateway_payment_ref as string | null) ?? undefined,
+    split_status: (row.split_status as Order["split_status"]) ?? undefined,
   };
 }

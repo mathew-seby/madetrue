@@ -5,19 +5,20 @@ import StatsCard from '@/components/dashboard/StatsCard';
 import { computeDashboardStats } from '@/lib/utils/dashboardStats';
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus, updateSellerProfile } from "@/lib/supabase/client";
+import { getSellers, getCategories, addProduct, updateProduct, deleteProduct, getProductsForSeller, uploadProductImage, getOrdersForSeller, updateOrderStatus, updateSellerProfile, registerSellerVendor, refundOrder, getSettlementData, syncSettlements, type SettlementsResponse } from "@/lib/supabase/client";
 import { Seller, Category, Product, ProductBadgeTag, Order } from "@/types";
-import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package, Truck } from "lucide-react";
+import { PlusCircle, ShoppingBag, CheckCircle, Clock, XCircle, ArrowLeft, Image as ImageIcon, Sparkles, Store, Upload, Link as LinkIcon, X, FileText, Trash2, Loader2, Inbox, Calendar, MapPin, Phone, MessageCircle, Package, Truck, Landmark, RefreshCw } from "lucide-react";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { RoleGuard } from "@/components/shared/RoleGuard";
 import { isInErnakulam, parseGoogleMapsUrl } from "@/lib/utils/distance";
+import { buildRefundWhatsAppUrl } from "@/lib/utils/whatsapp";
 
 const FALLBACK_PRODUCT_IMAGE = "https://images.unsplash.com/photo-1541832676-9b763b0239ab?w=600&auto=format&fit=crop&q=80"; // Traditional clay pot
 
 export default function DashboardPage() {
   const { currentUser } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"list" | "orders" | "store" | "add">("list");
+  const [activeTab, setActiveTab] = useState<"list" | "orders" | "store" | "payouts" | "add">("list");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -71,15 +72,34 @@ export default function DashboardPage() {
     setOrderActionSuccess(null);
     setUpdatingOrderId(orderId);
     try {
-      const updated = await updateOrderStatus(orderId, targetStatus, selectedSellerId);
+      let updated: Order | null = null;
+      const targetOrder = myOrders.find((o) => o.id === orderId);
+      const isOnlinePaid =
+        targetOrder &&
+        (targetOrder.payment_method === "upi" || Boolean(targetOrder.gateway));
+
+      if (targetStatus === "cancelled" && isOnlinePaid) {
+        const refundRes = await refundOrder(orderId, {
+          reason: "Order cancelled by maker",
+        });
+        if (!refundRes.success) {
+          throw new Error(refundRes.error || "Failed to process customer refund on cancellation.");
+        }
+        updated = refundRes.order ?? (await updateOrderStatus(orderId, "cancelled", selectedSellerId));
+      } else {
+        updated = await updateOrderStatus(orderId, targetStatus, selectedSellerId);
+      }
+
       if (updated) {
         setMyOrders((prev) =>
-          prev.map((o) => (o.id === orderId ? updated : o))
+          prev.map((o) => (o.id === orderId ? updated! : o))
         );
         const friendlyMessages: Record<string, string> = {
           accepted: "Order accepted! Customer knows you are preparing their authentic items.",
           completed: "Order marked completed! Fulfillment finished.",
-          cancelled: "Order cancelled and stock restored to inventory.",
+          cancelled: isOnlinePaid
+            ? "Order cancelled, customer refunded via gateway, and stock restored."
+            : "Order cancelled and stock restored to inventory.",
         };
         setOrderActionSuccess(
           friendlyMessages[targetStatus] || `Order status updated to ${targetStatus}.`
@@ -245,6 +265,56 @@ export default function DashboardPage() {
     }
   };
 
+  const [isRetryingPayout, setIsRetryingPayout] = useState(false);
+  const [settlementData, setSettlementData] = useState<SettlementsResponse | null>(null);
+  const [isSyncingSettlements, setIsSyncingSettlements] = useState(false);
+
+  const handleSyncMakerSettlements = async () => {
+    if (!selectedSellerId) return;
+    setIsSyncingSettlements(true);
+    try {
+      const res = await syncSettlements(selectedSellerId);
+      if (res.success) {
+        const fresh = await getSettlementData(selectedSellerId);
+        setSettlementData(fresh);
+        setStoreStatus({
+          kind: "success",
+          text: `Settlement reports synced (${res.count} transfers, ₹${res.summary.totalSettled} settled).`,
+        });
+        setTimeout(() => setStoreStatus(null), 5000);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to sync settlements.";
+      setStoreStatus({ kind: "error", text: msg });
+    } finally {
+      setIsSyncingSettlements(false);
+    }
+  };
+
+  const handleRetryPayout = async () => {
+    if (!actingSeller) return;
+    setIsRetryingPayout(true);
+    try {
+      const updated = await registerSellerVendor(actingSeller.id);
+      if (updated) {
+        setSellers((prev) =>
+          prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s))
+        );
+        setStoreStatus({
+          kind: "success",
+          text: `Gateway vendor registered: ${updated.payment_vendor_ref}. Payouts are active!`,
+        });
+        setTimeout(() => setStoreStatus(null), 5000);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Payout retry failed. Please try again.";
+      setStoreStatus({ kind: "error", text: msg });
+    } finally {
+      setIsRetryingPayout(false);
+    }
+  };
+
+
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
@@ -354,6 +424,7 @@ export default function DashboardPage() {
         ]);
         setMyProducts(sellerProds);
         setMyOrders(sellerOrders);
+        getSettlementData(matchingSeller.id).then(setSettlementData).catch(() => {});
       } else if (currentUser?.role === "admin" && fetchedSellers.length > 0) {
         const defaultSellerId = fetchedSellers[0].id;
         setSelectedSellerId(defaultSellerId);
@@ -363,6 +434,7 @@ export default function DashboardPage() {
         ]);
         setMyProducts(sellerProds);
         setMyOrders(sellerOrders);
+        getSettlementData(defaultSellerId).then(setSettlementData).catch(() => {});
       } else {
         setMyProducts([]);
         setMyOrders([]);
@@ -388,6 +460,7 @@ export default function DashboardPage() {
       ]);
       setMyProducts(sellerProds);
       setMyOrders(sellerOrders);
+      getSettlementData(sellerId).then(setSettlementData).catch(() => {});
     } finally {
       setLoading(false);
     }
@@ -768,6 +841,23 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => {
+              setActiveTab("payouts");
+              setEditingProduct(null);
+              if (selectedSellerId) {
+                getSettlementData(selectedSellerId).then(setSettlementData).catch(() => {});
+              }
+            }}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition duration-200 flex items-center cursor-pointer ${
+              activeTab === "payouts"
+                ? "border-primary-green text-primary-green"
+                : "border-transparent text-text-dark/50 hover:text-text-dark"
+            }`}
+          >
+            <Landmark className="h-4 w-4 mr-1.5" /> Payouts & Settlements
+          </button>
+          <button
+            type="button"
+            onClick={() => {
               setActiveTab("add");
               setEditingProduct(null);
               // Clear fields
@@ -1118,15 +1208,37 @@ export default function DashboardPage() {
                           {cleanPhone && (
                             <div className="flex items-center gap-2 pt-2 border-t border-warm-brown/5">
                               <a
-                                href={`https://wa.me/91${cleanPhone}?text=${encodeURIComponent(
-                                  `Hello ${order.buyer_name || "Customer"}, this is your MADETRUE maker regarding your order #${order.id} (${order.product_name ?? "item"} × ${order.quantity}).`
-                                )}`}
+                                href={
+                                  order.status === "cancelled" &&
+                                  (order.payment_method === "upi" || order.gateway)
+                                    ? buildRefundWhatsAppUrl(cleanPhone, {
+                                        buyerName: order.buyer_name,
+                                        orderId: order.id,
+                                        productName: order.product_name,
+                                        refundAmount:
+                                          (order.price || 0) * order.quantity +
+                                          (order.delivery_fee || 0),
+                                        reason: "Order cancellation",
+                                        gateway: order.gateway,
+                                      })
+                                    : `https://wa.me/91${cleanPhone}?text=${encodeURIComponent(
+                                        `Hello ${order.buyer_name || "Customer"}, this is your MADETRUE maker regarding your order #${order.id} (${order.product_name ?? "item"} × ${order.quantity}).`
+                                      )}`
+                                }
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center px-3 py-1.5 bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#128C7E] rounded-lg font-bold text-[11px] transition"
+                                className={`inline-flex items-center px-3 py-1.5 rounded-lg font-bold text-[11px] transition ${
+                                  order.status === "cancelled" &&
+                                  (order.payment_method === "upi" || order.gateway)
+                                    ? "bg-amber-100 hover:bg-amber-200 text-amber-900"
+                                    : "bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#128C7E]"
+                                }`}
                               >
                                 <MessageCircle className="h-3.5 w-3.5 mr-1" />
-                                WhatsApp
+                                {order.status === "cancelled" &&
+                                (order.payment_method === "upi" || order.gateway)
+                                  ? "WhatsApp Refund Notice"
+                                  : "WhatsApp"}
                               </a>
                               <a
                                 href={`tel:${order.buyer_phone}`}
@@ -1181,9 +1293,11 @@ export default function DashboardPage() {
                               {order.status === "pending" && (
                                 <>
                                   {cancelConfirmId === order.id ? (
-                                    <div className="flex items-center gap-1.5 bg-red-50 p-1 rounded-xl border border-red-200">
+                                    <div className="flex items-center gap-1.5 bg-red-50 p-1.5 rounded-xl border border-red-200">
                                       <span className="text-[11px] font-bold text-red-700 px-2 font-sans">
-                                        Cancel?
+                                        {order.payment_method === "upi" || order.gateway
+                                          ? `Refund ₹${lineTotal} & Cancel?`
+                                          : "Cancel?"}
                                       </span>
                                       <button
                                         type="button"
@@ -1192,7 +1306,9 @@ export default function DashboardPage() {
                                         }
                                         className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold font-sans transition cursor-pointer"
                                       >
-                                        Yes, Cancel
+                                        {order.payment_method === "upi" || order.gateway
+                                          ? "Yes, Cancel & Refund"
+                                          : "Yes, Cancel"}
                                       </button>
                                       <button
                                         type="button"
@@ -1228,9 +1344,11 @@ export default function DashboardPage() {
                               {order.status === "accepted" && (
                                 <>
                                   {cancelConfirmId === order.id ? (
-                                    <div className="flex items-center gap-1.5 bg-red-50 p-1 rounded-xl border border-red-200">
+                                    <div className="flex items-center gap-1.5 bg-red-50 p-1.5 rounded-xl border border-red-200">
                                       <span className="text-[11px] font-bold text-red-700 px-2 font-sans">
-                                        Cancel?
+                                        {order.payment_method === "upi" || order.gateway
+                                          ? `Refund ₹${lineTotal} & Cancel?`
+                                          : "Cancel?"}
                                       </span>
                                       <button
                                         type="button"
@@ -1239,7 +1357,9 @@ export default function DashboardPage() {
                                         }
                                         className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold font-sans transition cursor-pointer"
                                       >
-                                        Yes, Cancel
+                                        {order.payment_method === "upi" || order.gateway
+                                          ? "Yes, Cancel & Refund"
+                                          : "Yes, Cancel"}
                                       </button>
                                       <button
                                         type="button"
@@ -1362,6 +1482,27 @@ export default function DashboardPage() {
                         ? "Verified and set: when buyers pay, your share settles straight into your bank account — no chasing, no paperwork."
                         : "Your application and bank details are being verified by MADETRUE moderators. Your storefront is already live; payouts switch on the moment verification passes."}
                   </p>
+
+                  <div className="flex items-center justify-between flex-wrap gap-2 pt-3 mt-3 border-t border-warm-brown/10 text-xs font-sans">
+                    <span className="text-text-dark/60">
+                      Gateway Vendor ID:{" "}
+                      <strong className="font-mono text-text-dark">
+                        {actingSeller.payment_vendor_ref || "Registration pending"}
+                      </strong>
+                    </span>
+
+                    {(actingSeller.kyc_status === "failed" ||
+                      (!actingSeller.payment_vendor_ref && actingSeller.is_verified)) && (
+                      <button
+                        type="button"
+                        onClick={handleRetryPayout}
+                        disabled={isRetryingPayout}
+                        className="px-3 py-1.5 bg-white border border-warm-brown/30 hover:bg-cream-bg text-warm-brown font-bold rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
+                      >
+                        {isRetryingPayout ? "Registering..." : "Retry Payout Registration"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (
@@ -1543,6 +1684,173 @@ export default function DashboardPage() {
                 )}
               </div>
             </form>
+          </div>
+        ) : activeTab === "payouts" ? (
+          /* PAYOUTS & SETTLEMENTS TAB (Phase 6 Step 6) */
+          <div className="space-y-6">
+            {/* Header + Sync Button */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#FAF7F2] p-6 rounded-2xl border border-warm-brown/10 shadow-sm">
+              <div className="space-y-1">
+                <h2 className="font-serif text-xl font-bold text-text-dark flex items-center">
+                  <Landmark className="h-5 w-5 mr-2 text-primary-green" />
+                  Payouts & Bank Settlements
+                </h2>
+                <p className="text-xs text-text-dark/60 leading-relaxed max-w-xl font-sans">
+                  Real-time view of your split settlements powered by Cashfree Easy Split. Customer payments are split at source and settled directly into your linked bank account.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSyncMakerSettlements}
+                disabled={isSyncingSettlements}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary-green hover:bg-[#224f3b] disabled:opacity-50 text-cream-bg text-xs font-bold rounded-xl transition cursor-pointer font-sans shrink-0 self-start sm:self-auto"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isSyncingSettlements ? "animate-spin" : ""}`} />
+                {isSyncingSettlements ? "Syncing..." : "Sync Gateway Transfers"}
+              </button>
+            </div>
+
+            {/* 3 Metric Cards: Settled, Pending, Commission */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 font-sans">
+              <div className="bg-[#FAF7F2] p-5 rounded-2xl border border-warm-brown/10 shadow-sm flex items-center justify-between">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">
+                    Paid & Settled to Bank
+                  </span>
+                  <p className="text-3xl font-serif font-bold text-primary-green">
+                    ₹{settlementData?.summary.totalSettled ?? 0}
+                  </p>
+                  <span className="text-[9px] text-text-dark/40 font-semibold block">
+                    Transferred to verified account
+                  </span>
+                </div>
+                <div className="w-10 h-10 bg-primary-green/10 text-primary-green rounded-xl flex items-center justify-center shrink-0">
+                  <CheckCircle className="h-5 w-5" />
+                </div>
+              </div>
+
+              <div className="bg-[#FAF7F2] p-5 rounded-2xl border border-warm-brown/10 shadow-sm flex items-center justify-between">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">
+                    Pending Clearance
+                  </span>
+                  <p className="text-3xl font-serif font-bold text-amber-700">
+                    ₹{settlementData?.summary.pendingSettlement ?? 0}
+                  </p>
+                  <span className="text-[9px] text-text-dark/40 font-semibold block">
+                    Clearing cycle (T+1/T+2 banking days)
+                  </span>
+                </div>
+                <div className="w-10 h-10 bg-amber-100 text-amber-800 rounded-xl flex items-center justify-center shrink-0">
+                  <Clock className="h-5 w-5" />
+                </div>
+              </div>
+
+              <div className="bg-[#FAF7F2] p-5 rounded-2xl border border-warm-brown/10 shadow-sm flex items-center justify-between">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">
+                    Platform Facilitation Fee
+                  </span>
+                  <p className="text-3xl font-serif font-bold text-accent-gold">
+                    ₹{settlementData?.commissionReport.makerBreakdown.find((m) => m.sellerId === selectedSellerId)?.commission ?? 0}
+                  </p>
+                  <span className="text-[9px] text-text-dark/40 font-semibold block">
+                    Transparent 10% platform facilitation
+                  </span>
+                </div>
+                <div className="w-10 h-10 bg-accent-gold/10 text-accent-gold rounded-xl flex items-center justify-center shrink-0">
+                  <Landmark className="h-5 w-5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Gateway Vendor & Account Verification Card */}
+            <div className="bg-[#FAF7F2] p-5 rounded-2xl border border-warm-brown/10 shadow-sm font-sans space-y-3">
+              <div className="flex items-center justify-between border-b border-warm-brown/10 pb-3">
+                <span className="text-xs font-bold text-warm-brown uppercase tracking-wider flex items-center">
+                  <Store className="h-4 w-4 mr-1.5 text-primary-green" /> Gateway Vendor Account
+                </span>
+                <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                  actingSeller?.kyc_status === "verified"
+                    ? "bg-primary-green/10 text-primary-green border-primary-green/30"
+                    : actingSeller?.kyc_status === "failed"
+                    ? "bg-red-100 text-red-800 border-red-200"
+                    : "bg-amber-100 text-amber-800 border-amber-200"
+                }`}>
+                  KYC: {actingSeller?.kyc_status ?? "Pending"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <span className="text-[9px] font-bold text-warm-brown/60 uppercase block">Easy Split Vendor ID</span>
+                  <span className="font-mono font-bold text-text-dark">{actingSeller?.payment_vendor_ref || "Registration pending"}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-warm-brown/60 uppercase block">Business Name</span>
+                  <span className="font-bold text-text-dark">{actingSeller?.business_name}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-warm-brown/60 uppercase block">Settlement Frequency</span>
+                  <span className="font-bold text-text-dark">Daily Automated (T+1)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Settlement History List */}
+            <div className="bg-[#FAF7F2] p-6 rounded-2xl border border-warm-brown/10 shadow-sm space-y-4 font-sans">
+              <h3 className="font-serif text-base font-bold text-text-dark">
+                Recent Gateway Settlement Transfers
+              </h3>
+              {(settlementData?.summary.settlements ?? []).length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-warm-brown/10 text-[9px] font-bold uppercase tracking-wider text-warm-brown/60">
+                        <th className="py-2.5 px-3">Transfer ID</th>
+                        <th className="py-2.5 px-3">Date</th>
+                        <th className="py-2.5 px-3 text-right">Amount</th>
+                        <th className="py-2.5 px-3">Bank Reference (UTR)</th>
+                        <th className="py-2.5 px-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-warm-brown/5">
+                      {(settlementData?.summary.settlements ?? []).map((s) => (
+                        <tr key={s.settlementId} className="hover:bg-warm-brown/5 transition">
+                          <td className="py-3 px-3 font-mono text-[10px] text-text-dark/70">{s.settlementId}</td>
+                          <td className="py-3 px-3 text-text-dark/70">
+                            {s.settledAt ? new Date(s.settledAt).toLocaleDateString() : "Pending"}
+                          </td>
+                          <td className="py-3 px-3 text-right font-serif font-bold text-primary-green">
+                            ₹{s.amount.toFixed(2)}
+                          </td>
+                          <td className="py-3 px-3 font-mono text-[10px] text-text-dark/60">
+                            {s.utr || "Processing transfer"}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                              s.status === "SETTLED"
+                                ? "bg-primary-green/10 text-primary-green"
+                                : s.status === "PENDING"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-red-100 text-red-800"
+                            }`}>
+                              {s.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-10 bg-white/50 rounded-xl border border-warm-brown/10 space-y-2">
+                  <Landmark className="h-8 w-8 text-warm-brown/30 mx-auto" />
+                  <p className="text-xs text-text-dark/60 max-w-sm mx-auto">
+                    No settlement batches have been dispatched yet. When buyers complete orders, your payouts will settle automatically and log here.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           /* ADD / SUBMIT PRODUCT TAB */

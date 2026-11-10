@@ -8,7 +8,16 @@
 // the DB product row, exactly what 0002_rls.sql trusts to a signed-in
 // client once Phase 3 has real sessions).
 
-import type { AuditEntry, Category, Order, Product, Seller } from "../../types";
+import type {
+  AuditEntry,
+  Category,
+  Order,
+  Product,
+  Seller,
+  Transaction,
+  PlatformCommissionReport,
+  SettlementSummary,
+} from "../../types";
 
 async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -355,3 +364,102 @@ export async function updateSellerProfileSupabase(
     body: JSON.stringify({ id, updates }),
   });
 }
+
+export interface RegisterVendorResponse {
+  success: boolean;
+  seller?: Seller;
+  vendorId?: string;
+  status?: string;
+  kyc_status?: string;
+  message?: string;
+}
+
+export async function registerSellerVendorSupabase(
+  id: string
+): Promise<Seller | null> {
+  const res = await requestJson<RegisterVendorResponse>(
+    `/api/sellers/${encodeURIComponent(id)}/vendor`,
+    { method: "POST" }
+  );
+  return res.seller ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Refunds (Phase 6 Step 5) — full & partial refunds via Gateway API
+// ---------------------------------------------------------------------------
+
+export interface RefundOrderResponse {
+  success: boolean;
+  refundId?: string;
+  refundAmount?: number;
+  isFullRefund?: boolean;
+  status?: string;
+  order?: Order;
+  error?: string;
+}
+
+export async function refundOrderSupabase(
+  orderId: string,
+  options?: { amount?: number; reason?: string }
+): Promise<RefundOrderResponse> {
+  return requestJson<RefundOrderResponse>(
+    `/api/orders/${encodeURIComponent(orderId)}/refund`,
+    {
+      method: "POST",
+      body: JSON.stringify(options ?? {}),
+    }
+  );
+}
+
+export interface OrderRefundDetailsResponse {
+  order_id: string;
+  order_total: number;
+  refunded_total: number;
+  refundable_amount: number;
+  is_fully_refunded: boolean;
+  transactions: Transaction[];
+}
+
+export async function fetchOrderRefundDetailsSupabase(
+  orderId: string
+): Promise<OrderRefundDetailsResponse> {
+  return requestJson<OrderRefundDetailsResponse>(
+    `/api/orders/${encodeURIComponent(orderId)}/refund`,
+    { method: "GET" }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Settlements & Commission Reports (Phase 6 Step 6)
+// ---------------------------------------------------------------------------
+
+export interface SettlementsResponse {
+  gateway: string;
+  summary: SettlementSummary;
+  commissionReport: PlatformCommissionReport;
+}
+
+export async function fetchSettlementsSupabase(
+  sellerId?: string
+): Promise<SettlementsResponse> {
+  const query = sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : "";
+  return requestJson<SettlementsResponse>(`/api/settlements${query}`, {
+    method: "GET",
+  });
+}
+
+export async function syncSettlementsSupabase(
+  sellerId?: string
+): Promise<{ success: boolean; count: number; summary: SettlementSummary }> {
+  const query = sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : "";
+  return requestJson<{
+    success: boolean;
+    count: number;
+    summary: SettlementSummary;
+  }>(`/api/settlements${query}`, {
+    method: "POST",
+  });
+}
+
+
+

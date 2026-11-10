@@ -6,6 +6,10 @@ import {
   Order,
   AuditEntry,
   AuditEntityType,
+  Transaction,
+  PlatformCommissionReport,
+  SettlementSummary,
+  MakerCommissionReportRow,
 } from "../../types";
 import { isSupabaseEnabled } from "./dataSource";
 import {
@@ -38,18 +42,29 @@ import {
   updateSellerApplicationSupabase,
   fetchSellerPayoutSupabase,
   updateSellerProfileSupabase,
+  registerSellerVendorSupabase,
   updateOrderStatusSupabase,
+  refundOrderSupabase,
+  fetchOrderRefundDetailsSupabase,
+  fetchSettlementsSupabase,
+  syncSettlementsSupabase,
+  type RefundOrderResponse,
+  type SettlementsResponse,
   type SellerApplicationAction,
   type SellerPayoutDetails,
 } from "./writeSupabase";
 import type { SellerProfileUpdates } from "./writeSupabase";
+import { getPaymentAdapter } from "@/lib/payments";
 
 // Re-exposed so the console can speak the same action/payload vocabulary
 // as the transport layer (admin page imports only from client.ts).
 export type {
   SellerApplicationAction,
   SellerPayoutDetails,
+  RefundOrderResponse,
+  SettlementsResponse,
 } from "./writeSupabase";
+export type { OrderRefundDetailsResponse } from "./writeSupabase";
 import {
   isValidOrderTransition,
   getInvalidTransitionMessage,
@@ -590,11 +605,36 @@ export async function updateSellerApplication(
     ...sellers[index],
     is_verified: action === "approve",
     kyc_status: action === "approve" ? "verified" : "pending",
+    payment_vendor_ref:
+      action === "approve"
+        ? sellers[index].payment_vendor_ref || `vendor_${sellers[index].id}`
+        : sellers[index].payment_vendor_ref,
     application_status,
   };
   saveStoredSellers(sellers);
   return sellers[index];
 }
+
+// Phase 6 Step 2 — register an approved seller as a gateway vendor (Easy Split)
+export async function registerSellerVendor(id: string): Promise<Seller | null> {
+  if (isSupabaseEnabled()) return registerSellerVendorSupabase(id);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const sellers = getStoredSellers();
+  const index = sellers.findIndex((s) => s.id === id);
+  if (index === -1) return null;
+
+  const seller = sellers[index];
+  const vendorId = seller.payment_vendor_ref || `vendor_${seller.id}`;
+
+  sellers[index] = {
+    ...seller,
+    payment_vendor_ref: vendorId,
+    kyc_status: "verified",
+  };
+  saveStoredSellers(sellers);
+  return sellers[index];
+}
+
 
 // Payout display fields for the console's KYC card. Mock mode keeps them
 // inline on the stored seller; Supabase mode reads the private
@@ -811,6 +851,32 @@ export async function saveOrders(newOrders: Order[]): Promise<Order[]> {
   allOrders = [...newOrders, ...allOrders];
   localStorage.setItem("madetrue_orders", JSON.stringify(allOrders));
 
+  // If online payment, record transactions in mock ledger
+  if (newOrders[0]?.gateway) {
+    const storedTx = localStorage.getItem("madetrue_transactions");
+    let allTx: unknown[] = [];
+    if (storedTx) {
+      try {
+        allTx = JSON.parse(storedTx);
+      } catch {
+        allTx = [];
+      }
+    }
+    const newTx = newOrders.map((o) => ({
+      id: `tx_${o.id}_${Date.now()}`,
+      order_id: o.id,
+      seller_id: o.seller_id,
+      gateway: o.gateway,
+      gateway_event_id: `evt_${o.id}_${Date.now()}`,
+      type: "payment",
+      amount: (o.price || 0) * o.quantity,
+      currency: "INR",
+      status: o.split_status === "completed" ? "completed" : "pending",
+      created_at: new Date().toISOString(),
+    }));
+    localStorage.setItem("madetrue_transactions", JSON.stringify([...newTx, ...allTx]));
+  }
+
   // Decrement stock for purchased products
   for (const item of newOrders) {
     await decrementProductStock(item.product_id, item.quantity);
@@ -818,6 +884,172 @@ export async function saveOrders(newOrders: Order[]): Promise<Order[]> {
 
   return newOrders;
 }
+
+export interface SplitSessionResponse {
+  success: boolean;
+  gateway: string;
+  gatewayOrderId: string;
+  paymentSessionId?: string;
+  paymentUrl?: string;
+  splits: Array<{ vendorId: string; amount: number }>;
+  breakdown: {
+    subtotal: number;
+    deliveryFee: number;
+    totalAmount: number;
+    makersShare: number;
+    platformShare: number;
+  };
+  error?: string;
+}
+
+export async function createSplitCheckoutSession(params: {
+  items: Array<{
+    productId: string;
+    sellerId: string;
+    quantity: number;
+    price: number;
+    basePrice?: number;
+    commission?: number;
+  }>;
+  deliveryFee: number;
+  customer: {
+    name: string;
+    phone: string;
+    email?: string;
+  };
+}): Promise<SplitSessionResponse> {
+  const res = await fetch("/api/checkout/split", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err.error as string) || `Failed to create payment session (${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * Processes a mock or live webhook event to update order status and split settlement status.
+ */
+export async function processMockWebhook(event: {
+  type: string;
+  order_id: string;
+  payment_id?: string;
+}): Promise<boolean> {
+  if (isSupabaseEnabled()) {
+    const res = await fetch("/api/webhooks/cashfree", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-webhook-timestamp": String(Date.now()),
+        "x-webhook-signature": "mock_sig",
+      },
+      body: JSON.stringify({
+        type: event.type,
+        data: {
+          order: { order_id: event.order_id },
+          payment: {
+            cf_payment_id: event.payment_id || `cf_${Date.now()}`,
+            payment_status: event.type.includes("SUCCESS") ? "SUCCESS" : "FAILED",
+          },
+        },
+      }),
+    });
+    return res.ok;
+  }
+
+  // Mock mode: update localStorage orders
+  const storedOrders = localStorage.getItem("madetrue_orders");
+  if (!storedOrders) return false;
+  try {
+    const allOrders = JSON.parse(storedOrders) as Order[];
+    let changed = false;
+
+    for (let i = 0; i < allOrders.length; i++) {
+      if (allOrders[i].gateway_order_ref === event.order_id) {
+        changed = true;
+        if (event.type.includes("SUCCESS")) {
+          allOrders[i].split_status = "completed";
+          allOrders[i].gateway_payment_ref = event.payment_id || `cf_mock_${Date.now()}`;
+        } else {
+          allOrders[i].status = "cancelled";
+          allOrders[i].split_status = "failed";
+          // Restore stock in mock store
+          const prods = getStoredProducts();
+          const pIdx = prods.findIndex((p) => p.id === allOrders[i].product_id);
+          if (pIdx !== -1) {
+            prods[pIdx].stock += allOrders[i].quantity;
+            prods[pIdx].is_available = true;
+            saveStoredProducts(prods);
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      localStorage.setItem("madetrue_orders", JSON.stringify(allOrders));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sweeps online payments that were abandoned by the user beyond timeout and cancels them honestly.
+ */
+export async function expireAbandonedOrders(timeoutMinutes = 30): Promise<number> {
+  if (isSupabaseEnabled()) {
+    const res = await fetch(`/api/orders/expire-abandoned?minutes=${timeoutMinutes}`, {
+      method: "POST",
+    });
+    if (!res.ok) return 0;
+    const data = await res.json().catch(() => ({}));
+    return Number(data.expired_count) || 0;
+  }
+
+  // Mock mode
+  const storedOrders = localStorage.getItem("madetrue_orders");
+  if (!storedOrders) return 0;
+  try {
+    const allOrders = JSON.parse(storedOrders) as Order[];
+    const threshold = Date.now() - timeoutMinutes * 60 * 1000;
+    let expiredCount = 0;
+
+    for (let i = 0; i < allOrders.length; i++) {
+      const ord = allOrders[i];
+      if (
+        ord.gateway &&
+        ord.status === "pending" &&
+        ord.split_status === "pending" &&
+        new Date(ord.created_at).getTime() < threshold
+      ) {
+        ord.status = "cancelled";
+        ord.split_status = "not_applicable";
+        expiredCount++;
+
+        const prods = getStoredProducts();
+        const pIdx = prods.findIndex((p) => p.id === ord.product_id);
+        if (pIdx !== -1) {
+          prods[pIdx].stock += ord.quantity;
+          prods[pIdx].is_available = true;
+          saveStoredProducts(prods);
+        }
+      }
+    }
+
+    if (expiredCount > 0) {
+      localStorage.setItem("madetrue_orders", JSON.stringify(allOrders));
+    }
+    return expiredCount;
+  } catch {
+    return 0;
+  }
+}
+
+
 
 // ---------------------------------------------------------------------------
 // Admin audit trail (Phase 5 Step 7). Every console moderation action
@@ -946,3 +1178,275 @@ export async function decrementProductStock(
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Transactions & Refunds (Phase 6 Step 5)
+// ---------------------------------------------------------------------------
+
+export async function getOrderTransactions(orderId: string): Promise<Transaction[]> {
+  if (isSupabaseEnabled()) {
+    try {
+      const details = await fetchOrderRefundDetailsSupabase(orderId);
+      return details.transactions || [];
+    } catch {
+      return [];
+    }
+  }
+
+  if (typeof window === "undefined") return [];
+  const storedTx = localStorage.getItem("madetrue_transactions");
+  if (!storedTx) return [];
+  try {
+    const list: Transaction[] = JSON.parse(storedTx);
+    return list.filter((t) => t.order_id === orderId);
+  } catch {
+    return [];
+  }
+}
+
+export async function refundOrder(
+  orderId: string,
+  options?: { amount?: number; reason?: string }
+): Promise<RefundOrderResponse> {
+  if (isSupabaseEnabled()) {
+    return refundOrderSupabase(orderId, options);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const orders = getStoredOrders();
+  const index = orders.findIndex((o) => o.id === orderId);
+  if (index === -1) {
+    return { success: false, error: `Order #${orderId} not found.` };
+  }
+
+  const order = orders[index];
+  const storedTx = typeof window !== "undefined" ? localStorage.getItem("madetrue_transactions") : null;
+  let allTx: Transaction[] = [];
+  if (storedTx) {
+    try {
+      allTx = JSON.parse(storedTx);
+    } catch {
+      allTx = [];
+    }
+  }
+
+  const orderTotal =
+    (order.price || 0) * order.quantity + (order.delivery_fee || 0);
+
+  const priorRefunded = allTx
+    .filter((tx) => tx.order_id === orderId && tx.type === "refund" && tx.status !== "failed")
+    .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+
+  const maxRefundable = Math.max(0, orderTotal - priorRefunded);
+  if (maxRefundable <= 0) {
+    return { success: false, error: `Order #${orderId} is already fully refunded.` };
+  }
+
+  const refundAmount = options?.amount
+    ? Number(Math.min(options.amount, maxRefundable).toFixed(2))
+    : Number(maxRefundable.toFixed(2));
+
+  if (refundAmount <= 0) {
+    return { success: false, error: "Refund amount must be greater than zero." };
+  }
+
+  // Call adapter
+  const adapter = getPaymentAdapter();
+  const refundId = `ref_${order.id}_${Date.now()}`;
+  const refundResult = await adapter.createRefund({
+    orderId: order.id,
+    gatewayOrderId: order.gateway_order_ref || order.id,
+    refundId,
+    refundAmount,
+    reason: options?.reason || "Customer order refund",
+  });
+
+  if (!refundResult.success) {
+    return {
+      success: false,
+      error: refundResult.error || "Payment gateway rejected the refund.",
+    };
+  }
+
+  const newTx: Transaction = {
+    id: `tx_ref_${Date.now()}`,
+    order_id: order.id,
+    seller_id: order.seller_id,
+    gateway: order.gateway || "mock",
+    gateway_event_id: refundResult.gatewayRefundId || refundId,
+    type: "refund",
+    amount: refundAmount,
+    currency: "INR",
+    status: refundResult.status === "FAILED" ? "failed" : "completed",
+    created_at: new Date().toISOString(),
+  };
+
+  if (typeof window !== "undefined") {
+    localStorage.setItem("madetrue_transactions", JSON.stringify([newTx, ...allTx]));
+  }
+
+  const isFullRefund = priorRefunded + refundAmount >= orderTotal;
+  let updatedOrder = { ...order };
+
+  if (isFullRefund && order.status !== "cancelled") {
+    updatedOrder = { ...order, status: "cancelled" };
+    orders[index] = updatedOrder;
+    saveStoredOrders(orders);
+
+    // Restore stock
+    const products = getStoredProducts();
+    const prodIdx = products.findIndex((p) => p.id === order.product_id);
+    if (prodIdx !== -1) {
+      products[prodIdx].stock += order.quantity;
+      products[prodIdx].is_available = true;
+      saveStoredProducts(products);
+    }
+  }
+
+  // Append audit
+  recordAudit({
+    actor_name: "Console Admin / Maker",
+    actor_email: "support@madetrue.local",
+    entity_type: "order",
+    entity_id: order.id,
+    entity_label: order.product_name ?? order.id,
+    action: "order_refunded",
+    summary: `Refund of ₹${refundAmount} (${isFullRefund ? "full" : "partial"}) recorded. Reason: ${options?.reason || "Not specified"}`,
+  });
+
+  return {
+    success: true,
+    refundId: refundResult.gatewayRefundId || refundId,
+    refundAmount,
+    isFullRefund,
+    status: refundResult.status,
+    order: updatedOrder,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Settlements & Commission Reports (Phase 6 Step 6)
+// ---------------------------------------------------------------------------
+
+export async function getSettlementData(
+  sellerId?: string
+): Promise<SettlementsResponse> {
+  if (isSupabaseEnabled()) {
+    return fetchSettlementsSupabase(sellerId);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const orders = getStoredOrders().filter((o) => o.status !== "cancelled");
+  const sellers = getStoredSellers();
+  const targetSellers = sellerId ? sellers.filter((s) => s.id === sellerId) : sellers;
+
+  const adapter = getPaymentAdapter();
+  const primaryVendorRef = sellerId ? targetSellers[0]?.payment_vendor_ref : undefined;
+  const settlementSummary = await adapter.getSettlements({ vendorId: primaryVendorRef });
+
+  const makerRows: MakerCommissionReportRow[] = targetSellers.map((seller) => {
+    const makerOrders = orders.filter((o) => o.seller_id === seller.id);
+    const orderCount = makerOrders.length;
+
+    let grossSales = 0;
+    let makerShare = 0;
+    let commission = 0;
+    let deliveryFees = 0;
+
+    for (const order of makerOrders) {
+      const qty = Number(order.quantity ?? 1);
+      const linePrice = Number(order.price ?? 0);
+      const lineBase = Number(order.base_price ?? linePrice);
+      const lineComm = Number(order.commission ?? Math.max(0, linePrice - lineBase));
+      const lineFee = Number(order.delivery_fee ?? 0);
+
+      grossSales += linePrice * qty;
+      makerShare += lineBase * qty;
+      commission += lineComm * qty;
+      deliveryFees += lineFee;
+    }
+
+    const makerSettlements = settlementSummary.settlements.filter(
+      (s) => !s.vendorId || s.vendorId === seller.payment_vendor_ref
+    );
+    const settledAmount = makerSettlements
+      .filter((s) => s.status === "SETTLED")
+      .reduce((sum, s) => sum + s.amount, 0);
+
+    const pendingSettlement = Math.max(0, makerShare - settledAmount);
+    const status: MakerCommissionReportRow["status"] =
+      orderCount === 0
+        ? "no_sales"
+        : pendingSettlement > 0
+        ? "pending"
+        : "settled";
+
+    return {
+      sellerId: seller.id,
+      businessName: seller.business_name,
+      vendorRef: seller.payment_vendor_ref || undefined,
+      orderCount,
+      grossSales: Number(grossSales.toFixed(2)),
+      makerShare: Number(makerShare.toFixed(2)),
+      commission: Number(commission.toFixed(2)),
+      deliveryFees: Number(deliveryFees.toFixed(2)),
+      settledAmount: Number(settledAmount.toFixed(2)),
+      pendingSettlement: Number(pendingSettlement.toFixed(2)),
+      status,
+    };
+  });
+
+  const totalGrossSales = makerRows.reduce((acc, r) => acc + r.grossSales, 0);
+  const totalMakerPayouts = makerRows.reduce((acc, r) => acc + r.makerShare, 0);
+  const totalCommissionEarned = makerRows.reduce((acc, r) => acc + r.commission, 0);
+  const totalDeliveryFees = makerRows.reduce((acc, r) => acc + r.deliveryFees, 0);
+  const totalSettledToMakers = makerRows.reduce((acc, r) => acc + r.settledAmount, 0);
+  const totalPendingSettlement = makerRows.reduce((acc, r) => acc + r.pendingSettlement, 0);
+
+  const commissionReport: PlatformCommissionReport = {
+    period: "All-time (Mock Realtime Synced)",
+    currency: "INR",
+    totalGrossSales: Number(totalGrossSales.toFixed(2)),
+    totalMakerPayouts: Number(totalMakerPayouts.toFixed(2)),
+    totalCommissionEarned: Number(totalCommissionEarned.toFixed(2)),
+    totalDeliveryFees: Number(totalDeliveryFees.toFixed(2)),
+    totalSettledToMakers: Number(totalSettledToMakers.toFixed(2)),
+    totalPendingSettlement: Number(totalPendingSettlement.toFixed(2)),
+    makerBreakdown: makerRows,
+  };
+
+  return {
+    gateway: adapter.name,
+    summary: settlementSummary,
+    commissionReport,
+  };
+}
+
+export async function syncSettlements(
+  sellerId?: string
+): Promise<{ success: boolean; count: number; summary: SettlementSummary }> {
+  if (isSupabaseEnabled()) {
+    return syncSettlementsSupabase(sellerId);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const adapter = getPaymentAdapter();
+  const summary = await adapter.getSettlements();
+
+  recordAudit({
+    actor_name: "Console Admin / Maker",
+    actor_email: "support@madetrue.local",
+    entity_type: "seller",
+    entity_id: sellerId || "all",
+    entity_label: "Settlement Reports",
+    action: "settlements_synced",
+    summary: `Settlement reports synced from Mock Gateway (${summary.settlements.length} settlement batches verified, ₹${summary.totalSettled} settled).`,
+  });
+
+  return {
+    success: true,
+    count: summary.settlements.length,
+    summary,
+  };
+}
+

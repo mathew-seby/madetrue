@@ -91,6 +91,11 @@ export interface Order {
   price?: number;
   // Recorded once per delivery basket on its first line (checkout rule).
   delivery_fee?: number;
+  // Gateway & Split payment fields (Phase 6):
+  gateway?: 'cashfree' | 'razorpay' | 'payu' | 'mock' | null;
+  gateway_order_ref?: string | null;
+  gateway_payment_ref?: string | null;
+  split_status?: 'not_applicable' | 'pending' | 'completed' | 'failed';
 }
 
 export interface Category {
@@ -121,3 +126,66 @@ export interface AuditEntry {
   /** The before → after sentence shown in the console. */
   summary: string;
 }
+
+// Append-only transactions ledger (Phase 2 schema, Phase 6 payments & refunds)
+export interface Transaction {
+  id: string;
+  order_id: string;
+  seller_id: string;
+  gateway: 'cashfree' | 'razorpay' | 'payu' | 'mock';
+  gateway_event_id: string;
+  type: 'payment' | 'refund' | 'settlement' | 'commission';
+  amount: number;
+  currency: string;
+  status: 'pending' | 'completed' | 'failed';
+  created_at: string;
+}
+
+// Settlement & Commission Reports (Phase 6 Step 6):
+export interface MakerCommissionReportRow {
+  sellerId: string;
+  businessName: string;
+  vendorRef?: string;
+  orderCount: number;
+  grossSales: number;
+  makerShare: number;
+  commission: number;
+  deliveryFees: number;
+  settledAmount: number;
+  pendingSettlement: number;
+  status: "settled" | "pending" | "no_sales";
+}
+
+export interface PlatformCommissionReport {
+  period: string;
+  currency: string;
+  totalGrossSales: number;
+  totalMakerPayouts: number;
+  totalCommissionEarned: number;
+  totalDeliveryFees: number;
+  totalSettledToMakers: number;
+  totalPendingSettlement: number;
+  makerBreakdown: MakerCommissionReportRow[];
+}
+
+// Payment adapter and split settlements (Phase 6):
+export type {
+  PaymentGatewayName,
+  PaymentAdapter,
+  SplitRecipient,
+  CustomerDetails,
+  CreateSplitOrderInput,
+  CreateSplitOrderResult,
+  VerifyPaymentResult,
+  RefundInput,
+  RefundResult,
+  WebhookVerificationInput,
+  WebhookEvent,
+  WebhookVerificationResult,
+  SettlementFilter,
+  SettlementItem,
+  SettlementSummary,
+  RegisterVendorInput,
+  RegisterVendorResult,
+} from "@/lib/payments/types";
+
