@@ -792,7 +792,7 @@ export default function CheckoutPage() {
                   )}
                 </div>
 
-                <div className="pt-4">
+                <div className="pt-4 space-y-2">
                   <button
                     type="submit"
                     disabled={submitting}
@@ -804,6 +804,21 @@ export default function CheckoutPage() {
                         ? `Pay ₹${subtotal + deliveryFee} via Online Split (UPI/Card)`
                         : `Place Cash on Delivery Order (₹${subtotal + deliveryFee})`}
                   </button>
+                  <p className="text-center text-[10px] text-text-dark/60 font-sans leading-relaxed">
+                    By placing your order, you agree to MADETRUE&apos;s{" "}
+                    <Link href="/terms" target="_blank" className="underline hover:text-primary-green">
+                      Terms of Service
+                    </Link>
+                    {", "}
+                    <Link href="/privacy" target="_blank" className="underline hover:text-primary-green">
+                      Privacy Policy
+                    </Link>
+                    {", and "}
+                    <Link href="/refund-policy" target="_blank" className="underline hover:text-primary-green">
+                      Refund Policy
+                    </Link>
+                    .
+                  </p>
                 </div>
               </form>
             </div>
