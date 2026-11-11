@@ -33,7 +33,7 @@ import {
   retryNotification,
 } from "@/lib/supabase/client";
 import type { SellerApplicationAction, SellerPayoutDetails, SettlementsResponse, WhatsAppProviderStatus } from "@/lib/supabase/client";
-import { Order, Product, Seller, Category, AuditEntry, AuditEntityType, NotificationLog } from "@/types";
+import { Order, Product, Seller, Category, AuditEntry, AuditEntityType, NotificationLog, ReconciliationPeriodKey } from "@/types";
 import { DELIVERY_FEE } from "@/lib/utils/constants";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { CATEGORY_ICONS, DEFAULT_CATEGORY_ICON, slugifyName, isValidSlug, type CategoryIcon } from "@/lib/utils/categories";
@@ -54,7 +54,7 @@ import {
   ChevronUp, Image as ImageIcon, Navigation, ShoppingBag, 
   Users, Send, Award, ShieldAlert, Calendar, CreditCard, RotateCcw, Landmark,
   Search, Trash2, EyeOff, ArrowDownUp, Layers, PenLine, ChartColumn, RefreshCw, History,
-  Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower, AlertCircle, Loader2
+  Leaf, UtensilsCrossed, Paintbrush, Sprout, Flower, AlertCircle, Loader2, Scale
 } from "lucide-react";
 
 // Pre-seed three demo orders the first time the admin console runs.
@@ -209,6 +209,18 @@ export default function AdminPage() {
   const [settlementData, setSettlementData] = useState<SettlementsResponse | null>(null);
   const [syncingSettlements, setSyncingSettlements] = useState(false);
 
+  // Period reconciliation (Phase 10 Step 1): reporting window + derived report.
+  const [reconPeriod, setReconPeriod] = useState<ReconciliationPeriodKey>("all");
+  const recon = settlementData?.reconciliation ?? null;
+  const reconChipClass: Record<string, string> = {
+    matched: "bg-primary-green/10 text-primary-green",
+    variance: "bg-red-100 text-red-700",
+    unavailable: "bg-warm-brown/10 text-warm-brown/60",
+    pending_gateway: "bg-amber-100 text-amber-800",
+    no_activity: "bg-warm-brown/10 text-warm-brown/60",
+    partial_data: "bg-amber-100 text-amber-800",
+  };
+
   // WhatsApp templates (Phase 7 Step 4) — provider status + sandbox sends.
   const [waStatus, setWaStatus] = useState<WhatsAppProviderStatus | null>(null);
   const [waStatusError, setWaStatusError] = useState<string | null>(null);
@@ -302,15 +314,26 @@ export default function AdminPage() {
       console.warn("[madetrue] audit trail unavailable:", e);
       setAuditLog([]);
     }
-
-    // Settlements and commission reports (Phase 6 Step 6)
-    try {
-      const sData = await getSettlementData();
-      setSettlementData(sData);
-    } catch (e) {
-      console.warn("[madetrue] settlement reports unavailable:", e);
-    }
   }, [showToast]);
+
+  // Settlements + period reconciliation (Phase 6 Step 6 · Phase 10 Step 1).
+  // Owned by this effect so a window change refetches both the commission
+  // report and the reconciliation report; an unreachable gateway (e.g. mock
+  // mode hiccups) keeps the last report and a console warn, never a crash.
+  useEffect(() => {
+    if (!authorized) return;
+    let active = true;
+    getSettlementData(undefined, reconPeriod)
+      .then((data) => {
+        if (active) setSettlementData(data);
+      })
+      .catch((e) => {
+        console.warn("[madetrue] settlement reports unavailable:", e);
+      });
+    return () => {
+      active = false;
+    };
+  }, [authorized, reconPeriod]);
 
   // Authentication check on mount: the console is admin-only and the
   // decision is derived from the REAL session (AuthProvider), never from a
@@ -731,7 +754,7 @@ export default function AdminPage() {
           action: "settlements_synced",
           summary: `Settlement reports synced (${res.count} batches, ₹${res.summary.totalSettled} settled).`,
         });
-        const fresh = await getSettlementData();
+        const fresh = await getSettlementData(undefined, reconPeriod);
         setSettlementData(fresh);
       }
     } catch (err: unknown) {
@@ -2232,6 +2255,178 @@ export default function AdminPage() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+
+              {/* PERIOD RECONCILIATION (Phase 10 Step 1) */}
+              <div className="border-t border-warm-brown/10 pt-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-7 h-7 rounded-lg bg-accent-gold/15 text-accent-gold flex items-center justify-center">
+                        <Scale className="h-3.5 w-3.5" />
+                      </span>
+                      <h4 className="text-xs font-bold text-warm-brown uppercase tracking-wider font-sans">
+                        Period Reconciliation
+                      </h4>
+                    </div>
+                    <p className="text-[11px] text-text-dark/60 leading-relaxed font-sans">
+                      Orders, the transactions ledger and the gateway must agree on every rupee. Deltas are shown as they are — never smoothed.
+                    </p>
+                  </div>
+                  <label className="font-sans text-[10px] font-bold text-warm-brown uppercase tracking-wider flex items-center gap-2 shrink-0 self-start">
+                    Window
+                    <select
+                      value={reconPeriod}
+                      onChange={(e) => setReconPeriod(e.target.value as ReconciliationPeriodKey)}
+                      aria-label="Reconciliation period"
+                      className="px-3 py-2 rounded-xl border border-warm-brown/20 bg-white text-text-dark text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary-green/40 cursor-pointer"
+                    >
+                      <option value="all">All time</option>
+                      <option value="30d">Last 30 days</option>
+                      <option value="this_month">This month</option>
+                      <option value="last_month">Last month</option>
+                    </select>
+                  </label>
+                </div>
+
+                {!recon ? (
+                  <p className="text-xs text-text-dark/50 font-sans bg-white/70 border border-warm-brown/10 rounded-xl p-4">
+                    Reconciliation figures could not be loaded for this window. The commission report above still works.
+                  </p>
+                ) : (
+                  <div className="space-y-4 font-sans">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-semibold text-text-dark/50">
+                        Reporting window: <span className="text-text-dark/80">{recon.window.label}</span>
+                      </span>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${reconChipClass[recon.status] ?? "bg-warm-brown/10 text-warm-brown/60"}`}>
+                        {recon.status.replace(/_/g, " ")}
+                      </span>
+                      <span className="text-[10px] text-text-dark/40">via {recon.gateway} gateway</span>
+                    </div>
+
+                    {/* Three sources, side by side */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-white/80 p-3 rounded-2xl border border-warm-brown/10">
+                        <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block">Orders say</span>
+                        <p className="text-sm font-bold text-text-dark mt-1">₹{recon.orders.grossSales} gross</p>
+                        <span className="text-[9px] text-text-dark/40 block">
+                          commission ₹{recon.orders.commission} · fees ₹{recon.orders.deliveryFees} · {recon.orders.orderCount} orders
+                        </span>
+                      </div>
+                      <div className="bg-white/80 p-3 rounded-2xl border border-warm-brown/10">
+                        <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block">Ledger says</span>
+                        <p className="text-sm font-bold text-text-dark mt-1">₹{recon.ledger.payments} payments</p>
+                        <span className="text-[9px] text-text-dark/40 block">
+                          ₹{recon.ledger.refunds} refunded · {recon.ledger.entries} ledger {recon.ledger.entries === 1 ? "entry" : "entries"}
+                        </span>
+                      </div>
+                      <div className="bg-white/80 p-3 rounded-2xl border border-warm-brown/10">
+                        <span className="text-[9px] font-bold text-warm-brown uppercase tracking-wider block">Gateway says</span>
+                        <p className="text-sm font-bold text-text-dark mt-1">₹{recon.gatewayTotals.settled} settled</p>
+                        <span className="text-[9px] text-text-dark/40 block">
+                          {recon.gatewayTotals.batches} settled {recon.gatewayTotals.batches === 1 ? "batch" : "batches"} · ₹{recon.gatewayTotals.pending} pending
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Metric-by-metric variance table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-warm-brown/10 text-[9px] font-bold uppercase tracking-wider text-warm-brown/60">
+                            <th className="py-2.5 px-3">Metric</th>
+                            <th className="py-2.5 px-3 text-right">Orders</th>
+                            <th className="py-2.5 px-3 text-right">Ledger</th>
+                            <th className="py-2.5 px-3 text-right">Gateway</th>
+                            <th className="py-2.5 px-3 text-right">Delta</th>
+                            <th className="py-2.5 px-3 text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-warm-brown/5">
+                          {recon.variances.map((v) => {
+                            const deltaLabel =
+                              v.delta === undefined
+                                ? "—"
+                                : v.metric === "delivery_fees"
+                                ? `${v.delta} anomal${v.delta === 1 ? "y" : "ies"}`
+                                : `${v.delta > 0 ? "+" : v.delta < 0 ? "−" : ""}₹${Math.abs(v.delta)}`;
+                            return (
+                              <tr key={v.metric} className="hover:bg-warm-brown/5 transition align-top">
+                                <td className="py-3 px-3">
+                                  <span className="font-bold text-text-dark">{v.label}</span>
+                                  <span className="block text-[9px] text-text-dark/40 leading-relaxed max-w-[280px]">{v.note}</span>
+                                </td>
+                                <td className="py-3 px-3 text-right text-text-dark font-semibold">{v.ordersSays === undefined ? "—" : `₹${v.ordersSays}`}</td>
+                                <td className="py-3 px-3 text-right text-text-dark/70 font-mono">{v.ledgerSays === undefined ? "—" : `₹${v.ledgerSays}`}</td>
+                                <td className="py-3 px-3 text-right text-text-dark/70 font-mono">{v.gatewaySays === undefined ? "—" : `₹${v.gatewaySays}`}</td>
+                                <td className={`py-3 px-3 text-right font-mono font-semibold ${v.state === "variance" ? "text-red-600" : "text-text-dark/60"}`}>{deltaLabel}</td>
+                                <td className="py-3 px-3 text-center">
+                                  <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${reconChipClass[v.state] ?? "bg-warm-brown/10 text-warm-brown/60"}`}>
+                                    {v.state}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Maker-by-maker reconciliation */}
+                    <div className="space-y-2">
+                      <h4 className="text-[10px] font-bold text-warm-brown uppercase tracking-wider">
+                        Maker-by-Maker Reconciliation
+                      </h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-warm-brown/10 text-[9px] font-bold uppercase tracking-wider text-warm-brown/60">
+                              <th className="py-2.5 px-3">Maker Store</th>
+                              <th className="py-2.5 px-3 text-right">Orders</th>
+                              <th className="py-2.5 px-3 text-right">Gross</th>
+                              <th className="py-2.5 px-3 text-right">Commission</th>
+                              <th className="py-2.5 px-3 text-right">Online Share</th>
+                              <th className="py-2.5 px-3 text-right">Ledger In</th>
+                              <th className="py-2.5 px-3 text-right">Gateway Settled</th>
+                              <th className="py-2.5 px-3 text-center">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-warm-brown/5">
+                            {recon.makerRows.map((row) => (
+                              <tr key={row.sellerId} className="hover:bg-warm-brown/5 transition align-top">
+                                <td className="py-3 px-3">
+                                  <span className="font-bold text-text-dark font-serif">{row.businessName}</span>
+                                  <span className="block text-[9px] text-text-dark/40 leading-relaxed max-w-[240px]">{row.note}</span>
+                                </td>
+                                <td className="py-3 px-3 text-right text-text-dark font-semibold">{row.orderCount}</td>
+                                <td className="py-3 px-3 text-right text-text-dark font-semibold">₹{row.grossSales}</td>
+                                <td className="py-3 px-3 text-right font-bold text-accent-gold">₹{row.commission}</td>
+                                <td className="py-3 px-3 text-right font-semibold text-primary-green">₹{row.onlineMakerShare}</td>
+                                <td className="py-3 px-3 text-right text-text-dark/70 font-mono">₹{row.ledgerPayments}</td>
+                                <td className="py-3 px-3 text-right text-text-dark/70 font-mono">₹{row.gatewaySettled}</td>
+                                <td className="py-3 px-3 text-center">
+                                  <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${reconChipClass[row.status] ?? "bg-warm-brown/10 text-warm-brown/60"}`}>
+                                    {row.status.replace(/_/g, " ")}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Honest notes */}
+                    <ul className="space-y-1">
+                      {recon.notes.map((n, i) => (
+                        <li key={i} className="text-[10px] text-text-dark/50 font-sans leading-relaxed">
+                          • {n}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </div>
           </div>

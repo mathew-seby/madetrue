@@ -8,10 +8,16 @@ import {
   AuditEntityType,
   Transaction,
   PlatformCommissionReport,
+  PlatformReconciliationReport,
+  ReconciliationTransactionInput,
   SettlementSummary,
   MakerCommissionReportRow,
   NotificationLog,
 } from "../../types";
+import {
+  computeReconciliation,
+  resolveReconciliationWindow,
+} from "../payments/reconciliation";
 import { isSupabaseEnabled } from "./dataSource";
 import {
   fetchCategoriesSupabase,
@@ -1530,10 +1536,11 @@ export async function rejectOrderCancellation(
 // ---------------------------------------------------------------------------
 
 export async function getSettlementData(
-  sellerId?: string
+  sellerId?: string,
+  period?: string
 ): Promise<SettlementsResponse> {
   if (isSupabaseEnabled()) {
-    return fetchSettlementsSupabase(sellerId);
+    return fetchSettlementsSupabase(sellerId, period);
   }
 
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -1620,7 +1627,67 @@ export async function getSettlementData(
     gateway: adapter.name,
     summary: settlementSummary,
     commissionReport,
+    reconciliation: buildMockReconciliation({
+      orders,
+      sellerId,
+      targetSellers,
+      adapterName: adapter.name,
+      settlements: settlementSummary.settlements,
+      gatewayPending: settlementSummary.pendingSettlement,
+      period,
+    }),
   };
+}
+
+/**
+ * Mock-mode reconciliation (Phase 10 Step 1): same pure math as the API
+ * route, fed from the localStorage order book and the madetrue_transactions
+ * mock ledger. A missing/unparseable ledger degrades to "no entries" and the
+ * report says so honestly.
+ */
+function buildMockReconciliation(params: {
+  orders: Order[];
+  sellerId?: string;
+  targetSellers: Seller[];
+  adapterName: string;
+  settlements: SettlementSummary["settlements"];
+  gatewayPending: number;
+  period?: string;
+}): PlatformReconciliationReport {
+  let storedTx: string | null = null;
+  if (typeof window !== "undefined") {
+    storedTx = localStorage.getItem("madetrue_transactions");
+  }
+  let transactions: ReconciliationTransactionInput[] = [];
+  if (storedTx) {
+    try {
+      transactions = JSON.parse(storedTx) as ReconciliationTransactionInput[];
+    } catch {
+      transactions = [];
+    }
+  }
+
+  let reconciliationWindow;
+  try {
+    reconciliationWindow = resolveReconciliationWindow(params.period ?? null);
+  } catch {
+    reconciliationWindow = resolveReconciliationWindow("all");
+  }
+
+  return computeReconciliation({
+    orders: params.orders,
+    transactions,
+    settlements: params.settlements,
+    gatewayPending: params.gatewayPending,
+    window: reconciliationWindow,
+    gateway: params.adapterName,
+    makers: params.targetSellers.map((seller) => ({
+      id: seller.id,
+      businessName: seller.business_name,
+      vendorRef: seller.payment_vendor_ref || null,
+    })),
+    scopeSellerId: params.sellerId ?? null,
+  });
 }
 
 export async function syncSettlements(
