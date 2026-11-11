@@ -7,9 +7,21 @@ import { isAtBasketCap, useCart } from "@/components/shared/CartProvider";
 import { Product, Seller } from "@/types";
 import { ShoppingCart, Heart, Store, Check, X } from "lucide-react";
 
-export default function TrendingProducts() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [sellers, setSellers] = useState<{ [key: string]: Seller }>({});
+interface TrendingProductsProps {
+  initialProducts?: Product[];
+  initialSellers?: { [key: string]: Seller };
+}
+
+export default function TrendingProducts({
+  initialProducts,
+  initialSellers,
+}: TrendingProductsProps = {}) {
+  const [products, setProducts] = useState<Product[]>(
+    initialProducts ? initialProducts.slice(0, 4) : []
+  );
+  const [sellers, setSellers] = useState<{ [key: string]: Seller }>(
+    initialSellers ?? {}
+  );
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
   const [cappedProductId, setCappedProductId] = useState<string | null>(null);
 
@@ -31,6 +43,7 @@ export default function TrendingProducts() {
   };
 
   useEffect(() => {
+    if (initialProducts && initialProducts.length > 0 && initialSellers) return;
     async function load() {
       const prodData = await getProducts();
       const sellerData = await getSellers();
@@ -45,7 +58,7 @@ export default function TrendingProducts() {
       setSellers(sellerMap);
     }
     load();
-  }, []);
+  }, [initialProducts, initialSellers]);
 
   // Badge background color map
   const getBadgeStyle = (tag: string) => {
@@ -108,7 +121,11 @@ export default function TrendingProducts() {
                     />
                   </Link>
                   {/* Favorite button */}
-                  <button className="absolute top-3 right-3 p-2 rounded-full bg-cream-bg/80 hover:bg-cream-bg text-text-dark hover:text-red-500 shadow-sm transition">
+                  <button
+                    type="button"
+                    aria-label={`Save ${product.name} to wishlist`}
+                    className="absolute top-3 right-3 p-2 rounded-full bg-cream-bg/80 hover:bg-cream-bg text-text-dark hover:text-red-500 shadow-sm transition cursor-pointer"
+                  >
                     <Heart className="h-4.5 w-4.5" />
                   </button>
 
@@ -186,21 +203,31 @@ export default function TrendingProducts() {
                     </Link>
                     {product.stock === 0 || !product.is_available ? (
                       <button
+                        type="button"
                         disabled
                         className="flex items-center justify-center p-2 rounded-xl bg-gray-200 text-gray-400 cursor-not-allowed"
                         title="Sold Out"
+                        aria-label={`${product.name} is sold out`}
                       >
                         <X className="h-4 w-4" />
                       </button>
                     ) : (
                       <button
+                        type="button"
                         onClick={() => handleAddToCart(product)}
+                        aria-label={
+                          cappedProductId === product.id
+                            ? `Basket already holds max stock of ${product.name}`
+                            : addedProductId === product.id
+                              ? `Added ${product.name} to basket`
+                              : `Add ${product.name} to basket`
+                        }
                         title={
                           cappedProductId === product.id
                             ? "Basket already holds every unit in stock"
                             : "Add to Basket"
                         }
-                        className={`flex items-center justify-center p-2 rounded-xl transition duration-200 ${
+                        className={`flex items-center justify-center p-2 rounded-xl transition duration-200 cursor-pointer ${
                           addedProductId === product.id
                             ? "bg-emerald-600 text-white scale-105"
                             : cappedProductId === product.id

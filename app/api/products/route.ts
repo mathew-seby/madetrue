@@ -109,7 +109,15 @@ export async function GET(request: Request) {
     query = query.eq("status", "approved").eq("is_hidden", false);
   }
 
-  const { data, error } = await query.order("id", { ascending: true });
+  // Safe query capping and pagination limits
+  const limitParam = parseInt(searchParams.get("limit") || "100", 10);
+  const limit = Math.min(Math.max(1, isNaN(limitParam) ? 100 : limitParam), 100);
+  const offsetParam = parseInt(searchParams.get("offset") || "0", 10);
+  const offset = Math.max(0, isNaN(offsetParam) ? 0 : offsetParam);
+
+  const { data, error } = await query
+    .order("id", { ascending: true })
+    .range(offset, offset + limit - 1);
 
   if (error) {
     return NextResponse.json(

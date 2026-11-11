@@ -298,8 +298,16 @@ Use exactly these strings — no variations:
 > cancellation lifecycle (request→approve→refund) with universal payment adapter
 > refunding and inventory restoration; durable notification delivery log (`0013`) and
 > retry hub in admin console; automated E2E journey test (`scripts/verifyPhase7Journey.ts`).
+> **Phase 9 (Trust, legal & scale) is complete:** legal pages (terms, privacy,
+> refund, shipping, contact) live with footer and checkout consent; dynamic SEO
+> (metadata, sitemap.xml, robots.txt, OG image card); server-rendered public pages
+> (home, products, sellers, contact) with client islands; catalog pagination with safe query caps;
+> keyboard accessibility pass with skip links, visible focus rings, and aria-labels;
+> Sentry monitoring integration with warm error boundaries (root, global, 404);
+> disaster recovery runbook (`docs/backup-and-disaster-recovery.md`) with automated
+> verification suite (`scripts/verifyBackups.ts`); edge proxy write throttling (`lib/security/rateLimit.ts` & `proxy.ts`).
 > Phase 6 is 6/7 (Step 7 🔑 owner-blocked pending live Cashfree credentials).
-> Next build phase: **Phase 9 — Trust, legal & scale (Step 1: Legal pages).**
+> Next build phase: **Phase 10 — Reconciliation & launch (Step 1: Commission reconciliation).**
 > Payment strategy remains locked: **Cashfree Easy Split** primary (see Locked
 > Decisions #4), with Razorpay Route / PayU Split Settlements as
 > adapter-backed alternates.

@@ -122,10 +122,15 @@ with docs/build-progress.md or git log, the tracker + git win)
   7 lifecycle events; cancellation lifecycle (request→approve→refund) with Phase 6 adapter
   refund and inventory restore; durable delivery log & retry hub in admin console;
   automated E2E journey test (scripts/verifyPhase7Journey.ts).
-- Phase 6 is 6/7 (Step 7 🔑 owner-blocked pending live Cashfree credentials). Canonical next: Phase 9 · Step 1 (Legal pages).
-- Baseline gates: tsc clean · eslint 0 errors / 32 warnings · build ✅ (32 routes).
+- Phase 9 ✅ COMPLETE (7/7) — Trust, legal & scale: legal pages (terms, privacy, refund, shipping, contact);
+  dynamic SEO (sitemap, robots, OG images); server-rendered public pages with client islands;
+  catalog pagination, query caps and image dimensions; accessibility pass (skip links, focus-visible outlines, aria-labels);
+  Sentry monitoring with warm error boundaries (root, global, 404); disaster recovery runbook with backup verification suite
+  (scripts/verifyBackups.ts); edge proxy write throttling (lib/security/rateLimit.ts & proxy.ts).
+- Phase 6 is 6/7 (Step 7 🔑 owner-blocked pending live Cashfree credentials). Canonical next: Phase 10 · Step 1 (Commission reconciliation).
+- Baseline gates: tsc clean · eslint 0 errors / 31 warnings · build ✅ (38 routes).
   Do NOT fix pre-existing warnings unless asked.
-- Snapshot date: 2026-11-10 (commit "feat(phase7): e2e journey verification and phase 7 closure").
+- Snapshot date: 2026-11-11 (commit "feat(phase9): backups verification and api write throttling").
 
 ## 6. CANONICAL ROADMAP — EXACTLY 7 STEPS PER PHASE (fixed numbering)
 Rules: one step = one session turn = one owner commit. Never renumber; if a
@@ -142,6 +147,7 @@ step must split, use 3a/3b under the same number. Statuses: ⬜ pending ·
 | 4 | Seller dashboard | ✅ 7/7 |
 | 5 | Admin console | ✅ 7/7 |
 | 7 | Order lifecycle & notifications | ✅ 7/7 |
+| 9 | Trust, legal & scale | ✅ 7/7 |
 
 ### Phase 2 — Supabase foundation (7 steps)
 | # | Step | Done when |

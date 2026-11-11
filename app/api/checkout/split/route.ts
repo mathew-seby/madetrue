@@ -4,6 +4,12 @@ import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
 import { getServerUser } from "@/lib/supabase/server-auth";
 import { getPaymentAdapter } from "@/lib/payments";
 import type { SplitRecipient } from "@/lib/payments/types";
+import {
+  checkRateLimit,
+  getClientIp,
+  createRateLimitResponse,
+  RATE_LIMIT_PRESETS,
+} from "@/lib/security/rateLimit";
 
 interface BasketItemInput {
   productId: string;
@@ -25,6 +31,15 @@ interface SplitCheckoutRequest {
 }
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const throttle = checkRateLimit(`split-session:${ip}`, RATE_LIMIT_PRESETS.checkout);
+  if (!throttle.allowed) {
+    return createRateLimitResponse(
+      throttle,
+      "Too many checkout sessions created. Please wait a moment before trying again."
+    );
+  }
+
   let body: SplitCheckoutRequest;
   try {
     body = (await request.json()) as SplitCheckoutRequest;

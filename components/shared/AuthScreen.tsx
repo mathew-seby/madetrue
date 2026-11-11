@@ -268,7 +268,7 @@ export function AuthScreen({
 
               <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                  <label htmlFor="forgot-identifier" className="text-xs font-bold text-warm-brown uppercase tracking-wider">
                     Email or Phone Number
                   </label>
                   <div className="relative">
@@ -278,6 +278,7 @@ export function AuthScreen({
                       <Phone className="absolute left-3 top-3.5 h-4 w-4 text-warm-brown/50" />
                     )}
                     <input
+                      id="forgot-identifier"
                       type="text"
                       value={forgotIdentifier}
                       onChange={(e) => setForgotIdentifier(e.target.value)}
@@ -368,12 +369,13 @@ export function AuthScreen({
               <form onSubmit={handleSubmit} className="space-y-4">
                 {activeTab === "signup" && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                    <label htmlFor="auth-name" className="text-xs font-bold text-warm-brown uppercase tracking-wider">
                       Full Name
                     </label>
                     <div className="relative">
                       <UserIcon className="absolute left-3 top-3.5 h-4 w-4 text-warm-brown/50" />
                       <input
+                        id="auth-name"
                         type="text"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
@@ -385,7 +387,7 @@ export function AuthScreen({
                 )}
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                  <label htmlFor="auth-identifier" className="text-xs font-bold text-warm-brown uppercase tracking-wider">
                     Email or Phone Number
                   </label>
                   <div className="relative">
@@ -395,6 +397,7 @@ export function AuthScreen({
                       <Phone className="absolute left-3 top-3.5 h-4 w-4 text-warm-brown/50" />
                     )}
                     <input
+                      id="auth-identifier"
                       type="text"
                       value={identifier}
                       onChange={(e) => setIdentifier(e.target.value)}
@@ -409,7 +412,7 @@ export function AuthScreen({
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                    <label htmlFor="auth-password" className="text-xs font-bold text-warm-brown uppercase tracking-wider">
                       Password
                     </label>
                     {activeTab === "signin" && (
@@ -430,6 +433,7 @@ export function AuthScreen({
                   <div className="relative">
                     <Lock className="absolute left-3 top-3.5 h-4 w-4 text-warm-brown/50" />
                     <input
+                      id="auth-password"
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
@@ -449,12 +453,13 @@ export function AuthScreen({
 
                 {activeTab === "signup" && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-warm-brown uppercase tracking-wider">
+                    <label htmlFor="auth-confirm-password" className="text-xs font-bold text-warm-brown uppercase tracking-wider">
                       Confirm Password
                     </label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-3.5 h-4 w-4 text-warm-brown/50" />
                       <input
+                        id="auth-confirm-password"
                         type={showPassword ? "text" : "password"}
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}

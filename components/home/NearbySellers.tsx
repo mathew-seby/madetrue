@@ -24,20 +24,25 @@ const MapCanvas = dynamic(() => import("@/components/map/MapCanvas"), {
 const DEFAULT_LAT = 9.9816;
 const DEFAULT_LNG = 76.2999;
 
-export default function NearbySellers() {
-  const [sellers, setSellers] = useState<Seller[]>([]);
+interface NearbySellersProps {
+  initialSellers?: Seller[];
+}
+
+export default function NearbySellers({ initialSellers }: NearbySellersProps) {
+  const [sellers, setSellers] = useState<Seller[]>(initialSellers ?? []);
   const { userCoords, locating, locError, requestLocation } = useUserLocation({
     fallbackNote:
       "Meanwhile, makers are ordered by distance from the Kochi centre.",
   });
 
   useEffect(() => {
+    if (initialSellers && initialSellers.length > 0) return;
     async function load() {
       const data = await getSellers();
       setSellers(data);
     }
     load();
-  }, []);
+  }, [initialSellers]);
 
   const centerLat = userCoords?.lat ?? DEFAULT_LAT;
   const centerLng = userCoords?.lng ?? DEFAULT_LNG;

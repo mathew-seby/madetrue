@@ -6,6 +6,12 @@ import { NextResponse } from "next/server";
 import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
 import { getServerUser } from "@/lib/supabase/server-auth";
+import {
+  checkRateLimit,
+  getClientIp,
+  createRateLimitResponse,
+  RATE_LIMIT_PRESETS,
+} from "@/lib/security/rateLimit";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 const ALLOWED_MIME_TYPES = [
@@ -17,6 +23,15 @@ const ALLOWED_MIME_TYPES = [
 ];
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const throttle = checkRateLimit(`upload:${ip}`, RATE_LIMIT_PRESETS.upload);
+  if (!throttle.allowed) {
+    return createRateLimitResponse(
+      throttle,
+      "Too many image uploads in a short time. Please wait a moment."
+    );
+  }
+
   if (!isSupabaseEnabled()) {
     return NextResponse.json(
       { error: "MADETRUE_DATA_SOURCE is 'mock' — cloud storage is off." },

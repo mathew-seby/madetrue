@@ -85,8 +85,9 @@ export default function Navbar() {
                       await logout();
                       window.location.href = "/admin/login";
                     }}
-                    className="p-1.5 text-text-dark/60 hover:text-red-600 transition border-l border-warm-brown/20 pl-3.5"
+                    className="p-1.5 text-text-dark/60 hover:text-red-600 transition border-l border-warm-brown/20 pl-3.5 cursor-pointer"
                     title="Sign Out"
+                    aria-label="Sign out of admin console"
                   >
                     <LogOut className="h-4.5 w-4.5" />
                   </button>
@@ -97,8 +98,9 @@ export default function Navbar() {
                 {/* Language Toggle */}
                 <button
                   onClick={toggleLanguage}
-                  className="flex items-center text-xs font-semibold px-2.5 py-1 rounded-full border border-warm-brown/20 text-warm-brown hover:bg-primary-green hover:text-cream-bg transition duration-200"
+                  className="flex items-center text-xs font-semibold px-2.5 py-1 rounded-full border border-warm-brown/20 text-warm-brown hover:bg-primary-green hover:text-cream-bg transition duration-200 cursor-pointer"
                   title="Switch Language / ഭാഷ മാറ്റുക"
+                  aria-label="Switch Language / ഭാഷ മാറ്റുക"
                 >
                   <Globe className="h-3.5 w-3.5 mr-1.5" />
                   <span>{language === "EN" ? "മലയാളം" : "English"}</span>
@@ -117,7 +119,12 @@ export default function Navbar() {
                 )}
 
                 {/* Cart Icon */}
-                <Link href="/cart" className="relative p-2 text-text-dark hover:text-primary-green transition">
+                <Link
+                  href="/cart"
+                  className="relative p-2 text-text-dark hover:text-primary-green transition"
+                  aria-label={cartCount > 0 ? `Shopping basket with ${cartCount} items` : "Shopping basket (empty)"}
+                  title="Shopping Basket"
+                >
                   <ShoppingCart className="h-6 w-6" />
                   {cartCount > 0 && (
                     <span className="absolute top-0 right-0 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none text-cream-bg bg-primary-green">
@@ -143,6 +150,7 @@ export default function Navbar() {
                       onClick={logout}
                       className="p-1.5 text-text-dark/60 hover:text-red-600 transition cursor-pointer"
                       title="Sign Out"
+                      aria-label="Sign out"
                     >
                       <LogOut className="h-4.5 w-4.5" />
                     </button>
@@ -177,8 +185,9 @@ export default function Navbar() {
                       await logout();
                       window.location.href = "/admin/login";
                     }}
-                    className="p-1 text-text-dark/60 hover:text-red-600 transition border-l border-warm-brown/20 pl-2.5"
+                    className="p-1 text-text-dark/60 hover:text-red-600 transition border-l border-warm-brown/20 pl-2.5 cursor-pointer"
                     title="Sign Out"
+                    aria-label="Sign out of admin console"
                   >
                     <LogOut className="h-4.5 w-4.5" />
                   </button>
@@ -189,13 +198,20 @@ export default function Navbar() {
                 {/* Language Toggle for Mobile */}
                 <button
                   onClick={toggleLanguage}
-                  className="flex items-center text-xs font-semibold px-2 py-0.5 rounded-full border border-warm-brown/20 text-warm-brown hover:bg-primary-green hover:text-cream-bg transition"
+                  className="flex items-center text-xs font-semibold px-2 py-0.5 rounded-full border border-warm-brown/20 text-warm-brown hover:bg-primary-green hover:text-cream-bg transition cursor-pointer"
+                  title="Switch Language / ഭാഷ മാറ്റുക"
+                  aria-label="Switch Language / ഭാഷ മാറ്റുക"
                 >
                   <Globe className="h-3.5 w-3.5 mr-1" />
                   <span>{language === "EN" ? "ML" : "EN"}</span>
                 </button>
 
-                <Link href="/cart" className="relative p-1.5 text-text-dark hover:text-primary-green transition">
+                <Link
+                  href="/cart"
+                  className="relative p-1.5 text-text-dark hover:text-primary-green transition"
+                  aria-label={cartCount > 0 ? `Shopping basket with ${cartCount} items` : "Shopping basket (empty)"}
+                  title="Shopping Basket"
+                >
                   <ShoppingCart className="h-5.5 w-5.5" />
                   {cartCount > 0 && (
                     <span className="absolute top-0 right-0 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[9px] font-bold leading-none text-cream-bg bg-primary-green">
@@ -205,8 +221,12 @@ export default function Navbar() {
                 </Link>
 
                 <button
+                  type="button"
                   onClick={() => setIsOpen(!isOpen)}
-                  className="p-1.5 rounded-md text-text-dark hover:text-primary-green focus:outline-none"
+                  className="p-1.5 rounded-md text-text-dark hover:text-primary-green focus:outline-hidden cursor-pointer"
+                  aria-label={isOpen ? "Close navigation menu" : "Open navigation menu"}
+                  aria-expanded={isOpen}
+                  aria-controls="mobile-nav-panel"
                 >
                   {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
                 </button>
@@ -226,7 +246,12 @@ export default function Navbar() {
 
       {/* Mobile Menu Panel */}
       {!isAdminRoute && isOpen && (
-        <div className="md:hidden border-b border-warm-brown/10 bg-cream-bg px-4 pt-2 pb-4 space-y-1">
+        <div
+          id="mobile-nav-panel"
+          role="region"
+          aria-label="Mobile Navigation Menu"
+          className="md:hidden border-b border-warm-brown/10 bg-cream-bg px-4 pt-2 pb-4 space-y-1"
+        >
           <Link
             href="/products"
             onClick={() => setIsOpen(false)}
@@ -285,6 +310,8 @@ export default function Navbar() {
                 My Profile ({currentUser.name})
               </Link>
               <button
+                type="button"
+                aria-label="Sign out"
                 onClick={() => {
                   setIsOpen(false);
                   logout();
