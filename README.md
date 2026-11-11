@@ -23,9 +23,12 @@ neighbors who love them. Story-driven, trust-first, and mobile-first at heart.
   platform analytics, and durable moderation audit trail) ·
   ✅ **Phase 7** — Order lifecycle & notifications (5-state machine, buyer order
   history at `/orders`, universal WhatsApp adapter with wa.me fallback, 7-event
-  templates, cancellation request→approve→refund lifecycle, durable delivery log & retry hub)
-- ▶️ **Now: Phase 9 — Trust, legal & scale** (Phase 6 remains 6/7 pending live Cashfree credentials;
-  starting with Step 1: Legal pages)
+  templates, cancellation request→approve→refund lifecycle, durable delivery log & retry hub) ·
+  ✅ **Phase 9** — Trust, legal & scale (legal pages, dynamic SEO/sitemap/robots,
+  RSC public pages with client islands, catalog pagination & query caps, keyboard a11y pass,
+  Sentry monitoring & warm error boundaries, disaster recovery runbook, proxy write throttling)
+- ▶️ **Now: Phase 10 — Reconciliation & launch** (Phase 6 remains 6/7 pending live Cashfree credentials;
+  starting with Step 1: Commission reconciliation)
 - Live tracker: [`docs/build-progress.md`](./docs/build-progress.md). The
   workflow and phase-completion status-sync rules live in
   [`docs/master-build-prompt.md`](./docs/master-build-prompt.md) (§10b).

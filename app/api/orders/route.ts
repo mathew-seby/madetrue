@@ -35,6 +35,12 @@ import {
   sendBuyerStatusUpdate,
   sendOrderWhatsApp,
 } from "@/lib/whatsapp/notify";
+import {
+  checkRateLimit,
+  getClientIp,
+  createRateLimitResponse,
+  RATE_LIMIT_PRESETS,
+} from "@/lib/security/rateLimit";
 
 const PRODUCT_COLUMNS =
   "id, seller_id, name, price, base_price, commission, status, is_available, stock";
@@ -107,6 +113,15 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const throttle = checkRateLimit(`checkout-post:${ip}`, RATE_LIMIT_PRESETS.checkout);
+  if (!throttle.allowed) {
+    return createRateLimitResponse(
+      throttle,
+      "Too many order placement attempts. Please wait a moment before trying again."
+    );
+  }
+
   if (!isSupabaseEnabled()) {
     return NextResponse.json(
       { error: "MADETRUE_DATA_SOURCE is 'mock' — order persistence is off." },
