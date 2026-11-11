@@ -14,8 +14,15 @@ import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
 import { getServerUser, getOwnSellerId } from "@/lib/supabase/server-auth";
 import { getPaymentAdapter } from "@/lib/payments";
 import { canCancelOrder, normalizeOrderStatus } from "@/lib/utils/orderStatus";
+import {
+  resolveRefundPolicy,
+  type RefundPolicyDecision,
+} from "@/lib/utils/refundPolicy";
 import { sendBuyerStatusUpdate, sendOrderWhatsApp } from "@/lib/whatsapp/notify";
-import { buildMakerCancellationRequestTemplate } from "@/lib/whatsapp/templates";
+import {
+  buildMakerCancellationRequestTemplate,
+  buildMakerCancellationAutoApprovedTemplate,
+} from "@/lib/whatsapp/templates";
 import type { Order, SplitRecipient } from "@/types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -52,6 +59,219 @@ function mapOrderRow(row: Record<string, unknown>): Order {
     cancel_reason: (row.cancel_reason as string | null) ?? undefined,
     cancel_requested_at: (row.cancel_requested_at as string | null) ?? undefined,
     cancel_rejected_reason: (row.cancel_rejected_reason as string | null) ?? undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Shared cancellation execution (Phase 10 Step 2)
+//
+// One code path for both approval kinds — a maker/admin approving a request,
+// and the policy window auto-approving a not-yet-accepted order. The refund
+// amount always comes from the published policy engine, capped at what is
+// still refundable after any prior partial refunds (an approve can never
+// over-refund), and money movement, ledger, stock and buyer notice all stay
+// in lockstep.
+// ---------------------------------------------------------------------------
+
+interface PerformCancellationArgs {
+  supabase: ReturnType<typeof createSupabaseServerClient>;
+  order: Record<string, unknown>;
+  reason: string;
+  actor: { id: string; role: string };
+  /** True when the policy window approved without a human maker review. */
+  viaAutoPolicy: boolean;
+}
+
+interface PerformCancellationResult {
+  order: Order;
+  refundAmount: number;
+  isOnlinePaid: boolean;
+  whatsappNotice: unknown;
+}
+
+async function performCancellation(
+  args: PerformCancellationArgs
+): Promise<PerformCancellationResult> {
+  const { supabase, order, reason, actor, viaAutoPolicy } = args;
+
+  // Prior completed refunds cap what may still be refunded (Phase 10 Step 2).
+  const { data: priorTx } = await supabase
+    .from("transactions")
+    .select("amount, type, status")
+    .eq("order_id", String(order.id));
+
+  const priorRefunded = (priorTx ?? [])
+    .filter((tx) => tx.type === "refund" && tx.status !== "failed")
+    .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+
+  const policy: RefundPolicyDecision = resolveRefundPolicy(
+    {
+      status: String(order.status ?? ""),
+      payment_method: (order.payment_method as string | null) ?? null,
+      gateway: (order.gateway as string | null) ?? null,
+      delivery_type: (order.delivery_type as string | null) ?? null,
+      price: (order.price as number | null) ?? null,
+      quantity: (order.quantity as number | null) ?? null,
+      delivery_fee: (order.delivery_fee as number | null) ?? null,
+    },
+    { priorRefunded }
+  );
+
+  const isOnlinePaid = order.payment_method === "upi" || Boolean(order.gateway);
+  const refundAmount = isOnlinePaid ? policy.suggestedAmount : 0;
+
+  let refundResult = null;
+  let gatewayRefundId: string | undefined;
+
+  if (isOnlinePaid && refundAmount > 0) {
+    const adapter = getPaymentAdapter();
+    const refundId = `ref_cancel_${String(order.id)}_${Date.now()}`;
+
+    // Split reversal if the maker had a vendor reference
+    const splits: SplitRecipient[] = [];
+    if (order.seller_id) {
+      const { data: sellerData } = await supabase
+        .from("sellers")
+        .select("payment_vendor_ref")
+        .eq("id", String(order.seller_id))
+        .maybeSingle();
+
+      if (sellerData?.payment_vendor_ref) {
+        const orderTotal =
+          Number(order.price ?? 0) * Number(order.quantity ?? 1) +
+          Number(order.delivery_fee ?? 0);
+        const ratio = orderTotal > 0 ? refundAmount / orderTotal : 1;
+        const baseSellerShare =
+          Number(order.base_price ?? order.price ?? 0) * Number(order.quantity ?? 1);
+        const vendorRefundShare = Number((baseSellerShare * ratio).toFixed(2));
+        if (vendorRefundShare > 0) {
+          splits.push({
+            vendorId: sellerData.payment_vendor_ref,
+            amount: vendorRefundShare,
+          });
+        }
+      }
+    }
+
+    refundResult = await adapter.createRefund({
+      orderId: String(order.id),
+      gatewayOrderId: String(order.gateway_order_ref || order.id),
+      refundId,
+      refundAmount,
+      reason,
+      splits: splits.length > 0 ? splits : undefined,
+    });
+
+    if (!refundResult.success) {
+      throw Object.assign(
+        new Error(
+          refundResult.error ||
+            "The payment gateway rejected the refund. Order was not cancelled."
+        ),
+        { statusCode: 400 }
+      );
+    }
+
+    gatewayRefundId = refundResult.gatewayRefundId || refundId;
+
+    // Append-only ledger row
+    try {
+      await supabase.from("transactions").insert({
+        order_id: String(order.id),
+        seller_id: String(order.seller_id),
+        gateway: order.gateway || (adapter.name === "cashfree" ? "cashfree" : "mock"),
+        gateway_event_id: gatewayRefundId,
+        type: "refund",
+        amount: refundAmount,
+        currency: "INR",
+        status:
+          refundResult.status === "FAILED"
+            ? "failed"
+            : refundResult.status === "PENDING"
+            ? "pending"
+            : "completed",
+      });
+    } catch {
+      // Non-fatal if transactions insert fails
+    }
+  }
+
+  // Restore product inventory
+  const { data: product } = await supabase
+    .from("products")
+    .select("stock")
+    .eq("id", String(order.product_id))
+    .maybeSingle();
+
+  if (product) {
+    const restored = Math.max(0, Number(product.stock) + Number(order.quantity));
+    await supabase
+      .from("products")
+      .update({ stock: restored, is_available: true })
+      .eq("id", String(order.product_id));
+  }
+
+  // Update order status to 'cancelled' and clear the request flag
+  const { data: updated, error: updateErr } = await supabase
+    .from("orders")
+    .update({
+      status: "cancelled",
+      cancel_requested: false,
+      cancel_reason: reason,
+    })
+    .eq("id", String(order.id))
+    .select()
+    .single();
+
+  if (updateErr || !updated) {
+    throw Object.assign(
+      new Error(`Updating order status failed: ${updateErr?.message || "Unknown error"}`),
+      { statusCode: 500 }
+    );
+  }
+
+  // Audit entry when an admin acted (auto-approval is the policy itself)
+  if (actor.role === "admin" && !viaAutoPolicy) {
+    try {
+      const { data: userProfile } = await supabase
+        .from("users")
+        .select("name, email")
+        .eq("id", actor.id)
+        .maybeSingle();
+
+      await supabase.from("audit_entries").insert({
+        actor_id: actor.id,
+        actor_name: userProfile?.name || "Administrator",
+        actor_email: userProfile?.email || "",
+        entity_type: "order",
+        entity_id: String(order.id),
+        entity_label: order.product_name ?? String(order.id),
+        action: "order_cancellation_approved",
+        summary: `Order cancelled by admin. Refund of ₹${refundAmount} processed. Reason: ${reason}`,
+      });
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  // Buyer notice — the cancelled/refunded template family covers both.
+  const mapped = mapOrderRow(updated);
+  const { data: sellerRow } = await supabase
+    .from("sellers")
+    .select("business_name")
+    .eq("id", String(order.seller_id))
+    .maybeSingle();
+
+  const whatsappNotice = await sendBuyerStatusUpdate(
+    mapped,
+    sellerRow?.business_name ?? null
+  );
+
+  return {
+    order: mapped,
+    refundAmount,
+    isOnlinePaid,
+    whatsappNotice,
   };
 }
 
@@ -129,6 +349,79 @@ export async function POST(
         { status: 400 }
       );
     }
+    const cancelReason = reason || "Customer requested cancellation";
+
+    // Policy window (Phase 10 Step 2): a not-yet-accepted order is
+    // auto-approved — the platform cancels and refunds instantly. Nothing
+    // was cooked or packed, so no maker review and no waiting.
+    const policy = resolveRefundPolicy({
+      status: currentStatus,
+      payment_method: (order.payment_method as string | null) ?? null,
+      gateway: (order.gateway as string | null) ?? null,
+      delivery_type: (order.delivery_type as string | null) ?? null,
+      price: (order.price as number | null) ?? null,
+      quantity: (order.quantity as number | null) ?? null,
+      delivery_fee: (order.delivery_fee as number | null) ?? null,
+    });
+
+    if (policy.autoApprove) {
+      try {
+        const result = await performCancellation({
+          supabase,
+          order,
+          reason: cancelReason,
+          actor: { id: user.id, role: user.role },
+          viaAutoPolicy: true,
+        });
+
+        // Maker heads-up (best-effort, never throws) — honest note that
+        // nothing is owed and stock is already restored.
+        const { data: maker } = await supabase
+          .from("sellers")
+          .select("business_name, whatsapp_number")
+          .eq("id", order.seller_id)
+          .maybeSingle();
+
+        if (maker?.whatsapp_number) {
+          await sendOrderWhatsApp({
+            to: maker.whatsapp_number,
+            body: buildMakerCancellationAutoApprovedTemplate(
+              maker.business_name ?? "Maker",
+              order.id,
+              order.product_name ?? "ordered item",
+              cancelReason
+            ),
+            orderId: order.id,
+            recipientRole: "maker",
+            event: "cancellation_auto_approved",
+          });
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: policy.reason,
+          order: result.order,
+          refund: { success: true, amount: result.refundAmount },
+          autoApproved: true,
+          policyWindow: policy.window,
+          whatsappNotice: result.whatsappNotice,
+        });
+      } catch (e) {
+        const status =
+          (e as { statusCode?: number }).statusCode ?? 500;
+        return NextResponse.json(
+          {
+            error:
+              e instanceof Error
+                ? e.message
+                : "Cancellation could not be completed.",
+          },
+          { status }
+        );
+      }
+    }
+
+    // A request is already with the maker — review path only.
     if (order.cancel_requested) {
       return NextResponse.json(
         { error: "A cancellation request is already pending review with the maker." },
@@ -136,7 +429,6 @@ export async function POST(
       );
     }
 
-    const cancelReason = reason || "Customer requested cancellation";
     const { data: updated, error: updateErr } = await supabase
       .from("orders")
       .update({
@@ -182,6 +474,8 @@ export async function POST(
       success: true,
       message: "Cancellation request submitted. The maker has been notified.",
       order: mapOrderRow(updated),
+      policyWindow: policy.window,
+      policyReason: policy.reason,
     });
   }
 
@@ -222,159 +516,42 @@ export async function POST(
     const cancellationReason =
       reason || order.cancel_reason || (action === "approve" ? "Cancellation approved by maker" : "Cancelled by maker");
 
-    // Process refund if order was paid online
-    const isOnlinePaid = order.payment_method === "upi" || Boolean(order.gateway);
-    const orderTotal =
-      Number(order.price ?? 0) * Number(order.quantity ?? 1) +
-      Number(order.delivery_fee ?? 0);
-
-    let refundResult = null;
-    let gatewayRefundId: string | undefined;
-
-    if (isOnlinePaid && orderTotal > 0) {
-      const adapter = getPaymentAdapter();
-      const refundId = `ref_cancel_${order.id}_${Date.now()}`;
-
-      // Calculate split reversal if seller had a vendor reference
-      const splits: SplitRecipient[] = [];
-      if (order.seller_id) {
-        const { data: sellerData } = await supabase
-          .from("sellers")
-          .select("payment_vendor_ref")
-          .eq("id", order.seller_id)
-          .maybeSingle();
-
-        if (sellerData?.payment_vendor_ref) {
-          const baseSellerShare =
-            Number(order.base_price ?? order.price ?? 0) * Number(order.quantity ?? 1);
-          if (baseSellerShare > 0) {
-            splits.push({
-              vendorId: sellerData.payment_vendor_ref,
-              amount: baseSellerShare,
-            });
-          }
-        }
-      }
-
-      refundResult = await adapter.createRefund({
-        orderId: order.id,
-        gatewayOrderId: order.gateway_order_ref || order.id,
-        refundId,
-        refundAmount: orderTotal,
+    // One shared execution path (Phase 10 Step 2): policy-derived refund
+    // amount capped at what earlier partials left, gateway reversal, ledger
+    // row, stock restore, status flip and buyer notice — all in lockstep.
+    try {
+      const result = await performCancellation({
+        supabase,
+        order,
         reason: cancellationReason,
-        splits: splits.length > 0 ? splits : undefined,
+        actor: { id: user.id, role: user.role },
+        viaAutoPolicy: false,
       });
 
-      if (!refundResult.success) {
-        return NextResponse.json(
-          {
-            error:
-              refundResult.error ||
-              "The payment gateway rejected the refund. Order was not cancelled.",
-          },
-          { status: 400 }
-        );
-      }
-
-      gatewayRefundId = refundResult.gatewayRefundId || refundId;
-
-      // Insert append-only transaction ledger row
-      try {
-        await supabase.from("transactions").insert({
-          order_id: order.id,
-          seller_id: order.seller_id,
-          gateway: order.gateway || (adapter.name === "cashfree" ? "cashfree" : "mock"),
-          gateway_event_id: gatewayRefundId,
-          type: "refund",
-          amount: orderTotal,
-          currency: "INR",
-          status: refundResult.status === "FAILED" ? "failed" : refundResult.status === "PENDING" ? "pending" : "completed",
-        });
-      } catch {
-        // Non-fatal if transactions insert fails
-      }
-    }
-
-    // Restore product inventory
-    const { data: product } = await supabase
-      .from("products")
-      .select("stock")
-      .eq("id", order.product_id)
-      .maybeSingle();
-
-    if (product) {
-      const restored = Math.max(0, Number(product.stock) + Number(order.quantity));
-      await supabase
-        .from("products")
-        .update({ stock: restored, is_available: true })
-        .eq("id", order.product_id);
-    }
-
-    // Update order status to 'cancelled' and clear cancel_requested
-    const { data: updated, error: updateErr } = await supabase
-      .from("orders")
-      .update({
-        status: "cancelled",
-        cancel_requested: false,
-        cancel_reason: cancellationReason,
-      })
-      .eq("id", orderId)
-      .select()
-      .single();
-
-    if (updateErr || !updated) {
+      return NextResponse.json({
+        success: true,
+        message:
+          result.isOnlinePaid && result.refundAmount > 0
+            ? `Cancellation approved — ₹${result.refundAmount} refund processed via the payment gateway and the items are back in stock.`
+            : result.isOnlinePaid
+            ? "Cancellation approved — the remaining refundable amount was already fully refunded in earlier partials; the items are back in stock."
+            : "Order cancelled and inventory restored to stock. Cash on delivery — no money moves.",
+        order: result.order,
+        refund: { success: true, amount: result.refundAmount },
+        whatsappNotice: result.whatsappNotice,
+      });
+    } catch (e) {
+      const status = (e as { statusCode?: number }).statusCode ?? 500;
       return NextResponse.json(
-        { error: `Updating order status failed: ${updateErr?.message || "Unknown error"}` },
-        { status: 500 }
+        {
+          error:
+            e instanceof Error
+              ? e.message
+              : "Cancellation could not be completed.",
+        },
+        { status }
       );
     }
-
-    // Record audit entry if admin was the actor
-    if (user.role === "admin") {
-      try {
-        const { data: userProfile } = await supabase
-          .from("users")
-          .select("name, email")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        await supabase.from("audit_entries").insert({
-          actor_id: user.id,
-          actor_name: userProfile?.name || "Administrator",
-          actor_email: userProfile?.email || "",
-          entity_type: "order",
-          entity_id: order.id,
-          entity_label: order.product_name ?? order.id,
-          action: "order_cancellation_approved",
-          summary: `Order cancelled by admin. Refund of ₹${orderTotal} processed. Reason: ${cancellationReason}`,
-        });
-      } catch {
-        // Non-fatal
-      }
-    }
-
-    // Dispatch WhatsApp update to buyer informing them of cancellation and refund
-    const mapped = mapOrderRow(updated);
-    const { data: sellerRow } = await supabase
-      .from("sellers")
-      .select("business_name")
-      .eq("id", order.seller_id)
-      .maybeSingle();
-
-    const whatsappNotice = await sendBuyerStatusUpdate(
-      mapped,
-      sellerRow?.business_name ?? null
-    );
-
-    return NextResponse.json({
-      success: true,
-      message: isOnlinePaid
-        ? "Cancellation approved, refund processed via payment gateway, and inventory restored."
-        : "Order cancelled and inventory restored to stock.",
-      order: mapped,
-      refund: refundResult,
-      whatsappNotice,
-    });
   }
 
   // -------------------------------------------------------------------------

@@ -48,6 +48,7 @@ import {
   getOrderStatusLabel,
   isTerminalOrderStatus,
 } from "@/lib/utils/orderStatus";
+import { resolveRefundPolicy, REFUND_REASON_PRESETS } from "@/lib/utils/refundPolicy";
 import { 
   ShieldCheck, LogOut, Check, X, Clock, Eye, Store, Tag, 
   MapPin, Inbox, CheckCircle, AlertTriangle, FileText, ExternalLink, 
@@ -204,6 +205,8 @@ export default function AdminPage() {
   const [refundAmount, setRefundAmount] = useState<string>("");
   const [refundReason, setRefundReason] = useState<string>("");
   const [refundSubmitting, setRefundSubmitting] = useState<boolean>(false);
+  // Policy window line shown above the amount (Phase 10 Step 2).
+  const [refundPolicyNote, setRefundPolicyNote] = useState<string>("");
 
   // Settlement & Commission state (Phase 6 Step 6)
   const [settlementData, setSettlementData] = useState<SettlementsResponse | null>(null);
@@ -694,9 +697,18 @@ export default function AdminPage() {
 
   const openRefundModal = (order: Order) => {
     const money = orderMoney(order);
+    // Policy prefill (Phase 10 Step 2): the refund engine states the window
+    // and the money before the admin types anything. Online orders suggest
+    // the full policy amount (product lines + flat delivery fee, capped
+    // again server-side at what earlier partials left); COD prefills the
+    // full total because the ledger's `cod_` entry tracks the cash handed
+    // back offline — the note says so plainly.
+    const policy = resolveRefundPolicy(order);
+    const online = order.payment_method === "upi" || Boolean(order.gateway);
     setRefundingOrder(order);
-    setRefundAmount(String(money.total));
-    setRefundReason("Order cancellation & refund");
+    setRefundAmount(String(online ? policy.suggestedAmount || money.total : money.total));
+    setRefundReason(REFUND_REASON_PRESETS[0].value);
+    setRefundPolicyNote(policy.reason);
   };
 
   const handleProcessRefund = async () => {
@@ -2852,6 +2864,15 @@ export default function AdminPage() {
                       </div>
                     </div>
 
+                    {/* Policy window line (Phase 10 Step 2) — the refund
+                        engine states the rule before any number is typed. */}
+                    {refundPolicyNote && (
+                      <p className="text-[10px] text-text-dark/70 leading-relaxed bg-accent-gold/10 border border-accent-gold/20 rounded-xl p-2.5 flex gap-2">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-accent-gold mt-0.5" />
+                        <span>{refundPolicyNote}</span>
+                      </p>
+                    )}
+
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">
                         Refund Amount (₹)
@@ -2872,6 +2893,24 @@ export default function AdminPage() {
                       <label className="text-[10px] font-bold text-warm-brown uppercase tracking-wider block">
                         Reason for Refund
                       </label>
+                      {/* Quick-set chips from the published policy's refund
+                          situations (Phase 10 Step 2). */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {REFUND_REASON_PRESETS.map((preset) => (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            onClick={() => setRefundReason(preset.value)}
+                            className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border transition cursor-pointer ${
+                              refundReason === preset.value
+                                ? "bg-primary-green text-white border-primary-green"
+                                : "bg-white text-warm-brown/70 border-warm-brown/20 hover:border-primary-green/40 hover:text-primary-green"
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
                       <input
                         type="text"
                         value={refundReason}

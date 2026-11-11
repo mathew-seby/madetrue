@@ -90,6 +90,7 @@ import {
   normalizeOrderStatus,
   canCancelOrder,
 } from "@/lib/utils/orderStatus";
+import { resolveRefundPolicy } from "@/lib/utils/refundPolicy";
 import { DEFAULT_CATEGORY_ICON } from "@/lib/utils/categories";
 
 // This is our data layer client. It serves mock data by default
@@ -1416,6 +1417,20 @@ export async function requestOrderCancellation(
   const existing = orders[index];
   if (existing.status !== "pending" && existing.status !== "accepted") {
     throw new Error(`Orders in "${existing.status}" status cannot be cancelled online.`);
+  }
+
+  // Policy window (Phase 10 Step 2): a not-yet-accepted order is
+  // auto-approved — the platform cancels and refunds instantly, mirroring
+  // the Supabase route. The approval path already derives the honest refund
+  // amount (full incl. delivery fee, capped at prior partials) and restores
+  // stock, so delegation keeps mock and Supabase in lockstep.
+  const policy = resolveRefundPolicy(existing);
+  if (policy.autoApprove) {
+    const approved = await approveOrderCancellation(orderId, reason || "Customer requested cancellation");
+    if (!approved.success || !approved.order) {
+      throw new Error(approved.error || "Cancellation could not be completed.");
+    }
+    return approved.order;
   }
 
   const updated: Order = {

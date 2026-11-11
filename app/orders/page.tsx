@@ -33,6 +33,10 @@ import {
   canBuyerRequestCancellation,
 } from "@/lib/utils/orderStatus";
 import { buildWhatsAppUrl } from "@/lib/utils/whatsapp";
+import {
+  REFUND_TIMELINE_COPY,
+  resolveRefundPolicy,
+} from "@/lib/utils/refundPolicy";
 
 // History loads five at a time ("Show more") — the query stays capped and the
 // page stays honest about how many more exist. SQL-side pagination lands if
@@ -94,9 +98,19 @@ export default function OrdersPage() {
       setOrders((prev) =>
         prev.map((o) => (o.id === cancelModalOrder.id ? updated : o))
       );
+      // Policy window (Phase 10 Step 2): the platform instantly cancels and
+      // refunds an order the maker hadn't accepted yet — say so, including
+      // the money, instead of the generic "requested" wording.
+      const refundedInstantly = updated.status === "cancelled";
       setCancelActionNotice({
         kind: "success",
-        text: `Cancellation requested for order #${cancelModalOrder.id}. The maker has been notified.`,
+        text: refundedInstantly
+          ? `Order #${cancelModalOrder.id} was cancelled instantly — the maker hadn't accepted it yet. ${
+              updated.payment_method === "upi" || updated.gateway
+                ? REFUND_TIMELINE_COPY
+                : "No payment was collected, so nothing is owed."
+            }`
+          : `Cancellation requested for order #${cancelModalOrder.id}. The maker has been notified.`,
       });
       setCancelModalOrder(null);
       setCancelCustomReason("");
@@ -580,9 +594,24 @@ export default function OrdersPage() {
               </div>
 
               <div className="space-y-3">
-                <p className="text-xs text-text-dark/80 leading-relaxed">
-                  Let the maker know why you need to cancel. When the maker approves, any online payment is automatically refunded back to your original payment method.
-                </p>
+                {/* Policy window copy (Phase 10 Step 2) — what happens next
+                    depends on the refund window the order is in, so the
+                    promise always matches the platform's behavior. */}
+                {cancelModalOrder &&
+                resolveRefundPolicy(cancelModalOrder).autoApprove ? (
+                  <p className="text-xs text-text-dark/80 leading-relaxed">
+                    The maker hasn&rsquo;t accepted this order yet, so you can cancel it
+                    right away — no waiting, no questions asked.{" "}
+                    {cancelModalOrder.payment_method === "upi" ||
+                    cancelModalOrder.gateway
+                      ? `Your payment (including the delivery fee) is refunded automatically. ${REFUND_TIMELINE_COPY}`
+                      : "Nothing was collected, so nothing is owed."}
+                  </p>
+                ) : (
+                  <p className="text-xs text-text-dark/80 leading-relaxed">
+                    Let the maker know why you need to cancel. When the maker approves, any online payment is automatically refunded back to your original payment method.
+                  </p>
+                )}
 
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold uppercase tracking-wider text-warm-brown block">
