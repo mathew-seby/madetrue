@@ -118,7 +118,8 @@ Vercel URL envs are injected automatically — never set them by hand.
 ## 7. Items deliberately left to later steps
 
 - **Step 4:** verify HTTPS certificate status end-to-end + WhatsApp
-  business profile verification (needs the live domain + provider).
+  business profile verification — exact checklist:
+  `docs/identity-verification.md` (needs the live domain + provider).
 - **Phase 6 · Step 7 🔑:** switch `CASHFREE_ENV` + keys to production
   after merchant activation, then redeploy.
 - **Step 7 (handover):** copy the final credentials inventory from §2 into
