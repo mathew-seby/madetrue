@@ -43,6 +43,7 @@ const expectedMigrations = [
   "0011_order_status_backfill.sql",
   "0012_order_cancellations.sql",
   "0013_notification_delivery_logs.sql",
+  "0014_users_from_auth.sql",
 ];
 
 for (const mig of expectedMigrations) {

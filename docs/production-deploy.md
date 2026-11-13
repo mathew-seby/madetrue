@@ -103,7 +103,7 @@ Vercel URL envs are injected automatically — never set them by hand.
 | 5 | `/orders` | Order visible with live status |
 | 6 | Maker dashboard | New order in the maker inbox |
 | 7 | `/sitemap.xml`, `/robots.txt` | URLs read `https://madetrue.in` |
-| 8 | Auth | Sign in / out; session survives refresh (HTTPS cookies) |
+| 8 | Auth | Sign in / out; session survives refresh (HTTPS cookies); the account appears in **Authentication → Users** *and* **Table Editor → users** (0014 trigger guarantees the profile row) |
 | 9 | Sentry | A forced test error appears in the Sentry dashboard |
 | 10 | Rate limit | 6 rapid writes to an API route → HTTP 429 (Phase 9 throttle live) |
 | 11 | Cashfree sandbox | A sandbox UPI payment completes (optional until Step 7 unblocks production keys) |
