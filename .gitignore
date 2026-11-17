@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# launch rehearsal (Phase 10 · Step 5) — real maker data + passwords never enter the repo
+scripts/launch-makers.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

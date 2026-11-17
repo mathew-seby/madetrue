@@ -173,6 +173,134 @@ export interface PlatformCommissionReport {
   makerBreakdown: MakerCommissionReportRow[];
 }
 
+// Commission reconciliation (Phase 10 Step 1): period reports that tie
+// orders, the transactions ledger and the gateway together. Every delta is
+// reported as it is — the report never smooths a mismatch away.
+export type ReconciliationPeriodKey = "all" | "30d" | "this_month" | "last_month";
+
+export interface ReconciliationWindow {
+  /** Inclusive ISO lower bound, or null for no lower bound. */
+  from: string | null;
+  /** Exclusive ISO upper bound, or null for no upper bound. */
+  to: string | null;
+  /** Human label, e.g. "Last month (Oct 1 – Nov 1)". */
+  label: string;
+}
+
+export interface ReconciliationOrdersTotals {
+  orderCount: number;
+  /** price × quantity over non-cancelled orders in the window. */
+  grossSales: number;
+  /** base_price × quantity (what the maker earns). */
+  makerShare: number;
+  /** makerShare restricted to gateway-paid (non-COD) orders. */
+  onlineMakerShare: number;
+  /** (price − base_price) × quantity — the platform cut. */
+  commission: number;
+  /** delivery_fee summed over the window. */
+  deliveryFees: number;
+  /** price × quantity for gateway-paid orders (no delivery fee). */
+  onlineSubtotal: number;
+  /** price × quantity for COD orders. */
+  codSubtotal: number;
+  /** Fee-rule violations ("delivery ≠ ₹49" / "pickup ≠ ₹0"), capped. */
+  feeAnomalies: string[];
+}
+
+export interface ReconciliationLedgerTotals {
+  /** Every ledger row in the window (any type/status). */
+  entries: number;
+  /** type=payment, status=completed — money in via the gateway. */
+  payments: number;
+  /** type=refund, status=completed — money out. */
+  refunds: number;
+  /** type=settlement, status=completed. */
+  settlementEntries: number;
+  /** type=commission, status=completed. */
+  commissionEntries: number;
+  /** False when the window holds no ledger rows at all. */
+  hasEntries: boolean;
+}
+
+export interface ReconciliationGatewayTotals {
+  /** SETTLED batches with settledAt inside the window. */
+  batches: number;
+  settled: number;
+  /** Adapter-reported pending settlement (clearance cycle). */
+  pending: number;
+}
+
+export interface ReconciliationVariance {
+  metric:
+    | "platform_commission"
+    | "delivery_fees"
+    | "gateway_payments"
+    | "settlements"
+    | "gateway_costs";
+  label: string;
+  state: "matched" | "variance" | "unavailable";
+  ordersSays?: number;
+  ledgerSays?: number;
+  gatewaySays?: number;
+  /** orders − other source (positive = orders say more). */
+  delta?: number;
+  /** Honest one-liner explaining the state. */
+  note: string;
+}
+
+export interface ReconciliationMakerRow {
+  sellerId: string;
+  businessName: string;
+  orderCount: number;
+  grossSales: number;
+  commission: number;
+  deliveryFees: number;
+  onlineMakerShare: number;
+  ledgerPayments: number;
+  ledgerRefunds: number;
+  gatewaySettled: number;
+  status: "matched" | "variance" | "pending_gateway" | "no_activity";
+  note: string;
+}
+
+export interface PlatformReconciliationReport {
+  window: ReconciliationWindow;
+  currency: string;
+  gateway: string;
+  orders: ReconciliationOrdersTotals;
+  ledger: ReconciliationLedgerTotals;
+  gatewayTotals: ReconciliationGatewayTotals;
+  variances: ReconciliationVariance[];
+  makerRows: ReconciliationMakerRow[];
+  status: "matched" | "variance" | "partial_data";
+  notes: string[];
+}
+
+/** Structural order input so Supabase rows, mock rows and fixtures all fit. */
+export interface ReconciliationOrderInput {
+  id: string;
+  seller_id: string;
+  quantity?: number | null;
+  price?: number | null;
+  base_price?: number | null;
+  commission?: number | null;
+  delivery_fee?: number | null;
+  status: string;
+  payment_method?: string | null;
+  delivery_type?: string | null;
+  created_at: string;
+}
+
+/** Structural ledger input (supabase transactions row shape). */
+export interface ReconciliationTransactionInput {
+  order_id: string;
+  seller_id: string;
+  type: string;
+  amount?: number | null;
+  status?: string | null;
+  created_at: string;
+}
+
 // Payment adapter and split settlements (Phase 6):
 export type {
   PaymentGatewayName,

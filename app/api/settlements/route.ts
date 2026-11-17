@@ -3,9 +3,15 @@ import { isSupabaseEnabled } from "@/lib/supabase/dataSource";
 import { createSupabaseServerClient } from "@/lib/supabase/supabase-server";
 import { getServerUser, getOwnSellerId } from "@/lib/supabase/server-auth";
 import { getPaymentAdapter } from "@/lib/payments";
+import {
+  computeReconciliation,
+  resolveReconciliationWindow,
+} from "@/lib/payments/reconciliation";
 import type {
   MakerCommissionReportRow,
   PlatformCommissionReport,
+  PlatformReconciliationReport,
+  ReconciliationTransactionInput,
   SettlementSummary,
 } from "@/types";
 
@@ -27,6 +33,23 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const requestedSellerId = searchParams.get("seller_id");
+
+  // Reporting window for the reconciliation report (Phase 10 Step 1).
+  // Resolved before any DB work so an invalid period fails fast.
+  let reconciliationWindow;
+  try {
+    reconciliationWindow = resolveReconciliationWindow(
+      searchParams.get("period"),
+      searchParams.get("from"),
+      searchParams.get("to")
+    );
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Invalid reconciliation period." },
+      { status: 400 }
+    );
+  }
+
   const supabase = createSupabaseServerClient();
 
   let targetSellerId: string | null = null;
@@ -66,7 +89,7 @@ export async function GET(request: Request) {
   let ordersQuery = supabase
     .from("orders")
     .select(
-      "id, seller_id, quantity, price, base_price, commission, delivery_fee, status, split_status, payment_method, gateway, created_at"
+      "id, seller_id, quantity, price, base_price, commission, delivery_fee, status, split_status, payment_method, delivery_type, gateway, created_at"
     )
     .neq("status", "cancelled");
 
@@ -172,10 +195,46 @@ export async function GET(request: Request) {
     makerBreakdown: makerRows,
   };
 
+  // 5. Ledger rows inside the reconciliation window (Phase 10 Step 1).
+  // A failed read degrades to an empty ledger — the report then says
+  // "unavailable" for ledger-sourced metrics instead of guessing.
+  let ledgerRows: ReconciliationTransactionInput[] = [];
+  try {
+    let txQuery = supabase
+      .from("transactions")
+      .select("order_id, seller_id, type, amount, status, created_at");
+    if (reconciliationWindow.from) {
+      txQuery = txQuery.gte("created_at", reconciliationWindow.from);
+    }
+    if (reconciliationWindow.to) {
+      txQuery = txQuery.lt("created_at", reconciliationWindow.to);
+    }
+    const { data: txData } = await txQuery;
+    ledgerRows = (txData ?? []) as ReconciliationTransactionInput[];
+  } catch {
+    ledgerRows = [];
+  }
+
+  const reconciliation: PlatformReconciliationReport = computeReconciliation({
+    orders: orderList,
+    transactions: ledgerRows,
+    settlements: settlementSummary.settlements,
+    gatewayPending: settlementSummary.pendingSettlement,
+    window: reconciliationWindow,
+    gateway: adapter.name,
+    makers: sellerList.map((seller) => ({
+      id: seller.id,
+      businessName: seller.business_name,
+      vendorRef: seller.payment_vendor_ref || null,
+    })),
+    scopeSellerId: targetSellerId,
+  });
+
   return NextResponse.json({
     gateway: adapter.name,
     summary: settlementSummary,
     commissionReport,
+    reconciliation,
   });
 }
 

@@ -127,10 +127,21 @@ with docs/build-progress.md or git log, the tracker + git win)
   catalog pagination, query caps and image dimensions; accessibility pass (skip links, focus-visible outlines, aria-labels);
   Sentry monitoring with warm error boundaries (root, global, 404); disaster recovery runbook with backup verification suite
   (scripts/verifyBackups.ts); edge proxy write throttling (lib/security/rateLimit.ts & proxy.ts).
-- Phase 6 is 6/7 (Step 7 🔑 owner-blocked pending live Cashfree credentials). Canonical next: Phase 10 · Step 1 (Commission reconciliation).
-- Baseline gates: tsc clean · eslint 0 errors / 31 warnings · build ✅ (38 routes).
-  Do NOT fix pre-existing warnings unless asked.
-- Snapshot date: 2026-11-11 (commit "feat(phase9): backups verification and api write throttling").
+- Phase 10 ✅ COMPLETE (7/7) — Reconciliation & launch: commission reconciliation
+  report (Analytics → period reconciliation + /api/settlements), domain identity
+  runbook (DNS/HTTPS + WhatsApp business checklist), production deploy runbook,
+  launch rehearsal package (real-maker seeding script + W1–W12 walkthrough +
+  restore drill; live rehearsal owner-deferred → the pre-launch gate), monitoring
+  & support runbook (/api/health + Sentry alert setup + failure playbooks +
+  severity ladder), and the handover package (invite-only launch plan +
+  credentials inventory + doc index). Canonical next: none — the roadmap is
+  exhausted; the only open canonical item is Phase 6 · Step 7 🔑 (production
+  Cashfree keys — COD-only launch until then).
+- Phase 6 is 6/7 (Step 7 🔑 owner-blocked pending live Cashfree credentials).
+- Baseline gates: tsc clean · eslint 0 errors / 31 warnings · build ✅ (42 routes
+  incl. /api/health, sitemap/robots/OG + proxy). Do NOT fix pre-existing
+  warnings unless asked.
+- Snapshot date: 2026-11-17 (Phase 10 closed 7/7 — "feat(phase10): handover package — invite-only launch plan and credentials inventory").
 
 ## 6. CANONICAL ROADMAP — EXACTLY 7 STEPS PER PHASE (fixed numbering)
 Rules: one step = one session turn = one owner commit. Never renumber; if a

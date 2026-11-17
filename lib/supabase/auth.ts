@@ -184,14 +184,25 @@ export async function registerUserSupabase(
     throw new Error("Unable to create account. Please try again.");
   }
 
-  // Persist profile row into public.users
-  await persistProfileSupabase({
-    id: data.user.id,
-    name: trimmedName,
-    email: isEmailInput ? trimmedId.toLowerCase() : "",
-    phone: normalizedPhone,
-    role: "buyer",
-  });
+  // Persist profile row into public.users. Best-effort: when "Confirm
+  // email" is on, signUp() returns without a session, so POST /api/profile
+  // answers 401 — signup must never fail for that. Migration 0014
+  // (handle_new_auth_user) guarantees the row exists from the auth insert;
+  // this call only enriches it when a session is already live.
+  try {
+    await persistProfileSupabase({
+      id: data.user.id,
+      name: trimmedName,
+      email: isEmailInput ? trimmedId.toLowerCase() : "",
+      phone: normalizedPhone,
+      role: "buyer",
+    });
+  } catch (err) {
+    console.warn(
+      "[madetrue] profile row deferred after signup (0014 trigger owns the guarantee):",
+      err instanceof Error ? err.message : err
+    );
+  }
 
   return {
     id: data.user.id,

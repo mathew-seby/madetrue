@@ -1,0 +1,42 @@
+{
+  "_notes": [
+    "MADETRUE launch rehearsal — REAL maker details only. Copy this file to scripts/launch-makers.json (git-ignored, never commit it) and fill every field from the maker's own words. Rules and field-by-field guidance: docs/launch-rehearsal.md (Part B).",
+    "Every product without a photo stays status 'pending' — the maker uploads a real photo via their dashboard, then an admin approves it in the console. Listings carry the exact badge strings: 'Same Day Delivery', 'Pickup Available', 'Fresh Today', 'Locally Made', 'Eco-Friendly'.",
+    "Coordinates must sit inside Ernakulam district (delivery is Ernakulam-only). The script refuses placeholder values like the ones below.",
+    "payout_kyc is optional — fill it only when the maker's PAN/bank details are already in hand; Cashfree vendor registration itself waits for Phase 6 Step 7."
+  ],
+  "makers": [
+    {
+      "name": "REPLACE — maker's real name, e.g. Lakshmi",
+      "email": "REPLACE — a real address the maker can log in with",
+      "password": "REPLACE — at least 8 characters, shared privately with the maker",
+      "phone": "REPLACE — e.g. +919847000000",
+      "business_name": "REPLACE — the store name buyers will see",
+      "story": "REPLACE — the maker's story in their own words, 2-4 sentences",
+      "whatsapp_number": "REPLACE — e.g. +919847000000",
+      "address": "REPLACE — real street address inside Ernakulam, Kerala",
+      "lat": 0,
+      "lng": 0,
+      "profile_photo_url": "",
+      "payout_kyc": {
+        "pan": "",
+        "bank_account_number": "",
+        "bank_ifsc": "",
+        "bank_account_holder": ""
+      },
+      "products": [
+        {
+          "name": "REPLACE — listing name",
+          "description": "REPLACE — what it is, how it is made, why it is good",
+          "price": 0,
+          "category": "REPLACE — an existing slug like spices / homemade-foods / handicrafts / fresh-produce / organic-honey",
+          "tags": ["Locally Made"],
+          "stock": 0,
+          "images": ["REPLACE — https:// URL of a REAL photo the maker sent (leave the array empty to upload later via the dashboard)"],
+          "origin_details": "REPLACE — where the ingredients / material come from",
+          "approve_immediately": false
+        }
+      ]
+    }
+  ]
+}

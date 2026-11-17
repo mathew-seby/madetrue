@@ -306,8 +306,20 @@ Use exactly these strings — no variations:
 > Sentry monitoring integration with warm error boundaries (root, global, 404);
 > disaster recovery runbook (`docs/backup-and-disaster-recovery.md`) with automated
 > verification suite (`scripts/verifyBackups.ts`); edge proxy write throttling (`lib/security/rateLimit.ts` & `proxy.ts`).
-> Phase 6 is 6/7 (Step 7 🔑 owner-blocked pending live Cashfree credentials).
-> Next build phase: **Phase 10 — Reconciliation & launch (Step 1: Commission reconciliation).**
+> **Phase 10 (Reconciliation & launch) is complete — canonical roadmap exhausted (7/7).**
+> Commission reconciliation report (`/api/settlements` + Analytics period report);
+> domain identity runbook (DNS/HTTPS + WhatsApp business checklist); production
+> deploy runbook; launch rehearsal package (real-maker seeding via
+> `scripts/seedLaunchMakers.ts` + `docs/launch-rehearsal.md` W1–W12 + restore
+> drill — live rehearsal owner-deferred and now the **pre-launch gate** for any
+> public announcement); monitoring & support runbook (`app/api/health` +
+> `docs/monitoring-and-support.md`); handover package (`docs/handover.md`
+> invite-only launch plan + `docs/credentials-inventory.md`). The only open
+> canonical item is **Phase 6 · Step 7 🔑** (production Cashfree keys — the
+> launch stays **COD-only** until then). Owner pre-launch work (no code left):
+> the rehearsal gate, an admin account (Supabase → Users → promote `admin`),
+> the Sentry alert rule + uptime monitors on `/` and `/api/health`, and the
+> §3 checklist in `docs/handover.md`.
 > Payment strategy remains locked: **Cashfree Easy Split** primary (see Locked
 > Decisions #4), with Razorpay Route / PayU Split Settlements as
 > adapter-backed alternates.

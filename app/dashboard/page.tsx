@@ -20,6 +20,7 @@ import {
   getOrderSuccessMessage,
   isTerminalOrderStatus,
 } from "@/lib/utils/orderStatus";
+import { resolveRefundPolicy } from "@/lib/utils/refundPolicy";
 
 const FALLBACK_PRODUCT_IMAGE = "https://images.unsplash.com/photo-1541832676-9b763b0239ab?w=600&auto=format&fit=crop&q=80"; // Traditional clay pot
 
@@ -1325,6 +1326,12 @@ export default function DashboardPage() {
                             </span>
                             <p className="text-xs text-text-dark/80 pl-5.5">
                               Reason: &ldquo;{order.cancel_reason || "Customer requested cancellation"}&rdquo;
+                            </p>
+                            {/* Policy guidance (Phase 10 Step 2) — the same
+                                engine the platform runs, so the maker sees
+                                exactly what approval will do. */}
+                            <p className="text-[10px] text-amber-800/90 pl-5.5 leading-relaxed">
+                              {resolveRefundPolicy(order).makerNote}
                             </p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0 pl-5.5 sm:pl-0">

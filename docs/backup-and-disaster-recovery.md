@@ -12,7 +12,7 @@ MADETRUE operates a hyperlocal marketplace connecting independent Kerala produce
 
 The disaster recovery architecture relies on a **three-tier redundancy strategy**:
 1. **Automated Continuous Physical Backups (Managed Tier):** Supabase continuous WAL (Write-Ahead Logging) archiving with Point-in-Time Recovery (PITR) and daily full snapshots.
-2. **Deterministic Declarative Schema Backups (Code Tier):** Sequential versioned SQL migrations (`supabase/migrations/0001_init.sql` through `0013_notification_delivery_logs.sql`) and catalog seed scripts (`supabase/seed.sql`) version-controlled directly in Git.
+2. **Deterministic Declarative Schema Backups (Code Tier):** Sequential versioned SQL migrations (`supabase/migrations/0001_init.sql` through `0014_users_from_auth.sql`) and catalog seed scripts (`supabase/seed.sql`) version-controlled directly in Git.
 3. **On-Demand Logical Snapshots (Operator Tier):** Periodic manual or pre-migration logical dumps via `pg_dump` / Supabase CLI storing schema and table data off-site.
 
 ---
@@ -138,6 +138,7 @@ If the entire Supabase project must be rebuilt from scratch:
    - `0011_order_status_backfill.sql`
    - `0012_order_cancellations.sql`
    - `0013_notification_delivery_logs.sql`
+   - `0014_users_from_auth.sql`
 3. **Restore Data:** Import the latest logical dump or PITR export.
 4. **Update Credentials:** Update `.env.local` / Vercel Environment Variables:
    - `NEXT_PUBLIC_SUPABASE_URL`
@@ -156,8 +157,10 @@ npx tsx scripts/verifyBackups.ts
 ```
 
 Output checks:
-- All 13 migrations sequentially present and valid SQL.
+- All 14 migrations sequentially present and valid SQL.
 - `supabase/seed.sql` integrity and table coverage.
 - Rate-limiting rules and throttles active.
 - Disaster recovery checklist verification.
+- Launch rehearsal readiness (Phase 10 · Step 5): seeding script, maker-sheet
+  template, rehearsal runbook, and the git-ignore protecting real maker data.
 

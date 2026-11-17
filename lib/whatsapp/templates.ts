@@ -132,6 +132,18 @@ export function buildMakerCancellationRequestTemplate(
   return `Hello ${storeName}! A customer requested cancellation for order #${orderId} (${item}).${reasonText} Please open your maker dashboard to review and approve or decline.`;
 }
 
+/** Maker alert when a not-yet-accepted order is auto-cancelled by the
+ *  policy window (Phase 10 Step 2) — nothing was cooked, nothing owed. */
+export function buildMakerCancellationAutoApprovedTemplate(
+  storeName: string,
+  orderId: string,
+  item: string,
+  reason?: string
+): string {
+  const reasonText = reason ? ` Reason: "${reason}".` : "";
+  return `Hello ${storeName}! Order #${orderId} (${item}) was cancelled by the customer before you accepted it, so it was cancelled automatically and the items are back in your stock.${reasonText} No action is needed.`;
+}
+
 /** Preview helper: the sample context, rendered for any event. */
 export function buildSampleTemplate(event: TemplateEvent): string {
   if (event === "makerPlaced") {

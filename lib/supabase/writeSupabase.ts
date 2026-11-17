@@ -16,6 +16,7 @@ import type {
   Seller,
   Transaction,
   PlatformCommissionReport,
+  PlatformReconciliationReport,
   SettlementSummary,
   NotificationLog,
 } from "../../types";
@@ -483,12 +484,18 @@ export interface SettlementsResponse {
   gateway: string;
   summary: SettlementSummary;
   commissionReport: PlatformCommissionReport;
+  /** Period reconciliation (Phase 10 Step 1) — present since Phase 10. */
+  reconciliation?: PlatformReconciliationReport;
 }
 
 export async function fetchSettlementsSupabase(
-  sellerId?: string
+  sellerId?: string,
+  period?: string
 ): Promise<SettlementsResponse> {
-  const query = sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : "";
+  const params = new URLSearchParams();
+  if (sellerId) params.set("seller_id", sellerId);
+  if (period) params.set("period", period);
+  const query = params.size > 0 ? `?${params.toString()}` : "";
   return requestJson<SettlementsResponse>(`/api/settlements${query}`, {
     method: "GET",
   });
