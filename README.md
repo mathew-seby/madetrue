@@ -27,8 +27,13 @@ neighbors who love them. Story-driven, trust-first, and mobile-first at heart.
   ✅ **Phase 9** — Trust, legal & scale (legal pages, dynamic SEO/sitemap/robots,
   RSC public pages with client islands, catalog pagination & query caps, keyboard a11y pass,
   Sentry monitoring & warm error boundaries, disaster recovery runbook, proxy write throttling)
-- ▶️ **Now: Phase 10 — Reconciliation & launch** (Phase 6 remains 6/7 pending live Cashfree credentials;
-  starting with Step 1: Commission reconciliation)
+  ✅ **Phase 10** — Reconciliation & launch (commission reconciliation report,
+  identity + deploy runbooks, launch rehearsal package, monitoring & support
+  runbook with `/api/health`, handover package with invite-only launch plan and
+  credentials inventory) — **the canonical build roadmap is complete (all 10
+  phases closed)**. Only open canonical item: Phase 6 · Step 7 🔑 (production
+  Cashfree keys — the launch stays COD-only until then); pre-launch owner gates
+  live in [`docs/handover.md`](./docs/handover.md) §3.
 - Live tracker: [`docs/build-progress.md`](./docs/build-progress.md). The
   workflow and phase-completion status-sync rules live in
   [`docs/master-build-prompt.md`](./docs/master-build-prompt.md) (§10b).

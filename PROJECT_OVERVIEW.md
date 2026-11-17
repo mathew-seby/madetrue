@@ -1,8 +1,11 @@
 # MADETRUE — Project Technical Overview & Architecture
 
 > **Status (refreshed by the agent at every phase completion — master prompt
-> §10b):** ✅ Phase 0 · Phase 1 · Phase 8 · Phase 2 · Phase 3 · Phase 4 · Phase 5 · Phase 7 · Phase 9 complete —
-> **now: Phase 10 — Reconciliation & launch (Step 1: Commission reconciliation)** (Phase 6 is 6/7 pending live Cashfree credentials). Live progress: [`docs/build-progress.md`](./docs/build-progress.md)
+> §10b):** ✅ Phase 0 · Phase 1 · Phase 8 · Phase 2 · Phase 3 · Phase 4 · Phase 5 · Phase 7 · Phase 9 ·
+> **Phase 10 complete — canonical build roadmap exhausted (all phases closed 2026-11-17)** —
+> no canonical next build step; the only open canonical item is Phase 6 · Step 7 🔑
+> (production Cashfree credentials — COD-only launch until then). Pre-launch owner
+> gates: [`docs/handover.md`](./docs/handover.md) §3. Live progress: [`docs/build-progress.md`](./docs/build-progress.md)
 > · workflow: [`docs/master-build-prompt.md`](./docs/master-build-prompt.md).
 >
 > What follows describes the architecture as it stands today — live status
